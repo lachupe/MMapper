@@ -221,11 +221,12 @@ void PathMachine::approved(const SigParseEvent &sigParseEvent)
         const Room *const pathRoot = getPathRoot();
         if (pathRoot == nullptr) {
             // What do we do now? "Who cares?"
+            syncing(sigParseEvent);
             return;
         }
 
         paths->push_front(Path::alloc(pathRoot, nullptr, nullptr, &signaler, std::nullopt));
-        experimenting(sigParseEvent);
+        syncing(sigParseEvent);
 
         return;
     }
