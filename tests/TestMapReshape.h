@@ -83,6 +83,10 @@ private Q_SLOTS:
     static void scorerAndSolverAgreeOnEdgeCostTest();
     static void twoRoomsBelowDoNotDragASelectionTest();
     static void areaOfCurrentRoomIsCollectedTest();
+    static void partitionUsesAreasWhereTheyFitTest();
+    static void partitionSplitsOneHugeAreaTest();
+    static void rerunningAfterBudgetImprovesFurtherTest();
+    static void rerunningAConvergedSolveChangesNothingTest();
     static void volumetricStacksRoomsAboveEachOtherTest();
     static void volumetricKeepsHorizontalExitsOnOneLayerTest();
     static void volumetricIgnoresOriginalHeightTest();

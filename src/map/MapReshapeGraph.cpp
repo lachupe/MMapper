@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <deque>
 #include <functional>
+#include <map>
 #include <set>
 #include <stdexcept>
 #include <string>
@@ -358,6 +359,69 @@ RoomIdSet MapReshapeGraph::collectArea(const Map &map, const RoomArea &area)
         areaRooms->for_each([&rooms](const RoomId id) { rooms.insert(id); });
     }
     return rooms;
+}
+
+namespace {
+
+/// Break one oversized group into connected clumps of at most maxChunk.
+///
+/// Grown breadth-first from an arbitrary room, so each clump is a
+/// neighbourhood rather than a slice through unrelated geography.
+void splitIntoClumps(const Map &map,
+                     const RoomIdSet &rooms,
+                     const size_t maxChunk,
+                     std::vector<RoomIdSet> &out)
+{
+    RoomIdSet remaining = rooms;
+    while (!remaining.empty()) {
+        RoomIdSet chunk;
+        std::deque<RoomId> queue{*remaining.begin()};
+        remaining.erase(queue.front());
+
+        while (!queue.empty() && chunk.size() < maxChunk) {
+            const RoomId current = queue.front();
+            queue.pop_front();
+            chunk.insert(current);
+            forEachGraphNeighbor(map, current, [&](const RoomId neighbor) {
+                if (remaining.contains(neighbor)) {
+                    remaining.erase(neighbor);
+                    queue.push_back(neighbor);
+                }
+            });
+        }
+        // Whatever the size cap left queued goes back for the next clump.
+        for (const RoomId leftover : queue) {
+            remaining.insert(leftover);
+        }
+        if (!chunk.empty()) {
+            out.push_back(std::move(chunk));
+        }
+    }
+}
+
+} // namespace
+
+std::vector<RoomIdSet> MapReshapeGraph::partitionForBatch(const Map &map, const size_t maxChunk)
+{
+    const size_t limit = std::max<size_t>(1, maxChunk);
+    std::map<RoomArea, RoomIdSet> byArea;
+    for (const RoomId id : map.getRooms()) {
+        const RoomHandle room = map.findRoomHandle(id);
+        if (!room) {
+            continue;
+        }
+        byArea[room.getArea()].insert(id);
+    }
+
+    std::vector<RoomIdSet> chunks;
+    for (auto &[area, rooms] : byArea) {
+        if (rooms.size() <= limit) {
+            chunks.push_back(std::move(rooms));
+        } else {
+            splitIntoClumps(map, rooms, limit, chunks);
+        }
+    }
+    return chunks;
 }
 
 std::optional<MapReshapeGraph> MapReshapeGraph::buildForArea(const Map &map,

@@ -2247,4 +2247,211 @@ void TestMapReshape::areaOfCurrentRoomIsCollectedTest()
     QVERIFY(!bree.contains(internalId(map, 4)));
 }
 
+void TestMapReshape::partitionUsesAreasWhereTheyFitTest()
+{
+    mmqt::HideQDebug forThisTest;
+    // Areas are the natural pieces and should be used exactly as they are.
+    SyntheticMap b;
+    for (uint32_t i = 0; i < 5; ++i) {
+        b.addRoom(i, Coordinate{static_cast<int>(i), 0, 0}, "Bree");
+    }
+    for (uint32_t i = 5; i < 8; ++i) {
+        b.addRoom(i, Coordinate{static_cast<int>(i), 0, 0}, "Combe");
+    }
+    for (uint32_t i = 0; i + 1 < 8; ++i) {
+        b.linkBoth(i, ExitDirEnum::EAST, i + 1);
+    }
+    const Map map = b.build();
+
+    const auto chunks = MapReshapeGraph::partitionForBatch(map, 1500);
+    QCOMPARE(chunks.size(), size_t(2));
+
+    // Between them they account for every room, exactly once. A room left
+    // out would never be reshaped; one counted twice would be solved
+    // against stale neighbours the second time.
+    RoomIdSet seen;
+    for (const RoomIdSet &chunk : chunks) {
+        for (const RoomId id : chunk) {
+            QVERIFY(!seen.contains(id));
+            seen.insert(id);
+        }
+    }
+    QCOMPARE(seen.size(), map.getRoomsCount());
+}
+
+void TestMapReshape::partitionSplitsOneHugeAreaTest()
+{
+    mmqt::HideQDebug forThisTest;
+    // The map with no useful areas: everything in one. It has to be cut
+    // into neighbourhoods, and the cuts must still cover every room once.
+    SyntheticMap b;
+    const int n = 50;
+    for (int i = 0; i < n; ++i) {
+        b.addRoom(static_cast<uint32_t>(i), Coordinate{i, 0, 0}, "Everything");
+    }
+    for (int i = 0; i + 1 < n; ++i) {
+        b.linkBoth(static_cast<uint32_t>(i), ExitDirEnum::EAST, static_cast<uint32_t>(i + 1));
+    }
+    const Map map = b.build();
+
+    const size_t maxChunk = 8;
+    const auto chunks = MapReshapeGraph::partitionForBatch(map, maxChunk);
+    QVERIFY(chunks.size() >= static_cast<size_t>(n) / maxChunk);
+
+    RoomIdSet seen;
+    for (const RoomIdSet &chunk : chunks) {
+        QVERIFY(!chunk.empty());
+        QVERIFY2(chunk.size() <= maxChunk, "no piece may exceed the size asked for");
+        for (const RoomId id : chunk) {
+            QVERIFY2(!seen.contains(id), "no room may appear in two pieces");
+            seen.insert(id);
+        }
+    }
+    QCOMPARE(seen.size(), static_cast<size_t>(n));
+}
+
+namespace {
+
+/// Score a later map's layout against a graph built from an earlier one.
+///
+/// Scores from two separate solves cannot be compared directly: a graph
+/// reads each room's "original" position from the map it was built from, so
+/// after applying a reshape the next graph treats the new positions as the
+/// originals and the charge for having moved resets to zero. Judging both
+/// results on one fixed yardstick is the only way to ask whether a rerun
+/// actually helped.
+NODISCARD int64_t scoreAgainst(const MapReshapeGraph &yardstick,
+                               const Map &later,
+                               const ReshapeWeights &weights)
+{
+    LayoutPositions positions;
+    positions.reserve(yardstick.getRooms().size());
+    for (const LayoutRoom &room : yardstick.getRooms()) {
+        positions.push_back(later.getRoomHandle(room.id).getPosition());
+    }
+    return MapReshapeScorer::score(yardstick, positions, weights).total();
+}
+
+/// Apply a solve to a map and hand back the result, the way the command
+/// does, so a second solve starts from where the first one finished.
+NODISCARD Map applySolve(const Map &map, const ReshapeResult &result)
+{
+    if (result.moves.empty()) {
+        return map;
+    }
+    ProgressCounter pc;
+    return map.apply(pc, map_reshape::buildChanges(map, result.moves)).map;
+}
+
+/// A knot that takes real work to untangle, so a small budget genuinely
+/// runs out partway.
+NODISCARD Map buildTangle(const int n)
+{
+    SyntheticMap b;
+    for (int i = 0; i < n; ++i) {
+        const int x = ((i * 37) % 29) - 14;
+        const int y = ((i * 53) % 23) - 11;
+        const int z = (i % 6 == 0) ? 1 : 0;
+        b.addRoom(static_cast<uint32_t>(i), Coordinate{x, y, z});
+    }
+    for (int i = 0; i + 1 < n; ++i) {
+        const ExitDirEnum dir = (i % 3 == 0) ? ExitDirEnum::NORTH : ExitDirEnum::EAST;
+        b.linkBoth(static_cast<uint32_t>(i), dir, static_cast<uint32_t>(i + 1));
+    }
+    return b.build();
+}
+
+NODISCARD MapReshapeGraph tangleGraph(const Map &map, const int n)
+{
+    ReshapeOptions options;
+    options.marginRings = 1;
+    RoomIdSet core;
+    for (int i = 0; i < n; ++i) {
+        core.insert(internalId(map, static_cast<uint32_t>(i)));
+    }
+    return MapReshapeGraph::build(map, core, options);
+}
+
+} // namespace
+
+void TestMapReshape::rerunningAfterBudgetImprovesFurtherTest()
+{
+    mmqt::HideQDebug forThisTest;
+    // When a reshape stops on its budget the report says running it again
+    // carries on from where it left off. That is a claim about behaviour,
+    // so it is worth checking rather than asserting: a solve starts from
+    // whatever the map currently says, so a second pass begins at the
+    // better layout the first one produced.
+    const int n = 60;
+    Map map = buildTangle(n);
+
+    // Enough to make progress, nowhere near enough to finish.
+    ReshapeSolverOptions stingy = ReshapeSolverOptions::forMode(ReshapeModeEnum::Flatten);
+    stingy.maxSweeps = 20;
+    stingy.minIterations = 1;
+    stingy.maxIterations = 1'200;
+    stingy.maxStructuralRefinements = 8;
+
+    ReshapeResult first;
+    {
+        const MapReshapeGraph graph = tangleGraph(map, n);
+        std::ignore = MapReshapeSolver::solvePositions(graph, stingy, first);
+    }
+    QVERIFY2(first.stats.hitLimits, "the budget here must be too small to finish");
+    QCOMPARE(first.status, ReshapeStatusEnum::Improved);
+
+    // One fixed yardstick, built before anything moves.
+    const MapReshapeGraph yardstick = tangleGraph(map, n);
+    const ReshapeWeights weights = makeWeights(ReshapeModeEnum::Flatten);
+    const int64_t atStart = scoreAgainst(yardstick, map, weights);
+
+    map = applySolve(map, first);
+    const int64_t afterFirst = scoreAgainst(yardstick, map, weights);
+
+    ReshapeResult second;
+    {
+        const MapReshapeGraph graph = tangleGraph(map, n);
+        std::ignore = MapReshapeSolver::solvePositions(graph, stingy, second);
+    }
+    QCOMPARE(second.status, ReshapeStatusEnum::Improved);
+    map = applySolve(map, second);
+    const int64_t afterSecond = scoreAgainst(yardstick, map, weights);
+
+    QVERIFY2(afterFirst < atStart, "the first run should improve the layout");
+    QVERIFY2(afterSecond < afterFirst,
+             "a second run after a truncated one should improve it further still");
+}
+
+void TestMapReshape::rerunningAConvergedSolveChangesNothingTest()
+{
+    mmqt::HideQDebug forThisTest;
+    // The other half of the claim, and the more useful one: once a solve
+    // finishes because it has run out of improvements rather than budget,
+    // running it again is a waste of time and says so. That is what makes
+    // the limits flag worth reading -- without this, "run it again" would
+    // be advice with no way to tell when to stop.
+    const int n = 60;
+    Map map = buildTangle(n);
+    const ReshapeSolverOptions full = ReshapeSolverOptions::forMode(ReshapeModeEnum::Flatten);
+
+    ReshapeResult first;
+    {
+        const MapReshapeGraph graph = tangleGraph(map, n);
+        std::ignore = MapReshapeSolver::solvePositions(graph, full, first);
+    }
+    map = applySolve(map, first);
+
+    ReshapeResult second;
+    {
+        const MapReshapeGraph graph = tangleGraph(map, n);
+        std::ignore = MapReshapeSolver::solvePositions(graph, full, second);
+    }
+    if (!first.stats.hitLimits) {
+        QCOMPARE(second.status, ReshapeStatusEnum::Unchanged);
+        QVERIFY(second.moves.empty());
+    }
+    // Either way a rerun must never make things worse.
+    QVERIFY(second.stats.scoreAfter <= second.stats.scoreBefore);
+}
+
 QTEST_MAIN(TestMapReshape)

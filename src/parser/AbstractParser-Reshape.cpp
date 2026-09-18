@@ -48,6 +48,9 @@ struct NODISCARD ResolvedScope final
 {
     RoomIdSet core;
     std::string label;
+    /// Set only by the explicit whole-world command, which exists to do the
+    /// one thing the size limit is there to prevent.
+    bool unlimited = false;
 };
 
 /// What to reshape: the named area, everything within a few steps of the
@@ -56,6 +59,7 @@ NODISCARD std::optional<ResolvedScope> resolveScope(MapData &mapData,
                                                     const Map &map,
                                                     const std::optional<std::string> &requested,
                                                     const std::optional<int> radius,
+                                                    const bool wholeWorld,
                                                     AnsiOstream &os)
 {
     const auto fromArea = [&map](const RoomArea &area) -> ResolvedScope {
@@ -68,6 +72,14 @@ NODISCARD std::optional<ResolvedScope> resolveScope(MapData &mapData,
                              name.empty() ? std::string{"the unnamed area"}
                                           : ("area \"" + name + "\"")};
     };
+
+    if (wholeWorld) {
+        RoomIdSet everything;
+        for (const RoomId id : map.getRooms()) {
+            everything.insert(id);
+        }
+        return ResolvedScope{std::move(everything), "the entire map", true};
+    }
 
     if (requested) {
         return fromArea(makeRoomArea(*requested));
@@ -207,18 +219,132 @@ void runInBackground(ReshapeJob &job, ProgressCounter &pc)
     job.report = os.str();
 }
 
+/// Reshape the whole map a piece at a time.
+///
+/// Each piece is solved against the map as it stands after the previous
+/// ones, so a piece sees where its neighbours actually ended up rather than
+/// where they started. The work is done on a copy: nothing touches the real
+/// map until every piece is done, and then the whole batch travels as one
+/// change list so a single undo puts everything back.
+void runBatchInBackground(ReshapeJob &job, ProgressCounter &pc)
+{
+    std::ostringstream os;
+
+    constexpr size_t MAX_CHUNK_ROOMS = 1500;
+    const std::vector<RoomIdSet> chunks = MapReshapeGraph::partitionForBatch(job.map,
+                                                                             MAX_CHUNK_ROOMS);
+    if (chunks.empty()) {
+        os << "There is nothing on the map to reshape.\n";
+        job.report = os.str();
+        return;
+    }
+
+    pc.setCurrentTask(ProgressMsg{"reshaping the map piece by piece"});
+    pc.increaseTotalStepsBy(chunks.size());
+
+    Map working = job.map;
+    size_t improved = 0;
+    size_t truncated = 0;
+    int64_t before = 0;
+    int64_t after = 0;
+
+    for (const RoomIdSet &chunk : chunks) {
+        ReshapeOptions options;
+        const MapReshapeGraph graph = MapReshapeGraph::build(working, chunk, options);
+        if (!graph.empty()) {
+            ReshapeResult piece;
+            std::ignore = MapReshapeSolver::solvePositions(graph,
+                                                           ReshapeSolverOptions::forMode(job.mode),
+                                                           piece);
+            before += piece.stats.scoreBefore;
+            after += piece.stats.scoreAfter;
+            if (piece.stats.hitLimits) {
+                ++truncated;
+            }
+            if (piece.status == ReshapeStatusEnum::Improved) {
+                ++improved;
+                ProgressCounter quiet;
+                working = working.apply(quiet, map_reshape::buildChanges(working, piece.moves)).map;
+            }
+        }
+        pc.step();
+    }
+
+    // One change list for the lot, built by comparing where every room
+    // started against where it ended up.
+    std::vector<RoomMove> moves;
+    for (const RoomId id : job.map.getRooms()) {
+        const RoomHandle from = job.map.findRoomHandle(id);
+        const RoomHandle to = working.findRoomHandle(id);
+        if (from && to && from.getPosition() != to.getPosition()) {
+            moves.push_back(RoomMove{id, from.getPosition(), to.getPosition()});
+        }
+    }
+
+    os << "Pieces: " << chunks.size() << ", improved: " << improved << "\n"
+       << "Rooms moved: " << moves.size() << "\n"
+       << "Layout score: " << before << " -> " << after << "\n";
+    if (truncated != 0) {
+        os << truncated << " piece(s) stopped on their budget rather than on running out of "
+           << "improvements; running this again will carry on from here.\n";
+    }
+    if (!moves.empty()) {
+        job.changes = map_reshape::buildChanges(job.map, moves);
+        job.hasChanges = !job.changes.empty();
+        job.result.status = ReshapeStatusEnum::Improved;
+        job.result.stats.roomsMoved = moves.size();
+    }
+    job.report = os.str();
+}
+
 } // namespace
+
+void AbstractParser::doMapBatchReshape(AnsiOstream &os, const ReshapeModeEnum mode)
+{
+    auto job = std::make_shared<ReshapeJob>();
+    job->map = m_mapData.getCurrentMap();
+    job->mode = mode;
+    job->apply = true;
+
+    QPointer<AbstractParser> self{this};
+    const async_tasks::AsyncTaskHandle handle = async_tasks::startAsyncTask(
+        AsyncTaskTypeEnum::Task,
+        AllowCancelEnum::Allow,
+        "map reshape all",
+        [job](ProgressCounter &pc) { runBatchInBackground(deref(job), pc); },
+        [job, self]() {
+            ABORT_IF_NOT_ON_MAIN_THREAD();
+            ReshapeJob &finished = deref(job);
+            std::string text = finished.report;
+            if (finished.hasChanges) {
+                if (self.isNull()) {
+                    text += "The session ended before the reshape could be applied.\n";
+                } else if (!self->m_mapData.applyChanges(finished.changes)) {
+                    text += "Failed to apply the reshape; the map is unchanged.\n";
+                } else {
+                    text += "Applied as a single undo step.\n";
+                }
+            }
+            global::sendToUser(QString::fromStdString(text));
+        });
+
+    os << "Started task #" << handle.getId()
+       << " (reshaping the whole map piece by piece); this takes a while, and the progress bar "
+          "counts pieces.\n";
+}
 
 void AbstractParser::doMapAreaReshape(AnsiOstream &os,
                                       const std::optional<std::string> &requestedArea,
                                       const std::optional<int> radius,
+                                      const bool wholeWorld,
                                       const bool applyResult,
                                       const ReshapeModeEnum mode)
 {
     MapData &mapData = m_mapData;
     const Map map = mapData.getCurrentMap();
 
-    std::optional<ResolvedScope> scope = resolveScope(mapData, map, requestedArea, radius, os);
+    std::optional<ResolvedScope> scope
+        = resolveScope(mapData, map, requestedArea, radius, wholeWorld, os);
     if (!scope) {
         return;
     }
@@ -226,7 +352,7 @@ void AbstractParser::doMapAreaReshape(AnsiOstream &os,
         os << "No rooms found in " << scope->label << ".\n";
         return;
     }
-    if (scope->core.size() > MAX_SCOPE_ROOMS) {
+    if (scope->core.size() > MAX_SCOPE_ROOMS && !scope->unlimited) {
         os << scope->label << " holds " << scope->core.size() << " rooms, which is too many to "
            << "reshape in one go (the limit is " << MAX_SCOPE_ROOMS << ").\n"
            << "Reshaping that much at once cannot finish quickly enough to stay responsive, and "

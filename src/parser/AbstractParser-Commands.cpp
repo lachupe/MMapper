@@ -938,7 +938,7 @@ void AbstractParser::doMapCommand(StringView input)
     auto hereAction = [this](const ReshapeModeEnum mode, const bool apply) {
         return [this, mode, apply]() {
             sendToUser(SendToUserSourceEnum::FromMMapper, [this, mode, apply](AnsiOstream &os) {
-                doMapAreaReshape(os, std::nullopt, std::nullopt, apply, mode);
+                doMapAreaReshape(os, std::nullopt, std::nullopt, false, apply, mode);
             });
         };
     };
@@ -947,7 +947,7 @@ void AbstractParser::doMapCommand(StringView input)
             // stringToken("area") matches without contributing a value, so
             // the matched vector holds just the verb and the area name.
             const auto v = getAnyVectorReversed(args);
-            doMapAreaReshape(user.getOstream(), v[1].getString(), std::nullopt, apply, mode);
+            doMapAreaReshape(user.getOstream(), v[1].getString(), std::nullopt, false, apply, mode);
         };
     };
     auto namedSyntax = [&namedAction](const char *const verb,
@@ -1057,6 +1057,7 @@ void AbstractParser::doMapCommand(StringView input)
             doMapAreaReshape(user.getOstream(),
                              std::nullopt,
                              static_cast<int>(v[1].getInt()),
+                             false,
                              apply,
                              mode);
         };
@@ -1087,6 +1088,38 @@ void AbstractParser::doMapCommand(StringView input)
                      "report layout problems within N steps of here",
                      ReshapeModeEnum::Flatten,
                      false));
+
+    // Deliberately its own verb, spelled out, and not reachable from a
+    // menu. Reshaping everything at once is the thing the size limit
+    // exists to prevent -- it is a one-off migration, not an edit, and
+    // nothing anchors the result to where the map is now.
+    auto worldAction = [this](const ReshapeModeEnum mode, const bool apply) {
+        return [this, mode, apply]() {
+            sendToUser(SendToUserSourceEnum::FromMMapper, [this, mode, apply](AnsiOstream &os) {
+                doMapAreaReshape(os, std::nullopt, std::nullopt, true, apply, mode);
+            });
+        };
+    };
+    auto batchAction = [this](const ReshapeModeEnum mode) {
+        return [this, mode]() {
+            sendToUser(SendToUserSourceEnum::FromMMapper,
+                       [this, mode](AnsiOstream &os) { doMapBatchReshape(os, mode); });
+        };
+    };
+    auto worldSyntax = syntax::buildSyntax(
+        syntax::stringToken("world"),
+        syn("check",
+            "report layout problems across the entire map",
+            worldAction(ReshapeModeEnum::Flatten, false)),
+        syn("reshape-all",
+            "reshape the whole map piece by piece, flattening (one undo step)",
+            batchAction(ReshapeModeEnum::Flatten)),
+        syn("reshape-all-3d",
+            "reshape the whole map piece by piece into 3D (one undo step)",
+            batchAction(ReshapeModeEnum::Volumetric)),
+        syn("reshape-everything-at-once",
+            "solve the ENTIRE map as one problem: slow, and nothing anchors the result",
+            worldAction(ReshapeModeEnum::Volumetric, true)));
 
     auto areaSyntax = syntax::buildSyntax(
         syntax::stringToken("area"),
@@ -1185,6 +1218,7 @@ void AbstractParser::doMapCommand(StringView input)
     auto mapSyntax = syntax::buildSyntax(gotoSyntax,
                                          areaSyntax,
                                          nearSyntax,
+                                         worldSyntax,
                                          diffSyntax,
                                          statsSynax,
                                          showSyntax,

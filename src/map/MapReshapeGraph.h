@@ -70,6 +70,21 @@ public:
     /// area contains.
     NODISCARD static RoomIdSet collectArea(const Map &map, const RoomArea &area);
 
+    /// Split the whole map into pieces small enough to reshape one at a
+    /// time.
+    ///
+    /// Reshaping everything in one solve loses the thing that makes the
+    /// result trustworthy: with no rooms held fixed, nothing anchors the
+    /// layout to where the map already is. Working piece by piece keeps
+    /// each one anchored by its neighbours, finishes in seconds rather than
+    /// minutes, and can be watched as it goes.
+    ///
+    /// Areas are the natural pieces and are used as they are where they
+    /// fit. An area larger than `maxChunk` -- some maps put every room in
+    /// one -- is split into connected clumps instead, so the pieces are
+    /// still neighbourhoods rather than arbitrary slices.
+    NODISCARD static std::vector<RoomIdSet> partitionForBatch(const Map &map, size_t maxChunk);
+
     /// Convenience overload: core is every room of the named area.
     /// Returns nullopt when the area does not exist or is empty.
     NODISCARD static std::optional<MapReshapeGraph> buildForArea(const Map &map,
