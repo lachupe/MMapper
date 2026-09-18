@@ -76,6 +76,18 @@ public:
     NODISCARD static std::vector<LayoutIssue> findIssues(const MapReshapeGraph &graph,
                                                          const LayoutPositions &positions);
 
+    /// One edge's contribution, split the same way the total is.
+    ///
+    /// Both the scorer's breakdown and the solver's incremental delta are
+    /// built from this, because two copies of the arithmetic drift: an
+    /// earlier version had the solver charging alignment by angle while the
+    /// scorer still charged it by raw offset, so the search optimized one
+    /// function and was judged against another.
+    NODISCARD static LayoutScore edgeBreakdown(const LayoutEdge &edge,
+                                               const Coordinate &from,
+                                               const Coordinate &to,
+                                               const ReshapeWeights &weights);
+
     /// Cost of one horizontal edge at the given endpoint positions.
     ///
     /// Exposed because the solver evaluates candidate moves incrementally and

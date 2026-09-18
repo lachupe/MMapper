@@ -273,7 +273,8 @@ MapReshapeGraph MapReshapeGraph::build(const Map &map,
                 }
                 const bool crossesBoundary = (fromRoom.role == LayoutRoomRoleEnum::FixedExternal)
                                              != (toRoom.role == LayoutRoomRoleEnum::FixedExternal);
-                const LayoutEdge edge{fromIndex, *toIndex, dir, crossesBoundary};
+                const int scopeDistance = std::max(fromRoom.marginDistance, toRoom.marginDistance);
+                const LayoutEdge edge{fromIndex, *toIndex, dir, crossesBoundary, scopeDistance};
                 if (isNESW(dir)) {
                     graph.m_horizontalEdges.push_back(edge);
                 } else {

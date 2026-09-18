@@ -1985,4 +1985,161 @@ void TestMapReshape::hangingAreaMovesUnderItsEntranceTest()
     }
 }
 
+void TestMapReshape::draggedApartIslandClosesUpTest()
+{
+    mmqt::HideQDebug forThisTest;
+    // A small block whose rooms have been pulled apart by hand, still joined
+    // to the rest of the map by one long exit running away to the
+    // north-east. There is nothing in the way, so selecting the block and
+    // reshaping it should simply close it back up.
+    SyntheticMap b;
+    // 2x3 block, every room three cells from the next instead of one.
+    const auto id = [](int x, int y) { return static_cast<uint32_t>(y * 2 + x); };
+    for (int y = 0; y < 3; ++y) {
+        for (int x = 0; x < 2; ++x) {
+            b.addRoom(id(x, y), Coordinate{x * 3, y * 3, 0});
+        }
+    }
+    for (int y = 0; y < 3; ++y) {
+        b.linkBoth(id(0, y), ExitDirEnum::EAST, id(1, y));
+    }
+    for (int y = 0; y + 1 < 3; ++y) {
+        for (int x = 0; x < 2; ++x) {
+            b.linkBoth(id(x, y), ExitDirEnum::NORTH, id(x, y + 1));
+        }
+    }
+    // The outside world, a long way off and well off-axis.
+    b.addRoom(90, Coordinate{40, 28, 0});
+    b.linkBoth(id(1, 2), ExitDirEnum::EAST, 90);
+    const Map map = b.build();
+
+    ReshapeOptions options;
+    options.marginRings = 1;
+    RoomIdSet core;
+    for (int y = 0; y < 3; ++y) {
+        for (int x = 0; x < 2; ++x) {
+            core.insert(internalId(map, id(x, y)));
+        }
+    }
+    const MapReshapeGraph graph = MapReshapeGraph::build(map, core, options);
+
+    ReshapeResult result;
+    const LayoutPositions solved = MapReshapeSolver::solvePositions(graph,
+                                                                    ReshapeSolverOptions::forMode(
+                                                                        ReshapeModeEnum::Flatten),
+                                                                    result);
+    QCOMPARE(result.status, ReshapeStatusEnum::Improved);
+
+    // Every exit inside the block should be back to a single cell.
+    for (int y = 0; y < 3; ++y) {
+        const Coordinate west = solved[scopeIndex(graph, map, id(0, y))];
+        const Coordinate east = solved[scopeIndex(graph, map, id(1, y))];
+        QCOMPARE(east.x - west.x, 1);
+        QCOMPARE(east.y, west.y);
+    }
+    for (int y = 0; y + 1 < 3; ++y) {
+        for (int x = 0; x < 2; ++x) {
+            const Coordinate lower = solved[scopeIndex(graph, map, id(x, y))];
+            const Coordinate upper = solved[scopeIndex(graph, map, id(x, y + 1))];
+            QCOMPARE(upper.y - lower.y, 1);
+            QCOMPARE(upper.x, lower.x);
+        }
+    }
+}
+
+void TestMapReshape::distantNeighbourDoesNotDominateTest()
+{
+    mmqt::HideQDebug forThisTest;
+    // The reason the block above could not close up. An exit to a room far
+    // away and far off-axis is charged for being off-axis in proportion to
+    // the offset, so one distant neighbour used to outweigh every exit
+    // inside the area put together, and the solver chased an anchor it
+    // could never line up with instead of tidying what was selected.
+    SyntheticMap b;
+    b.addRoom(0, Coordinate{0, 0, 0});
+    b.addRoom(1, Coordinate{1, 0, 0});
+    b.linkBoth(0, ExitDirEnum::EAST, 1);
+    b.addRoom(90, Coordinate{30, 25, 0});
+    b.linkBoth(1, ExitDirEnum::EAST, 90);
+    const Map map = b.build();
+
+    ReshapeOptions options;
+    options.marginRings = 1;
+    const MapReshapeGraph graph = MapReshapeGraph::build(map, makeCore(map, {0, 1}), options);
+
+    const LayoutPositions positions = MapReshapeScorer::currentPositions(graph);
+    const ReshapeWeights weights = makeWeights(ReshapeModeEnum::Flatten);
+
+    // Cost of the tidy interior exit, against the cost of the long one
+    // reaching outside.
+    int64_t interior = 0;
+    int64_t outward = 0;
+    for (const LayoutEdge &edge : graph.getHorizontalEdges()) {
+        const int64_t cost = MapReshapeScorer::edgeCost(edge,
+                                                        positions[edge.fromIndex],
+                                                        positions[edge.toIndex],
+                                                        weights);
+        if (edge.scopeDistance == 0) {
+            interior += cost;
+        } else {
+            outward += cost;
+        }
+    }
+    QCOMPARE(interior, int64_t(0));
+
+    // Undivided, that single exit would be charged over twelve thousand for
+    // being twenty-five cells off-axis. It still counts -- an island should
+    // not drift loose -- but no longer enough to decide the whole layout.
+    QVERIFY2(outward < weights.alignment * 25,
+             "a distant neighbour must not be charged at full strength");
+    QVERIFY2(outward > 0, "but it must still count for something");
+}
+
+void TestMapReshape::scorerAndSolverAgreeOnEdgeCostTest()
+{
+    mmqt::HideQDebug forThisTest;
+    // The scorer's per-component breakdown and the single number the solver
+    // prices moves with have to come from the same arithmetic. They did not
+    // once: the solver charged alignment by angle while the breakdown still
+    // charged it by raw offset, so the search optimized one function and was
+    // judged against another, and a selection that had closed itself up
+    // perfectly was reported as worse than leaving it spread out.
+    const Map map = buildChain(4);
+    ReshapeOptions options;
+    options.marginRings = 1;
+    const MapReshapeGraph graph = MapReshapeGraph::build(map, makeCore(map, {0, 1}), options);
+
+    const std::vector<Coordinate> offsets = {Coordinate{1, 0, 0},
+                                             Coordinate{3, 1, 0},
+                                             Coordinate{-2, 4, 0},
+                                             Coordinate{7, -3, 1},
+                                             Coordinate{0, 0, 0}};
+    for (const ReshapeModeEnum mode : {ReshapeModeEnum::Flatten, ReshapeModeEnum::Volumetric}) {
+        const ReshapeWeights weights = makeWeights(mode);
+        for (const LayoutEdge &edge : graph.getHorizontalEdges()) {
+            for (const Coordinate &offset : offsets) {
+                const Coordinate from{0, 0, 0};
+                const Coordinate to = from + offset;
+                QCOMPARE(MapReshapeScorer::edgeBreakdown(edge, from, to, weights).total(),
+                         MapReshapeScorer::edgeCost(edge, from, to, weights));
+            }
+        }
+    }
+
+    // And the whole-layout score must equal the sum of its parts, so that
+    // "improved" means the same thing to both.
+    const LayoutPositions positions = MapReshapeScorer::currentPositions(graph);
+    const LayoutScore score = MapReshapeScorer::score(graph, positions);
+    int64_t edgeTotal = 0;
+    for (const LayoutEdge &edge : graph.getHorizontalEdges()) {
+        edgeTotal += MapReshapeScorer::edgeCost(edge,
+                                                positions[edge.fromIndex],
+                                                positions[edge.toIndex],
+                                                ReshapeWeights{});
+    }
+    QCOMPARE(score.direction + score.alignment + score.edgeLength + score.boundary
+                 + score.layerMismatch,
+             edgeTotal);
+}
+
 QTEST_MAIN(TestMapReshape)

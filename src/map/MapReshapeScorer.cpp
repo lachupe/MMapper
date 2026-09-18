@@ -106,32 +106,61 @@ LayoutPositions MapReshapeScorer::currentPositions(const MapReshapeGraph &graph)
     return positions;
 }
 
-int64_t MapReshapeScorer::edgeCost(const LayoutEdge &edge,
-                                   const Coordinate &from,
-                                   const Coordinate &to,
-                                   const ReshapeWeights &weights)
+LayoutScore MapReshapeScorer::edgeBreakdown(const LayoutEdge &edge,
+                                            const Coordinate &from,
+                                            const Coordinate &to,
+                                            const ReshapeWeights &weights)
 {
     const EdgeGeometry g = measure(edge.dir, from, to);
-    int64_t cost = 0;
+    // Scaled down the further this edge reaches outside the core, so what is
+    // being reshaped drives the result rather than what it is attached to.
+    const int64_t divisor = edgeInfluenceDivisor(edge.scopeDistance);
+
+    // The divisor applies to direction, straightness and layer mismatch --
+    // the terms whose cost grows with how far away the other room is, and
+    // which therefore let one distant neighbour outvote an entire area.
+    // Length is left alone: it already has its own cheaper weight across a
+    // boundary, and discounting it twice rounded it away to nothing.
+    LayoutScore out;
     if (g.along <= 0) {
         // Graded, not a flat charge. A binary penalty makes every wrong-side
         // position cost the same, so unit-move local search sees a plateau:
         // stepping an east neighbour from two cells west to one cell west
         // changes nothing and is never taken, leaving the exit backwards
-        // forever. Charging by how wrong it is gives the search a gradient to
-        // follow, and "less backwards" genuinely is better.
-        cost += weights.wrongDirection * (1 - g.along);
+        // forever. Charging by how wrong it is gives the search a gradient
+        // to follow, and "less backwards" genuinely is better.
+        out.direction = weights.wrongDirection * (1 - g.along) / divisor;
     } else {
-        // Spacing is elastic, so only the excess beyond one cell costs, and a
-        // boundary edge is allowed to stretch far more cheaply.
-        cost += (edge.crossesBoundary ? weights.boundaryEdgeLength : weights.edgeLength)
-                * (g.along - 1);
+        // Spacing is elastic, so only the excess beyond one cell costs, and
+        // a boundary edge is allowed to stretch far more cheaply.
+        const int64_t excess = g.along - 1;
+        if (edge.crossesBoundary) {
+            out.boundary = weights.boundaryEdgeLength * excess;
+        } else {
+            out.edgeLength = weights.edgeLength * excess;
+        }
     }
-    cost += weights.alignment * g.perp;
+    // Charged on the angle rather than the raw offset. Being one cell
+    // off-axis matters enormously between neighbours and hardly at all at
+    // the end of an exit thirty cells long, which still reads as straight.
+    // Charging the offset itself turned every stretched exit into a powerful
+    // constraint pulling on whatever it was attached to: an area could be
+    // dragged bodily across the map to line its edge up with a distant room,
+    // and then could not close its own gaps, because a cell of alignment
+    // error against that room outweighed the tidying it bought.
+    out.alignment = weights.alignment * g.perp / std::max(1, std::abs(g.along)) / divisor;
     // A horizontal exit crossing layers is a defect regardless of how many
     // layers the area uses overall.
-    cost += weights.layerMismatch * g.layers;
-    return cost;
+    out.layerMismatch = weights.layerMismatch * g.layers / divisor;
+    return out;
+}
+
+int64_t MapReshapeScorer::edgeCost(const LayoutEdge &edge,
+                                   const Coordinate &from,
+                                   const Coordinate &to,
+                                   const ReshapeWeights &weights)
+{
+    return edgeBreakdown(edge, from, to, weights).total();
 }
 
 int64_t MapReshapeScorer::verticalEdgeCost(const LayoutEdge &edge,
@@ -156,7 +185,8 @@ int64_t MapReshapeScorer::verticalEdgeCost(const LayoutEdge &edge,
     // horizontal drift between them costs -- except when flattening, where
     // sitting side by side is the whole point and this weight is zero.
     cost += weights.verticalAlignment * (std::abs(to.x - from.x) + std::abs(to.y - from.y));
-    return cost;
+    // Attenuated with distance from the core, like horizontal edges.
+    return cost / edgeInfluenceDivisor(edge.scopeDistance);
 }
 
 int64_t MapReshapeScorer::zMovementCost(const LayoutRoom &room,
@@ -189,20 +219,15 @@ LayoutScore MapReshapeScorer::score(const MapReshapeGraph &graph,
     const std::vector<LayoutRoom> &rooms = graph.getRooms();
 
     for (const LayoutEdge &edge : graph.getHorizontalEdges()) {
-        const EdgeGeometry g = measure(edge.dir, positions[edge.fromIndex], positions[edge.toIndex]);
-
-        if (g.along <= 0) {
-            score.direction += weights.wrongDirection * (1 - g.along);
-        } else {
-            const int64_t excess = g.along - 1;
-            if (edge.crossesBoundary) {
-                score.boundary += weights.boundaryEdgeLength * excess;
-            } else {
-                score.edgeLength += weights.edgeLength * excess;
-            }
-        }
-        score.alignment += weights.alignment * g.perp;
-        score.layerMismatch += weights.layerMismatch * g.layers;
+        const LayoutScore part = edgeBreakdown(edge,
+                                               positions[edge.fromIndex],
+                                               positions[edge.toIndex],
+                                               weights);
+        score.direction += part.direction;
+        score.alignment += part.alignment;
+        score.edgeLength += part.edgeLength;
+        score.boundary += part.boundary;
+        score.layerMismatch += part.layerMismatch;
     }
 
     for (const LayoutEdge &edge : graph.getVerticalEdges()) {

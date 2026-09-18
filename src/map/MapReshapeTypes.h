@@ -69,7 +69,35 @@ struct NODISCARD LayoutEdge final
     /// True when exactly one endpoint is FixedExternal, so the edge is an
     /// anchor: its length is elastic but its direction still matters.
     bool crossesBoundary = false;
+    /// How far from the core this edge reaches: the greater of its two
+    /// rooms' distances. Zero when both ends are core rooms.
+    int scopeDistance = 0;
 };
+
+/// How much an edge's tidiness counts, given how far from the core it sits.
+///
+/// Reshaping a place should be driven by that place, not by what it happens
+/// to be attached to. Without this, a single exit running off to a room
+/// thirty cells away dominates everything: the charge for being off-axis
+/// grows with the offset, so one distant neighbour outweighs every exit
+/// inside the area put together, and the solver spends its effort chasing an
+/// anchor it can never line up with instead of tidying what was selected.
+/// Rooms dragged apart then stay apart, even with room to close up.
+///
+/// Distant edges still count for something -- an island should not drift
+/// loose or flip over -- so this divides their influence rather than
+/// removing it.
+NODISCARD inline int64_t edgeInfluenceDivisor(const int scopeDistance)
+{
+    switch (scopeDistance) {
+    case 0:
+        return 1;
+    case 1:
+        return 4;
+    default:
+        return 16;
+    }
+}
 
 /// An exit the layout solver cannot express as a horizontal constraint.
 /// Recorded rather than silently dropped, so diagnostics can report what was
