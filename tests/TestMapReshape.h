@@ -76,6 +76,10 @@ private Q_SLOTS:
     static void volumetricLiftsWholeStoreyTest();
     static void liftingOneRoomAloneIsRejectedTest();
     static void flattenCollapsesStoreyOntoParentTest();
+    static void volumetricRebuildsTowerTest();
+    static void volumetricStacksRoomsAboveEachOtherTest();
+    static void volumetricKeepsHorizontalExitsOnOneLayerTest();
+    static void volumetricIgnoresOriginalHeightTest();
 
     // Z handling: the two modes.
     static void flattenCollapsesUnnecessaryLayerTest();

@@ -59,13 +59,32 @@ ReshapeWeights makeWeights(const ReshapeModeEnum mode)
         break;
 
     case ReshapeModeEnum::Volumetric:
-        // Layers are free, so nothing pushes the map flat.
+        // Rebuild the shape the exits describe, rather than preserve the
+        // shape the map happens to have. Current coordinates are treated as
+        // almost worthless here: a map that was flattened by hand has to be
+        // free to come apart completely, so clinging to existing height is
+        // exactly the wrong instinct. Only the exits say where a room
+        // belongs, so they are what the weights defend.
         weights.extraZLayer = 0;
-        // Existing height is a strong prior rather than something to undo.
-        weights.zMovement = 2'000;
-        // An up exit should genuinely lead up, which also means this mode
-        // will pull apart a stack that was flattened by hand.
-        weights.verticalDirection = 5'000;
+        // Barely more than a tie-breaker, so the layout does not drift for
+        // no reason -- but never enough to hold a room on the wrong level.
+        weights.zMovement = 10;
+        weights.coreMovement = 1;
+
+        // The structural constraints, by contrast, are made severe.
+        weights.verticalDirection = 20'000;
+        weights.layerMismatch = 20'000;
+        weights.wrongDirection = 50'000;
+        weights.alignment = 2'000;
+
+        // Spacing is held much tighter than when flattening. Room to spread
+        // out is what layers provide, so there is far less need to stretch
+        // horizontally, and "one exit, one cell" is closer to how the place
+        // was imagined.
+        weights.edgeLength = 200;
+        weights.boundaryEdgeLength = 20;
+        weights.verticalLength = 200;
+        weights.verticalAlignment = 500;
         break;
     }
     return weights;

@@ -13,6 +13,10 @@
 #include "../global/thread_utils.h"
 #include "../global/utils.h"
 #include "../global/window_utils.h"
+#include "../map/MapReshapeApply.h"
+#include "../map/MapReshapeGraph.h"
+#include "../map/MapReshapeSolver.h"
+#include "../map/MapReshapeTypes.h"
 #include "../mapstorage/MapDestination.h"
 #include "../mapstorage/MapLoadHelper.h"
 #include "../mapstorage/MmpMapStorage.h"
@@ -887,6 +891,149 @@ bool MainWindow::slot_generateBaseMap()
                               "Generating base map...",
                               // REVISIT: This is like a load, but it's not loading from disk.
                               // Consider making this a regular non-IO async "change" command?
+                              AsyncIOTypeEnum::Load);
+    return true;
+}
+
+bool MainWindow::slot_reshapeRoomSelection(const ReshapeModeEnum mode)
+{
+    if (m_roomSelection == nullptr || m_roomSelection->empty()) {
+        showWarning(tr("Select some rooms first."));
+        return false;
+    }
+
+    // Reshaping even a few hundred rooms takes long enough to freeze the
+    // window, so it runs the way generating the base map does: on a worker
+    // thread, behind the progress dialog, cancellable. The search only reads
+    // an immutable snapshot, so the one part that has to come back to the
+    // main thread is applying the result.
+    class NODISCARD AsyncReshapeSelection final : public AsyncBase
+    {
+    public:
+        struct NODISCARD ReshapeData final
+        {
+            ChangeList changes;
+            ReshapeResult result;
+            size_t scopeRooms = 0;
+        };
+        using Result = std::optional<ReshapeData>;
+        using Promise = std::promise<Result>;
+        using Future = std::future<Result>;
+
+    private:
+        Map m_map;
+        RoomIdSet m_selection;
+        ReshapeModeEnum m_mode;
+        Promise m_promise;
+        Future m_future = m_promise.get_future();
+
+    public:
+        explicit AsyncReshapeSelection(MainWindow &mw,
+                                       RoomIdSet selection,
+                                       const ReshapeModeEnum mode)
+            : AsyncBase{"Reshape Selection", mw, QString{}, SharedDevice{}, UniqueStorage{}}
+            , m_map{mw.m_mapData->getCurrentMap()}
+            , m_selection{std::move(selection)}
+            , m_mode{mode}
+        {}
+        ~AsyncReshapeSelection() final = default;
+
+    private:
+        void virt_background_worker(const std::shared_ptr<ProgressCounter> &sharedPc) final
+        {
+            try {
+                ProgressCounter &pc = deref(sharedPc);
+                const ReshapeOptions options;
+                const MapReshapeGraph graph = MapReshapeGraph::build(m_map, m_selection, options);
+                if (graph.empty()) {
+                    m_promise.set_value(std::nullopt);
+                    return;
+                }
+                ReshapeData data;
+                data.scopeRooms = graph.getRooms().size();
+                std::ignore = MapReshapeSolver::solvePositions(graph,
+                                                               ReshapeSolverOptions::forMode(m_mode),
+                                                               data.result,
+                                                               &pc);
+                if (data.result.status == ReshapeStatusEnum::Improved) {
+                    data.changes = map_reshape::buildChanges(m_map, data.result.moves);
+                }
+                m_promise.set_value(std::move(data));
+            } catch (...) {
+                m_promise.set_exception(std::current_exception());
+            }
+        }
+
+        PollResultEnum virt_wait(const std::chrono::milliseconds ms) override
+        {
+            return mwa_detail::wait_for(m_future, ms);
+        }
+
+        void virt_finish(const std::shared_ptr<ProgressCounter> &sharedPc) override
+        {
+            const bool wasCanceled = deref(sharedPc).hasRequestedCancel();
+            Result result = mwa_detail::extract(m_future, m_mainWindow);
+            if (wasCanceled) {
+                m_mainWindow.showWarning(tr("Reshaping was canceled; the map is unchanged."));
+                return;
+            }
+            if (!result) {
+                m_mainWindow.showWarning(tr("Nothing to reshape in that selection."));
+                return;
+            }
+            onSuccess(result.value());
+        }
+
+        void onSuccess(const ReshapeData &data)
+        {
+            auto &mapData = deref(m_mainWindow.m_mapData);
+            const ReshapeStatistics &stats = data.result.stats;
+
+            switch (data.result.status) {
+            case ReshapeStatusEnum::Unchanged:
+                m_mainWindow.showWarning(tr("No better layout found; the selection is unchanged."));
+                return;
+            case ReshapeStatusEnum::InfeasibleWithCurrentBoundary:
+                // Saying so beats applying something malformed.
+                m_mainWindow.showWarning(
+                    tr("Cannot reshape this selection without colliding with the rooms around "
+                       "it. Try selecting a little more of the surrounding area."));
+                return;
+            case ReshapeStatusEnum::Improved:
+                break;
+            }
+
+            if (data.changes.empty() || !mapData.applyChanges(data.changes)) {
+                m_mainWindow.showWarning(tr("Failed to apply the reshape; the map is unchanged."));
+                return;
+            }
+
+            std::ostringstream oss;
+            AnsiOstream aos{oss};
+            aos << "Reshaped a scope of ";
+            aos.writeWithColor(green, data.scopeRooms);
+            aos << " room(s); moved ";
+            aos.writeWithColor(green, stats.roomsMoved);
+            aos << ".\n";
+            aos << "Layout score: ";
+            aos.writeWithColor(green, stats.scoreBefore);
+            aos << " -> ";
+            aos.writeWithColor(green, stats.scoreAfter);
+            aos << ", z levels: ";
+            aos.writeWithColor(green, stats.zLevelsBefore);
+            aos << " -> ";
+            aos.writeWithColor(green, stats.zLevelsAfter);
+            aos << ".\n";
+            qInfo().noquote() << mmqt::toQStringUtf8(oss.str());
+        }
+    };
+
+    const QString title = (mode == ReshapeModeEnum::Flatten) ? tr("Reshaping selection...")
+                                                             : tr("Reshaping selection in 3D...");
+    getAsyncIO().beginAsyncIO(std::make_unique<AsyncReshapeSelection>(*this,
+                                                                      m_roomSelection->getRoomIds(),
+                                                                      mode),
+                              title,
                               AsyncIOTypeEnum::Load);
     return true;
 }

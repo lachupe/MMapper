@@ -158,6 +158,18 @@ struct NODISCARD ReshapeWeights final
     /// rooms on one layer is the desired answer, not a defect.
     int64_t verticalDirection = 0;
 
+    /// Per level an up/down exit spans beyond one. Only a preference: MUME's
+    /// up and down do not correspond to a fixed change of level, so this
+    /// nudges a tower towards one storey per exit without insisting.
+    int64_t verticalLength = 0;
+
+    /// Per cell of horizontal offset between the ends of an up/down exit.
+    /// Rooms joined by a stair generally belong above one another.
+    ///
+    /// Zero when flattening, where the whole point is that they sit side by
+    /// side instead.
+    int64_t verticalAlignment = 0;
+
     /// Moving a room that must not move. A bug guard, not a trade-off.
     int64_t immovableMoved = 1'000'000;
 };

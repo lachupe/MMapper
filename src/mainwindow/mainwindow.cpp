@@ -988,6 +988,20 @@ void MainWindow::createActions()
             this,
             &MainWindow::slot_onDeleteRoomSelection);
 
+    reshapeRoomSelectionAct = new QAction(tr("Reshape Selected Rooms"), this);
+    reshapeRoomSelectionAct->setStatusTip(
+        tr("Tidy the selected rooms, collapsing layers where possible"));
+    connect(reshapeRoomSelectionAct, &QAction::triggered, this, [this]() {
+        std::ignore = slot_reshapeRoomSelection(ReshapeModeEnum::Flatten);
+    });
+
+    reshapeRoomSelection3dAct = new QAction(tr("Reshape Selected Rooms (3D)"), this);
+    reshapeRoomSelection3dAct->setStatusTip(
+        tr("Tidy the selected rooms, keeping their layers and honouring up/down exits"));
+    connect(reshapeRoomSelection3dAct, &QAction::triggered, this, [this]() {
+        std::ignore = slot_reshapeRoomSelection(ReshapeModeEnum::Volumetric);
+    });
+
     moveUpRoomSelectionAct = new QAction(QIcon(":/icons/roommoveup.png"),
                                          tr("Move Up Selected Rooms"),
                                          this);
@@ -1092,6 +1106,8 @@ void MainWindow::createActions()
     selectedRoomActGroup->setExclusive(false);
     selectedRoomActGroup->addAction(editRoomSelectionAct);
     selectedRoomActGroup->addAction(deleteRoomSelectionAct);
+    selectedRoomActGroup->addAction(reshapeRoomSelectionAct);
+    selectedRoomActGroup->addAction(reshapeRoomSelection3dAct);
     selectedRoomActGroup->addAction(moveUpRoomSelectionAct);
     selectedRoomActGroup->addAction(moveDownRoomSelectionAct);
     selectedRoomActGroup->addAction(mergeUpRoomSelectionAct);
@@ -1306,6 +1322,9 @@ void MainWindow::setupMenuBar()
     roomMenu->addAction(mouseMode.modeCreateRoomAct);
     roomMenu->addAction(editRoomSelectionAct);
     roomMenu->addAction(deleteRoomSelectionAct);
+    roomMenu->addAction(reshapeRoomSelectionAct);
+    roomMenu->addAction(reshapeRoomSelection3dAct);
+    roomMenu->addSeparator();
     roomMenu->addAction(moveUpRoomSelectionAct);
     roomMenu->addAction(moveDownRoomSelectionAct);
     roomMenu->addAction(mergeUpRoomSelectionAct);
@@ -1459,6 +1478,8 @@ void MainWindow::slot_showContextMenu(const QPoint &pos)
                 contextMenu.addAction(createRoomAct);
             } else {
                 contextMenu.addAction(editRoomSelectionAct);
+                contextMenu.addAction(reshapeRoomSelectionAct);
+                contextMenu.addAction(reshapeRoomSelection3dAct);
                 contextMenu.addAction(moveUpRoomSelectionAct);
                 contextMenu.addAction(moveDownRoomSelectionAct);
                 contextMenu.addAction(mergeUpRoomSelectionAct);

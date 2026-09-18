@@ -1688,4 +1688,133 @@ void TestMapReshape::nearSubcommandsDispatchTest()
     QCOMPARE(run("near reshape"), std::string());
 }
 
+void TestMapReshape::volumetricRebuildsTowerTest()
+{
+    mmqt::HideQDebug forThisTest;
+    // A five-storey tower drawn as a flat corridor, which is how such a
+    // place usually ends up on a map. In three dimensions it should come
+    // back as a tower: one storey per up exit.
+    SyntheticMap b;
+    for (uint32_t i = 0; i < 5; ++i) {
+        b.addRoom(i, Coordinate{static_cast<int>(i), 0, 0});
+    }
+    for (uint32_t i = 0; i + 1 < 5; ++i) {
+        b.linkBoth(i, ExitDirEnum::UP, i + 1);
+    }
+    const Map map = b.build();
+
+    ReshapeOptions options;
+    options.marginRings = 1;
+    RoomIdSet core;
+    for (uint32_t i = 0; i < 5; ++i) {
+        core.insert(internalId(map, i));
+    }
+    const MapReshapeGraph graph = MapReshapeGraph::build(map, core, options);
+    QCOMPARE(graph.countZLevels(), size_t(1));
+
+    ReshapeResult result;
+    const LayoutPositions solved = MapReshapeSolver::solvePositions(graph,
+                                                                    ReshapeSolverOptions::forMode(
+                                                                        ReshapeModeEnum::Volumetric),
+                                                                    result);
+
+    QCOMPARE(result.status, ReshapeStatusEnum::Improved);
+    QCOMPARE(result.stats.zLevelsAfter, size_t(5));
+    for (uint32_t i = 0; i + 1 < 5; ++i) {
+        const Coordinate lower = solved[scopeIndex(graph, map, i)];
+        const Coordinate upper = solved[scopeIndex(graph, map, i + 1)];
+        QCOMPARE(upper.z - lower.z, 1);
+    }
+}
+
+void TestMapReshape::volumetricStacksRoomsAboveEachOtherTest()
+{
+    mmqt::HideQDebug forThisTest;
+    // Rooms joined by a stair belong above one another, not merely higher.
+    SyntheticMap b;
+    b.addRoom(0, Coordinate{0, 0, 0});
+    b.addRoom(1, Coordinate{4, 3, 0});
+    b.linkBoth(0, ExitDirEnum::UP, 1);
+    const Map map = b.build();
+
+    ReshapeOptions options;
+    options.marginRings = 1;
+    const MapReshapeGraph graph = MapReshapeGraph::build(map, makeCore(map, {0, 1}), options);
+
+    ReshapeResult result;
+    const LayoutPositions solved = MapReshapeSolver::solvePositions(graph,
+                                                                    ReshapeSolverOptions::forMode(
+                                                                        ReshapeModeEnum::Volumetric),
+                                                                    result);
+
+    const Coordinate lower = solved[scopeIndex(graph, map, 0)];
+    const Coordinate upper = solved[scopeIndex(graph, map, 1)];
+    QCOMPARE(upper.z - lower.z, 1);
+    QCOMPARE(upper.x, lower.x);
+    QCOMPARE(upper.y, lower.y);
+}
+
+void TestMapReshape::volumetricKeepsHorizontalExitsOnOneLayerTest()
+{
+    mmqt::HideQDebug forThisTest;
+    // Height must not be invented where the exits do not ask for it: a
+    // corridor with no vertical exits stays on one layer however free
+    // layers are in this mode.
+    const Map map = buildChain(5);
+
+    ReshapeOptions options;
+    options.marginRings = 1;
+    const MapReshapeGraph graph = MapReshapeGraph::build(map,
+                                                         makeCore(map, {0, 1, 2, 3, 4}),
+                                                         options);
+
+    ReshapeResult result;
+    const LayoutPositions solved = MapReshapeSolver::solvePositions(graph,
+                                                                    ReshapeSolverOptions::forMode(
+                                                                        ReshapeModeEnum::Volumetric),
+                                                                    result);
+
+    const int z = solved.front().z;
+    for (const Coordinate &pos : solved) {
+        QCOMPARE(pos.z, z);
+    }
+    QCOMPARE(MapReshapeScorer::score(graph, solved, makeWeights(ReshapeModeEnum::Volumetric))
+                 .layerMismatch,
+             int64_t(0));
+}
+
+void TestMapReshape::volumetricIgnoresOriginalHeightTest()
+{
+    mmqt::HideQDebug forThisTest;
+    // Existing coordinates are a visualization, not evidence. Two rooms put
+    // on wildly wrong layers by some earlier edit must be free to travel as
+    // far as the exits require, so the prior on original height has to be
+    // weak enough not to strand them.
+    SyntheticMap b;
+    b.addRoom(0, Coordinate{0, 0, 0});
+    b.addRoom(1, Coordinate{1, 0, 9});
+    b.addRoom(2, Coordinate{2, 0, -7});
+    b.linkBoth(0, ExitDirEnum::EAST, 1);
+    b.linkBoth(1, ExitDirEnum::EAST, 2);
+    const Map map = b.build();
+
+    ReshapeOptions options;
+    options.marginRings = 1;
+    const MapReshapeGraph graph = MapReshapeGraph::build(map, makeCore(map, {0, 1, 2}), options);
+    QCOMPARE(graph.countZLevels(), size_t(3));
+
+    ReshapeResult result;
+    const LayoutPositions solved = MapReshapeSolver::solvePositions(graph,
+                                                                    ReshapeSolverOptions::forMode(
+                                                                        ReshapeModeEnum::Volumetric),
+                                                                    result);
+
+    // The exits are all horizontal, so the honest answer is one layer --
+    // even though reaching it means moving a room nine levels.
+    QCOMPARE(result.status, ReshapeStatusEnum::Improved);
+    const int z = solved[scopeIndex(graph, map, 0)].z;
+    QCOMPARE(solved[scopeIndex(graph, map, 1)].z, z);
+    QCOMPARE(solved[scopeIndex(graph, map, 2)].z, z);
+}
+
 QTEST_MAIN(TestMapReshape)

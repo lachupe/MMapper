@@ -9,6 +9,7 @@
 #include "../global/Signal2.h"
 #include "../global/macros.h"
 #include "../group/mmapper2group.h"
+#include "../map/MapReshapeTypes.h"
 #include "../mapdata/roomselection.h"
 #include "../mapstorage/MapDestination.h"
 #include "../mapstorage/MapSource.h"
@@ -263,6 +264,8 @@ private:
     QAction *deleteRoomSelectionAct = nullptr;
     QAction *deleteConnectionSelectionAct = nullptr;
 
+    QAction *reshapeRoomSelectionAct = nullptr;
+    QAction *reshapeRoomSelection3dAct = nullptr;
     QAction *moveUpRoomSelectionAct = nullptr;
     QAction *moveDownRoomSelectionAct = nullptr;
     QAction *mergeUpRoomSelectionAct = nullptr;
@@ -417,6 +420,7 @@ public slots:
     void slot_aboutQt();
 
     NODISCARD bool slot_generateBaseMap();
+    NODISCARD bool slot_reshapeRoomSelection(ReshapeModeEnum mode);
 
     void slot_log(const QString &, const QString &);
 
