@@ -10,6 +10,7 @@
 #include "../map/Map.h"
 #include "../map/MapReshapeApply.h"
 #include "../map/MapReshapeGraph.h"
+#include "../map/MapReshapeScaling.h"
 #include "../map/MapReshapeScorer.h"
 #include "../map/MapReshapeSolver.h"
 #include "../map/MapReshapeTypes.h"
@@ -142,6 +143,8 @@ void runInBackground(ReshapeJob &job, ProgressCounter &pc)
                << " (random, special or unmapped exits say nothing reliable about geometry)\n";
         }
         os << "z levels in use: " << graph.countZLevels() << "\n";
+
+        MapReshapeScaling::printReport(graph, positions, os);
 
         const LayoutScore score = MapReshapeScorer::score(graph, positions, weights);
         const int64_t layerCost = score.zLayers + score.layerMismatch;

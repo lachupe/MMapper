@@ -341,6 +341,8 @@ set(mmapper_SRCS
     map/MapReshapeApply.h
     map/MapReshapeGraph.cpp
     map/MapReshapeGraph.h
+    map/MapReshapeScaling.cpp
+    map/MapReshapeScaling.h
     map/MapReshapeScorer.cpp
     map/MapReshapeScorer.h
     map/MapReshapeSolver.cpp

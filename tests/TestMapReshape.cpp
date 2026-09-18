@@ -12,6 +12,7 @@
 #include "../src/map/Map.h"
 #include "../src/map/MapReshapeApply.h"
 #include "../src/map/MapReshapeGraph.h"
+#include "../src/map/MapReshapeScaling.h"
 #include "../src/map/MapReshapeScorer.h"
 #include "../src/map/MapReshapeSolver.h"
 #include "../src/map/MapReshapeTypes.h"
@@ -1815,6 +1816,113 @@ void TestMapReshape::volumetricIgnoresOriginalHeightTest()
     const int z = solved[scopeIndex(graph, map, 0)].z;
     QCOMPARE(solved[scopeIndex(graph, map, 1)].z, z);
     QCOMPARE(solved[scopeIndex(graph, map, 2)].z, z);
+}
+
+namespace {
+
+/// A dense knot of rooms: a small grid whose every room is joined to its
+/// neighbours, but laid out three cells apart because that is the only way
+/// the rigid grid could fit it. A city or a keep looks like this.
+NODISCARD Map buildCrampedBlock(const int side, const int spacing)
+{
+    SyntheticMap b;
+    const auto id = [side](int x, int y) { return static_cast<uint32_t>(y * side + x); };
+    for (int y = 0; y < side; ++y) {
+        for (int x = 0; x < side; ++x) {
+            b.addRoom(id(x, y), Coordinate{x * spacing, y * spacing, 0});
+        }
+    }
+    for (int y = 0; y < side; ++y) {
+        for (int x = 0; x + 1 < side; ++x) {
+            b.linkBoth(id(x, y), ExitDirEnum::EAST, id(x + 1, y));
+        }
+    }
+    for (int y = 0; y + 1 < side; ++y) {
+        for (int x = 0; x < side; ++x) {
+            b.linkBoth(id(x, y), ExitDirEnum::NORTH, id(x, y + 1));
+        }
+    }
+    return b.build();
+}
+
+NODISCARD MapReshapeGraph wholeMapGraph(const Map &map, const int side)
+{
+    ReshapeOptions options;
+    options.marginRings = 1;
+    RoomIdSet core;
+    for (int i = 0; i < side * side; ++i) {
+        core.insert(internalId(map, static_cast<uint32_t>(i)));
+    }
+    return MapReshapeGraph::build(map, core, options);
+}
+
+} // namespace
+
+void TestMapReshape::crampedGroupIsFlaggedForScalingTest()
+{
+    mmqt::HideQDebug forThisTest;
+    const int side = 4;
+    const Map map = buildCrampedBlock(side, 3);
+    const MapReshapeGraph graph = wholeMapGraph(map, side);
+    const LayoutPositions positions = MapReshapeScorer::currentPositions(graph);
+
+    const auto candidates = MapReshapeScaling::findCandidates(graph, positions);
+    QCOMPARE(candidates.size(), size_t(1));
+    QCOMPARE(candidates.front().rooms.size(), size_t(side * side));
+    // Every exit inside the block spans three cells, so drawing it at a
+    // third of the size would make each read as one again.
+    QCOMPARE(candidates.front().averageEdgeLength, 3.0);
+    QVERIFY(candidates.front().suggestedScale() < 0.4);
+}
+
+void TestMapReshape::naturallySparseGroupIsNotFlaggedTest()
+{
+    mmqt::HideQDebug forThisTest;
+    // Sparseness on its own proves nothing. A road is spread out across the
+    // map yet its exits are one cell each, so it is not cramped and must not
+    // be flagged -- otherwise every long road would be proposed for
+    // shrinking.
+    SyntheticMap b;
+    for (uint32_t i = 0; i < 20; ++i) {
+        b.addRoom(i, Coordinate{static_cast<int>(i), 0, 0});
+    }
+    for (uint32_t i = 0; i + 1 < 20; ++i) {
+        b.linkBoth(i, ExitDirEnum::EAST, i + 1);
+    }
+    const Map map = b.build();
+
+    ReshapeOptions options;
+    options.marginRings = 1;
+    RoomIdSet core;
+    for (uint32_t i = 0; i < 20; ++i) {
+        core.insert(internalId(map, i));
+    }
+    const MapReshapeGraph graph = MapReshapeGraph::build(map, core, options);
+
+    QVERIFY(
+        MapReshapeScaling::findCandidates(graph, MapReshapeScorer::currentPositions(graph)).empty());
+}
+
+void TestMapReshape::suggestedScaleShrinksTheFootprintTest()
+{
+    mmqt::HideQDebug forThisTest;
+    const int side = 5;
+    const Map map = buildCrampedBlock(side, 4);
+    const MapReshapeGraph graph = wholeMapGraph(map, side);
+    const LayoutPositions positions = MapReshapeScorer::currentPositions(graph);
+
+    const auto candidates = MapReshapeScaling::findCandidates(graph, positions);
+    QCOMPARE(candidates.size(), size_t(1));
+    const ScalingCandidate &candidate = candidates.front();
+
+    // The block currently spans 17x17 cells for 25 rooms. Drawn at the
+    // suggested scale it needs a footprint barely larger than the rooms
+    // themselves, which is what a local space's portal would be sized to.
+    QCOMPARE(candidate.spanWidth, 17);
+    QCOMPARE(candidate.spanHeight, 17);
+    QVERIFY(candidate.scaledWidth() < candidate.spanWidth);
+    QVERIFY(candidate.scaledHeight() < candidate.spanHeight);
+    QVERIFY(candidate.scaledWidth() <= side + 1);
 }
 
 QTEST_MAIN(TestMapReshape)

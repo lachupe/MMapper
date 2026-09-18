@@ -81,6 +81,11 @@ private Q_SLOTS:
     static void volumetricKeepsHorizontalExitsOnOneLayerTest();
     static void volumetricIgnoresOriginalHeightTest();
 
+    // Detecting groups that want drawing at a smaller scale.
+    static void crampedGroupIsFlaggedForScalingTest();
+    static void naturallySparseGroupIsNotFlaggedTest();
+    static void suggestedScaleShrinksTheFootprintTest();
+
     // Z handling: the two modes.
     static void flattenCollapsesUnnecessaryLayerTest();
     static void flattenLeavesHandFlattenedStackAloneTest();
