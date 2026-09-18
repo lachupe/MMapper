@@ -785,7 +785,7 @@ LayoutPositions MapReshapeSolver::solvePositions(const MapReshapeGraph &graph,
         // room count roughly constant.
         constexpr size_t TOTAL_WORK = 5'000'000;
         constexpr size_t MIN_BUDGET = 2'000;
-        constexpr size_t MAX_BUDGET = 20'000;
+        constexpr size_t MAX_BUDGET = 3'000;
         refinementBudget = std::clamp(TOTAL_WORK / std::max<size_t>(1, rooms.size()),
                                       MIN_BUDGET,
                                       MAX_BUDGET);

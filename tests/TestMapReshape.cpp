@@ -2207,4 +2207,44 @@ void TestMapReshape::twoRoomsBelowDoNotDragASelectionTest()
     QVERIFY2(nearest.y > entrance.y, "and remain north of it, as the exit says");
 }
 
+void TestMapReshape::areaOfCurrentRoomIsCollectedTest()
+{
+    mmqt::HideQDebug forThisTest;
+    // What both the menu action and the command do to turn "the area I am
+    // standing in" into a set of rooms. Getting this wrong is quiet: the
+    // reshape simply reports that nothing could be improved, because it was
+    // handed one room or none rather than the area.
+    SyntheticMap b;
+    for (uint32_t i = 0; i < 4; ++i) {
+        b.addRoom(i, Coordinate{static_cast<int>(i), 0, 0}, "Bree");
+    }
+    for (uint32_t i = 4; i < 6; ++i) {
+        b.addRoom(i, Coordinate{static_cast<int>(i), 0, 0}, "Combe");
+    }
+    // A room with no area at all, which is its own group rather than part
+    // of any named one.
+    b.addRoom(9, Coordinate{9, 0, 0});
+    for (uint32_t i = 0; i + 1 < 6; ++i) {
+        b.linkBoth(i, ExitDirEnum::EAST, i + 1);
+    }
+    const Map map = b.build();
+
+    const auto areaOf = [&map](const uint32_t externalId) {
+        return map.getRoomHandle(ExternalRoomId{externalId}).getArea();
+    };
+
+    QCOMPARE(MapReshapeGraph::collectArea(map, areaOf(1)).size(), size_t(4));
+    QCOMPARE(MapReshapeGraph::collectArea(map, areaOf(4)).size(), size_t(2));
+    QCOMPARE(MapReshapeGraph::collectArea(map, areaOf(9)).size(), size_t(1));
+    QVERIFY(MapReshapeGraph::collectArea(map, makeRoomArea("Nowhere")).empty());
+
+    // And the set really is the rooms of that area, not merely the right
+    // number of them.
+    const RoomIdSet bree = MapReshapeGraph::collectArea(map, areaOf(1));
+    for (uint32_t i = 0; i < 4; ++i) {
+        QVERIFY(bree.contains(internalId(map, i)));
+    }
+    QVERIFY(!bree.contains(internalId(map, 4)));
+}
+
 QTEST_MAIN(TestMapReshape)

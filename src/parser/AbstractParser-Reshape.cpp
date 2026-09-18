@@ -3,6 +3,7 @@
 
 #include "../global/AnsiOstream.h"
 #include "../global/AsyncTasks.h"
+#include "../global/ConfigConsts.h"
 #include "../global/SendToUser.h"
 #include "../global/progresscounter.h"
 #include "../global/thread_utils.h"
@@ -129,6 +130,13 @@ void runInBackground(ReshapeJob &job, ProgressCounter &pc)
     }
 
     os << "Scope: " << job.scopeLabel << " (" << to_string_view(job.mode) << ")\n";
+    if constexpr (IS_DEBUG_BUILD) {
+        // Worth saying out loud: the same reshape takes well under a second
+        // in a release build and the better part of a minute here, which is
+        // easily mistaken for the reshaper having gone wrong.
+        os << "NOTE: this is a debug build with sanitizers, roughly forty "
+              "times slower than a release build.\n";
+    }
     describeScope(os, graph);
 
     const ReshapeWeights weights = makeWeights(job.mode);

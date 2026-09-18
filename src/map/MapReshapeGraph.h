@@ -63,6 +63,13 @@ public:
     /// world at once, which is neither fast nor reviewable.
     NODISCARD static RoomIdSet collectWithinRadius(const Map &map, RoomId origin, int radius);
 
+    /// Every room of the named area, empty when there is no such area.
+    ///
+    /// Shared so the command and the menu action gather rooms identically;
+    /// the two had separate copies of this and could disagree about what an
+    /// area contains.
+    NODISCARD static RoomIdSet collectArea(const Map &map, const RoomArea &area);
+
     /// Convenience overload: core is every room of the named area.
     /// Returns nullopt when the area does not exist or is empty.
     NODISCARD static std::optional<MapReshapeGraph> buildForArea(const Map &map,

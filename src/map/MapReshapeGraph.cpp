@@ -351,16 +351,23 @@ RoomIdSet MapReshapeGraph::collectWithinRadius(const Map &map, const RoomId orig
     return result;
 }
 
+RoomIdSet MapReshapeGraph::collectArea(const Map &map, const RoomArea &area)
+{
+    RoomIdSet rooms;
+    if (const ImmUnorderedRoomIdSet *const areaRooms = map.getWorld().findAreaRoomSet(area)) {
+        areaRooms->for_each([&rooms](const RoomId id) { rooms.insert(id); });
+    }
+    return rooms;
+}
+
 std::optional<MapReshapeGraph> MapReshapeGraph::buildForArea(const Map &map,
                                                              const RoomArea &area,
                                                              const ReshapeOptions &options)
 {
-    const ImmUnorderedRoomIdSet *const areaRooms = map.getWorld().findAreaRoomSet(area);
-    if (areaRooms == nullptr || areaRooms->size() == 0) {
+    const RoomIdSet core = collectArea(map, area);
+    if (core.empty()) {
         return std::nullopt;
     }
-    RoomIdSet core;
-    areaRooms->for_each([&core](const RoomId id) { core.insert(id); });
     return build(map, core, options);
 }
 

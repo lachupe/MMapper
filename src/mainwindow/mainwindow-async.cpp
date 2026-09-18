@@ -914,11 +914,7 @@ bool MainWindow::slot_reshapeCurrentArea(const ReshapeModeEnum mode)
     }
 
     const RoomArea area = here.getArea();
-    RoomIdSet rooms;
-    if (const auto *const inArea = deref(m_mapData).getCurrentMap().getWorld().findAreaRoomSet(
-            area)) {
-        inArea->for_each([&rooms](const RoomId id) { rooms.insert(id); });
-    }
+    RoomIdSet rooms = MapReshapeGraph::collectArea(deref(m_mapData).getCurrentMap(), area);
     if (rooms.empty()) {
         showWarning(tr("This room does not belong to an area with any rooms in it."));
         return false;
@@ -1033,7 +1029,13 @@ bool MainWindow::beginReshape(RoomIdSet rooms, const QString &what, const Reshap
 
             switch (data.result.status) {
             case ReshapeStatusEnum::Unchanged:
-                m_mainWindow.showWarning(tr("No better layout found; the selection is unchanged."));
+                // The room count matters here. A room belonging to no area
+                // gives a scope of one, which solves instantly and reports
+                // exactly what an already-tidy area reports; without the
+                // number the two are indistinguishable.
+                m_mainWindow.showWarning(
+                    tr("No better layout found for these %1 room(s); nothing was changed.")
+                        .arg(data.scopeRooms));
                 return;
             case ReshapeStatusEnum::InfeasibleWithCurrentBoundary:
                 // Saying so beats applying something malformed.
