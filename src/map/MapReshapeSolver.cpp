@@ -423,16 +423,78 @@ NODISCARD std::vector<std::vector<size_t>> horizontalGroups(const MapReshapeGrap
     return groups;
 }
 
-/// Move a whole horizontal group one layer up or down.
-NODISCARD LayoutPositions liftedGroup(const LayoutPositions &positions,
-                                      const std::vector<size_t> &group,
-                                      const int dz)
+/// Move a whole horizontal group by a fixed offset.
+NODISCARD LayoutPositions translatedGroup(const LayoutPositions &positions,
+                                          const std::vector<size_t> &group,
+                                          const Coordinate &offset)
 {
     LayoutPositions result = positions;
     for (const size_t index : group) {
-        result[index].z += dz;
+        result[index] = result[index] + offset;
     }
     return result;
+}
+
+/// Where a group would sit if it lined up under whatever it hangs from.
+///
+/// A place reached by going down usually belongs beneath the room the stair
+/// came from, but once it has been moved to its own layer it is joined to
+/// the rest of the map only by that vertical exit -- so it forms its own
+/// horizontal group, and no single-room move can bring it across without
+/// tearing its own exits apart. Nudging such a group one cell at a time
+/// would take as many structural rounds as there are cells between them, so
+/// the offset is computed and offered directly: average, over every vertical
+/// exit leaving the group, the horizontal distance to the room at the far
+/// end. Returns nothing when the group has no vertical exits to line up
+/// with, or is already lined up.
+NODISCARD std::optional<Coordinate> alignmentOffset(const MapReshapeGraph &graph,
+                                                    const LayoutPositions &positions,
+                                                    const std::vector<size_t> &group)
+{
+    std::vector<bool> inGroup(positions.size(), false);
+    for (const size_t index : group) {
+        inGroup[index] = true;
+    }
+
+    int64_t sumX = 0;
+    int64_t sumY = 0;
+    int64_t count = 0;
+    for (const LayoutEdge &edge : graph.getVerticalEdges()) {
+        const bool fromInside = inGroup[edge.fromIndex];
+        const bool toInside = inGroup[edge.toIndex];
+        if (fromInside == toInside) {
+            continue; // wholly inside or wholly outside; neither anchors it
+        }
+        const size_t inside = fromInside ? edge.fromIndex : edge.toIndex;
+        const size_t outside = fromInside ? edge.toIndex : edge.fromIndex;
+        if (positions[inside].z == positions[outside].z) {
+            // Both still on one layer, so this stair has not been given any
+            // height yet. Sliding the group on top of its anchor now would
+            // only stack them on the same cell; the offset is worth applying
+            // once the two are genuinely above and below each other.
+            continue;
+        }
+        sumX += positions[outside].x - positions[inside].x;
+        sumY += positions[outside].y - positions[inside].y;
+        ++count;
+    }
+    if (count == 0) {
+        return std::nullopt;
+    }
+
+    // Rounded to nearest rather than truncated, so a group hanging from
+    // several stairs settles between them instead of drifting short.
+    const auto divideRounded = [](const int64_t numerator, const int64_t denominator) {
+        const int64_t doubled = 2 * numerator;
+        const int64_t rounded = (doubled >= 0) ? (doubled + denominator) / (2 * denominator)
+                                               : -((-doubled + denominator) / (2 * denominator));
+        return static_cast<int>(rounded);
+    };
+    const Coordinate offset{divideRounded(sumX, count), divideRounded(sumY, count), 0};
+    if (offset.x == 0 && offset.y == 0) {
+        return std::nullopt;
+    }
+    return offset;
 }
 
 NODISCARD int64_t totalScore(const MapReshapeGraph &graph,
@@ -560,11 +622,33 @@ NODISCARD std::optional<LayoutPositions> bestStructuralShift(
     };
     std::vector<Candidate> shortlist;
 
+    const auto offer = [&](LayoutPositions candidate) {
+        if (candidate == current) {
+            return;
+        }
+        const LayoutScore score = MapReshapeScorer::score(graph, candidate, weights);
+        shortlist.push_back(Candidate{score.total() - score.collision, std::move(candidate)});
+    };
+
     for (const std::vector<size_t> &group : groups) {
-        for (const int dz : {1, -1}) {
-            LayoutPositions candidate = liftedGroup(current, group, dz);
-            const LayoutScore score = MapReshapeScorer::score(graph, candidate, weights);
-            shortlist.push_back(Candidate{score.total() - score.collision, std::move(candidate)});
+        // Offered for lone rooms as well as real groups. These look like
+        // duplicates of what the inner search already tries, and are not: a
+        // candidate raised here is refined afterwards, so it can be accepted
+        // for where it leads rather than for what it costs immediately,
+        // which is the only way out of a spot where every single step is a
+        // loss. Removing them for lone rooms cost a five-storey tower two of
+        // its floors.
+        for (const Coordinate &step : UNIT_MOVES) {
+            if (options.freezeZ && step.z != 0) {
+                continue;
+            }
+            offer(translatedGroup(current, group, step));
+        }
+        // Straight to where its vertical exits say it belongs, which no
+        // number of single-cell steps would reach in reasonable time. Worth
+        // offering for a lone room too, since the distance may be large.
+        if (const auto offset = alignmentOffset(graph, current, group)) {
+            offer(translatedGroup(current, group, *offset));
         }
     }
 
@@ -575,9 +659,7 @@ NODISCARD std::optional<LayoutPositions> bestStructuralShift(
                 if (candidate == current) {
                     continue;
                 }
-                const LayoutScore score = MapReshapeScorer::score(graph, candidate, weights);
-                shortlist.push_back(
-                    Candidate{score.total() - score.collision, std::move(candidate)});
+                offer(std::move(candidate));
             }
         }
     }
@@ -657,7 +739,8 @@ LayoutPositions MapReshapeSolver::solvePositions(const MapReshapeGraph &graph,
     SearchState state{graph, options.weights};
     size_t moves = 0;
     size_t iterations = 0;
-    const size_t iterationLimit = options.maxSweeps * std::max<size_t>(1, rooms.size());
+    const size_t iterationLimit = std::max(options.minIterations,
+                                           options.maxSweeps * std::max<size_t>(1, rooms.size()));
     ReshapeSolverOptions effective = options;
     if (effective.maxMoves == 0) {
         // Scaled to the scope so that every room can actually travel, rather

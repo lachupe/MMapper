@@ -77,6 +77,7 @@ private Q_SLOTS:
     static void liftingOneRoomAloneIsRejectedTest();
     static void flattenCollapsesStoreyOntoParentTest();
     static void volumetricRebuildsTowerTest();
+    static void hangingAreaMovesUnderItsEntranceTest();
     static void volumetricStacksRoomsAboveEachOtherTest();
     static void volumetricKeepsHorizontalExitsOnOneLayerTest();
     static void volumetricIgnoresOriginalHeightTest();

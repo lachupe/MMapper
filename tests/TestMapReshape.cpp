@@ -1525,6 +1525,9 @@ void TestMapReshape::solveRespectsIterationBudgetTest()
 
     ReshapeSolverOptions options = ReshapeSolverOptions::forMode(ReshapeModeEnum::Flatten);
     options.maxSweeps = 3;
+    // The floor that normally protects small scopes is lifted here, so the
+    // sweep cap is the thing under test rather than the floor.
+    options.minIterations = 0;
     const size_t cap = options.maxSweeps * graph.getRooms().size();
 
     ReshapeResult result;
@@ -1923,6 +1926,63 @@ void TestMapReshape::suggestedScaleShrinksTheFootprintTest()
     QVERIFY(candidate.scaledWidth() < candidate.spanWidth);
     QVERIFY(candidate.scaledHeight() < candidate.spanHeight);
     QVERIFY(candidate.scaledWidth() <= side + 1);
+}
+
+void TestMapReshape::hangingAreaMovesUnderItsEntranceTest()
+{
+    mmqt::HideQDebug forThisTest;
+    // The shape a cellar or a mine usually has on a map: a surface room,
+    // and the place below it drawn well off to the north because that is
+    // where there happened to be space. The two are joined only by the way
+    // down.
+    //
+    // Giving the lower place its own layer is not enough on its own -- it
+    // also has to come back over to sit beneath the room it hangs from, and
+    // no single-room move can do that without tearing its own exits apart.
+    SyntheticMap b;
+    b.addRoom(0, Coordinate{0, 0, 0});
+    for (uint32_t i = 1; i <= 6; ++i) {
+        b.addRoom(i, Coordinate{static_cast<int>(i) - 1, 10, 0});
+    }
+    for (uint32_t i = 1; i + 1 <= 6; ++i) {
+        b.linkBoth(i, ExitDirEnum::EAST, i + 1);
+    }
+    b.linkBoth(0, ExitDirEnum::DOWN, 1);
+    const Map map = b.build();
+
+    ReshapeOptions options;
+    options.marginRings = 1;
+    RoomIdSet core;
+    for (uint32_t i = 0; i <= 6; ++i) {
+        core.insert(internalId(map, i));
+    }
+    const MapReshapeGraph graph = MapReshapeGraph::build(map, core, options);
+
+    ReshapeResult result;
+    const LayoutPositions solved = MapReshapeSolver::solvePositions(graph,
+                                                                    ReshapeSolverOptions::forMode(
+                                                                        ReshapeModeEnum::Volumetric),
+                                                                    result);
+
+    QCOMPARE(result.status, ReshapeStatusEnum::Improved);
+
+    const Coordinate entrance = solved[scopeIndex(graph, map, 0)];
+    const Coordinate landing = solved[scopeIndex(graph, map, 1)];
+
+    // Down leads down...
+    QVERIFY2(landing.z < entrance.z, "a down exit should lead downwards");
+    // ...and lands directly beneath the room it came from, rather than ten
+    // cells away across the map.
+    QCOMPARE(landing.x, entrance.x);
+    QCOMPARE(landing.y, entrance.y);
+
+    // The lower place travelled as one piece: still a straight row.
+    for (uint32_t i = 1; i <= 6; ++i) {
+        const Coordinate room = solved[scopeIndex(graph, map, i)];
+        QCOMPARE(room.y, landing.y);
+        QCOMPARE(room.z, landing.z);
+        QCOMPARE(room.x, landing.x + static_cast<int>(i) - 1);
+    }
 }
 
 QTEST_MAIN(TestMapReshape)

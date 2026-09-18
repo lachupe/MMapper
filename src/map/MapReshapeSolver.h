@@ -32,6 +32,16 @@ struct NODISCARD ReshapeSolverOptions final
     /// shift, which share this budget rather than each getting their own.
     size_t maxSweeps = 60;
 
+    /// Floor under the total iteration budget, for scopes too small for
+    /// maxSweeps times the room count to mean anything.
+    ///
+    /// Every search shares one budget, look-ahead included, so a handful of
+    /// rooms would otherwise get a few hundred iterations for the whole
+    /// solve -- enough to explore almost nothing. A five-room tower was
+    /// stopping two floors short for exactly this reason. Iterations on a
+    /// small scope cost almost nothing, so the floor is cheap.
+    size_t minIterations = 20'000;
+
     /// Keep every room on its current layer. Both modes need this off --
     /// flattening means moving rooms down, and volumetric layout means
     /// moving them up -- so it exists only to isolate the horizontal search
