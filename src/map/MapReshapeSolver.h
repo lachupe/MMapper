@@ -29,6 +29,36 @@ struct NODISCARD ReshapeSolverOptions final
     /// single rooms nudged. Off only for testing the unit-move search in
     /// isolation.
     bool allowStructuralMoves = true;
+
+    /// How many candidate shifts to look ahead on per round.
+    ///
+    /// Judging a shift means letting unit moves settle around it first, which
+    /// costs roughly as much as a small solve. An area offers one candidate
+    /// per occupied row and column in each direction, so refining all of them
+    /// dominates the runtime: measured on a 900-room lattice, unbounded
+    /// look-ahead took 26 seconds against 87 milliseconds for unit moves
+    /// alone. Candidates are ranked by their immediate score and only the
+    /// most promising are explored. That ranking is a weak predictor -- the
+    /// whole reason look-ahead exists is that the best shift usually looks
+    /// slightly bad at first -- so this trades some quality for bounded time,
+    /// and the bound is deliberately generous.
+    size_t maxStructuralCandidates = 32;
+
+    /// Total look-aheads allowed across the whole solve, or 0 to scale it to
+    /// the size of the area.
+    ///
+    /// Capping candidates per round is not enough on its own: exploring the
+    /// most promising ones first means more rounds succeed, so the solve runs
+    /// longer rather than shorter. This bounds the expensive operation
+    /// directly, whichever round it happens in.
+    ///
+    /// A fixed budget suits one size of area and not others, because each
+    /// look-ahead costs roughly in proportion to the room count while small
+    /// areas need many more of them to grind a layout down. Measured on
+    /// lattices, a flat budget of 120 left a 900-room area's result
+    /// unchanged but made a 100-room area markedly worse. Scaling the budget
+    /// inversely with room count keeps total work roughly constant instead.
+    size_t maxStructuralRefinements = 0;
 };
 
 /// Local search over room positions.

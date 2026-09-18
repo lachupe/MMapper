@@ -85,6 +85,19 @@ void AbstractParser::doMapAreaReshape(AnsiOstream &os,
             os << "ignored exits: " << ignored.size()
                << " (random, special or unmapped exits say nothing reliable about geometry)\n";
         }
+
+        // The z terms usually dominate the total, and while this milestone
+        // keeps rooms on their own layer none of it can be acted on. Saying so
+        // avoids the score looking barely improved after a reshape that fixed
+        // everything it was actually allowed to touch.
+        const LayoutScore score = MapReshapeScorer::score(*graph,
+                                                          MapReshapeScorer::currentPositions(
+                                                              *graph));
+        const int64_t frozen = score.zLayers + score.zMovement + score.layerMismatch;
+        if (frozen != 0) {
+            os << "Of that, " << frozen << " comes from z layers, which this version does not "
+               << "change; " << (score.total() - frozen) << " is what a reshape can address.\n";
+        }
         return;
     }
 

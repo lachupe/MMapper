@@ -5,6 +5,7 @@
 
 #include "ExitDirection.h"
 
+#include <algorithm>
 #include <array>
 #include <cassert>
 #include <cstdlib>
@@ -388,49 +389,67 @@ NODISCARD std::optional<LayoutPositions> bestStructuralShift(const MapReshapeGra
                                                              const LayoutPositions &current,
                                                              size_t &moves,
                                                              size_t &iterations,
+                                                             size_t &refinementBudget,
                                                              const size_t iterationLimit)
 {
     const ReshapeWeights &weights = options.weights;
     const LayoutScore baseScore = MapReshapeScorer::score(graph, current, weights);
     const int64_t base = baseScore.total();
 
-    std::optional<LayoutPositions> best;
-    int64_t bestScore = base;
+    // Shortlist first. Scoring a shift is cheap; refining one is not, so
+    // rank every candidate by its immediate score and look ahead only on the
+    // most promising. Candidates that introduce collisions are dropped here:
+    // hill climbing will not walk a room back out through an occupied cell,
+    // so refining from an overlapping start is wasted work.
+    struct NODISCARD Candidate final
+    {
+        int64_t immediateScore = 0;
+        LayoutPositions positions;
+    };
+    std::vector<Candidate> shortlist;
 
     for (const ShiftAxisEnum axis : {ShiftAxisEnum::X, ShiftAxisEnum::Y}) {
         for (const int threshold : cutPoints(graph, current, axis)) {
             for (const int delta : {1, -1}) {
-                if (iterations >= iterationLimit || moves >= options.maxMoves) {
-                    return best;
-                }
                 LayoutPositions candidate = shifted(graph, current, axis, threshold, delta);
                 if (candidate == current) {
                     continue;
                 }
-                if (MapReshapeScorer::score(graph, candidate, weights).collision
-                    > baseScore.collision) {
+                const LayoutScore score = MapReshapeScorer::score(graph, candidate, weights);
+                if (score.collision > baseScore.collision) {
                     continue;
                 }
-
-                SearchState trial{graph, weights};
-                trial.reset(std::move(candidate));
-                size_t trialMoves = 0;
-                size_t trialIterations = 0;
-                refineWithUnitMoves(graph,
-                                    options,
-                                    trial,
-                                    trialMoves,
-                                    trialIterations,
-                                    iterationLimit);
-                iterations += trialIterations + 1;
-
-                const int64_t score = MapReshapeScorer::score(graph, trial.positions(), weights)
-                                          .total();
-                if (score < bestScore) {
-                    bestScore = score;
-                    best = trial.positions();
-                }
+                shortlist.push_back(Candidate{score.total(), std::move(candidate)});
             }
+        }
+    }
+
+    const size_t budget = std::min(shortlist.size(), options.maxStructuralCandidates);
+    std::partial_sort(shortlist.begin(),
+                      shortlist.begin() + static_cast<std::ptrdiff_t>(budget),
+                      shortlist.end(),
+                      [](const Candidate &a, const Candidate &b) {
+                          return a.immediateScore < b.immediateScore;
+                      });
+
+    std::optional<LayoutPositions> best;
+    int64_t bestScore = base;
+    for (size_t i = 0; i < budget; ++i) {
+        if (iterations >= iterationLimit || moves >= options.maxMoves || refinementBudget == 0) {
+            break;
+        }
+        --refinementBudget;
+        SearchState trial{graph, weights};
+        trial.reset(std::move(shortlist[i].positions));
+        size_t trialMoves = 0;
+        size_t trialIterations = 0;
+        refineWithUnitMoves(graph, options, trial, trialMoves, trialIterations, iterationLimit);
+        iterations += trialIterations + 1;
+
+        const int64_t score = MapReshapeScorer::score(graph, trial.positions(), weights).total();
+        if (score < bestScore) {
+            bestScore = score;
+            best = trial.positions();
         }
     }
     if (best) {
@@ -483,12 +502,25 @@ LayoutPositions MapReshapeSolver::solvePositions(const MapReshapeGraph &graph,
     // which is the only way to make space that is not already there. A
     // successful shift opens up new local improvements, so the pair repeats.
     refineWithUnitMoves(graph, options, state, moves, iterations, iterationLimit);
-    while (options.allowStructuralMoves && moves < options.maxMoves && iterations < iterationLimit) {
+    size_t refinementBudget = options.maxStructuralRefinements;
+    if (refinementBudget == 0) {
+        // Each look-ahead costs about one small solve, so keep budget times
+        // room count roughly constant.
+        constexpr size_t TOTAL_WORK = 60'000;
+        constexpr size_t MIN_BUDGET = 32;
+        constexpr size_t MAX_BUDGET = 512;
+        refinementBudget = std::clamp(TOTAL_WORK / std::max<size_t>(1, rooms.size()),
+                                      MIN_BUDGET,
+                                      MAX_BUDGET);
+    }
+    while (options.allowStructuralMoves && moves < options.maxMoves && iterations < iterationLimit
+           && refinementBudget > 0) {
         auto shift = bestStructuralShift(graph,
                                          options,
                                          state.positions(),
                                          moves,
                                          iterations,
+                                         refinementBudget,
                                          iterationLimit);
         if (!shift) {
             break;
