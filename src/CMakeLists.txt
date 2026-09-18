@@ -337,6 +337,9 @@ set(mmapper_SRCS
     map/Map.h
     map/MapConsistencyError.cpp
     map/MapConsistencyError.h
+    map/MapReshapeGraph.cpp
+    map/MapReshapeGraph.h
+    map/MapReshapeTypes.h
     map/ParseTree.cpp
     map/ParseTree.h
     map/PromptFlags.cpp

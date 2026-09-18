@@ -281,6 +281,31 @@ set_target_properties(
 )
 add_test(NAME TestMap COMMAND TestMap)
 
+# MapReshape
+set(TestMapReshape_SRCS
+        TestMapReshape.cpp
+        TestMapReshape.h
+)
+add_executable(TestMapReshape ${TestMapReshape_SRCS})
+add_dependencies(TestMapReshape mm_test mm_global mm_map)
+target_link_libraries(TestMapReshape
+        mm_map
+        mm_test
+        mm_global
+        Qt6::Gui
+        Qt6::Network
+        Qt6::Test
+        Qt6::Widgets
+        coverage_config)
+set_target_properties(
+        TestMapReshape PROPERTIES
+        CXX_STANDARD 20
+        CXX_STANDARD_REQUIRED ON
+        CXX_EXTENSIONS OFF
+        COMPILE_FLAGS "${WARNING_FLAGS}"
+)
+add_test(NAME TestMapReshape COMMAND TestMapReshape)
+
 # Adventure
 set(adventure_SRCS
         ../src/adventure/AdventureLogModel.cpp
