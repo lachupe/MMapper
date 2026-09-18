@@ -988,6 +988,20 @@ void MainWindow::createActions()
             this,
             &MainWindow::slot_onDeleteRoomSelection);
 
+    reshapeCurrentAreaAct = new QAction(tr("Reshape This Area"), this);
+    reshapeCurrentAreaAct->setStatusTip(
+        tr("Tidy the whole area you are standing in, collapsing layers where possible"));
+    connect(reshapeCurrentAreaAct, &QAction::triggered, this, [this]() {
+        std::ignore = slot_reshapeCurrentArea(ReshapeModeEnum::Flatten);
+    });
+
+    reshapeCurrentArea3dAct = new QAction(tr("Reshape This Area (3D)"), this);
+    reshapeCurrentArea3dAct->setStatusTip(
+        tr("Tidy the whole area you are standing in, rebuilding its height from up/down exits"));
+    connect(reshapeCurrentArea3dAct, &QAction::triggered, this, [this]() {
+        std::ignore = slot_reshapeCurrentArea(ReshapeModeEnum::Volumetric);
+    });
+
     reshapeRoomSelectionAct = new QAction(tr("Reshape Selected Rooms"), this);
     reshapeRoomSelectionAct->setStatusTip(
         tr("Tidy the selected rooms, collapsing layers where possible"));
@@ -1322,6 +1336,9 @@ void MainWindow::setupMenuBar()
     roomMenu->addAction(mouseMode.modeCreateRoomAct);
     roomMenu->addAction(editRoomSelectionAct);
     roomMenu->addAction(deleteRoomSelectionAct);
+    roomMenu->addAction(reshapeCurrentAreaAct);
+    roomMenu->addAction(reshapeCurrentArea3dAct);
+    roomMenu->addSeparator();
     roomMenu->addAction(reshapeRoomSelectionAct);
     roomMenu->addAction(reshapeRoomSelection3dAct);
     roomMenu->addSeparator();
@@ -1478,6 +1495,8 @@ void MainWindow::slot_showContextMenu(const QPoint &pos)
                 contextMenu.addAction(createRoomAct);
             } else {
                 contextMenu.addAction(editRoomSelectionAct);
+                contextMenu.addAction(reshapeCurrentAreaAct);
+                contextMenu.addAction(reshapeCurrentArea3dAct);
                 contextMenu.addAction(reshapeRoomSelectionAct);
                 contextMenu.addAction(reshapeRoomSelection3dAct);
                 contextMenu.addAction(moveUpRoomSelectionAct);

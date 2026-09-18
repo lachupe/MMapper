@@ -264,6 +264,8 @@ private:
     QAction *deleteRoomSelectionAct = nullptr;
     QAction *deleteConnectionSelectionAct = nullptr;
 
+    QAction *reshapeCurrentAreaAct = nullptr;
+    QAction *reshapeCurrentArea3dAct = nullptr;
     QAction *reshapeRoomSelectionAct = nullptr;
     QAction *reshapeRoomSelection3dAct = nullptr;
     QAction *moveUpRoomSelectionAct = nullptr;
@@ -421,7 +423,12 @@ public slots:
 
     NODISCARD bool slot_generateBaseMap();
     NODISCARD bool slot_reshapeRoomSelection(ReshapeModeEnum mode);
+    NODISCARD bool slot_reshapeCurrentArea(ReshapeModeEnum mode);
 
+private:
+    NODISCARD bool beginReshape(RoomIdSet rooms, const QString &what, ReshapeModeEnum mode);
+
+public:
     void slot_log(const QString &, const QString &);
 
     void slot_onModeConnectionSelect();

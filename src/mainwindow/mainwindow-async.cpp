@@ -17,6 +17,7 @@
 #include "../map/MapReshapeGraph.h"
 #include "../map/MapReshapeSolver.h"
 #include "../map/MapReshapeTypes.h"
+#include "../map/World.h"
 #include "../mapstorage/MapDestination.h"
 #include "../mapstorage/MapLoadHelper.h"
 #include "../mapstorage/MmpMapStorage.h"
@@ -901,6 +902,47 @@ bool MainWindow::slot_reshapeRoomSelection(const ReshapeModeEnum mode)
         showWarning(tr("Select some rooms first."));
         return false;
     }
+    return beginReshape(m_roomSelection->getRoomIds(), tr("selection"), mode);
+}
+
+bool MainWindow::slot_reshapeCurrentArea(const ReshapeModeEnum mode)
+{
+    const RoomHandle here = deref(m_mapData).getCurrentRoom();
+    if (!here) {
+        showWarning(tr("You are not in a known room, so there is no area to reshape."));
+        return false;
+    }
+
+    const RoomArea area = here.getArea();
+    RoomIdSet rooms;
+    if (const auto *const inArea = deref(m_mapData).getCurrentMap().getWorld().findAreaRoomSet(
+            area)) {
+        inArea->for_each([&rooms](const RoomId id) { rooms.insert(id); });
+    }
+    if (rooms.empty()) {
+        showWarning(tr("This room does not belong to an area with any rooms in it."));
+        return false;
+    }
+
+    const QString name = mmqt::toQStringUtf8(std::string{area.getStdStringViewUtf8()});
+    return beginReshape(std::move(rooms),
+                        name.isEmpty() ? tr("unnamed area") : (QString("\"%1\"").arg(name)),
+                        mode);
+}
+
+bool MainWindow::beginReshape(RoomIdSet rooms, const QString &what, const ReshapeModeEnum mode)
+{
+    // Refusing beats attempting. Nobody can review a change spanning tens of
+    // thousands of rooms, and some maps keep every room in one area, where
+    // "reshape this area" would mean reshaping the world in one go.
+    constexpr size_t MAX_SCOPE_ROOMS = 20000;
+    if (rooms.size() > MAX_SCOPE_ROOMS) {
+        showWarning(tr("That is %1 rooms, too many to reshape at once (the limit is %2). "
+                       "Select a smaller part of it instead.")
+                        .arg(rooms.size())
+                        .arg(MAX_SCOPE_ROOMS));
+        return false;
+    }
 
     // Reshaping even a few hundred rooms takes long enough to freeze the
     // window, so it runs the way generating the base map does: on a worker
@@ -996,8 +1038,8 @@ bool MainWindow::slot_reshapeRoomSelection(const ReshapeModeEnum mode)
             case ReshapeStatusEnum::InfeasibleWithCurrentBoundary:
                 // Saying so beats applying something malformed.
                 m_mainWindow.showWarning(
-                    tr("Cannot reshape this selection without colliding with the rooms around "
-                       "it. Try selecting a little more of the surrounding area."));
+                    tr("Cannot reshape this without colliding with the rooms around it. Try "
+                       "including a little more of the surrounding area."));
                 return;
             case ReshapeStatusEnum::Improved:
                 break;
