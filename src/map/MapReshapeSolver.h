@@ -11,7 +11,10 @@
 
 struct NODISCARD ReshapeSolverOptions final
 {
-    ReshapeWeights weights;
+    /// Prefer forMode() over setting this and `weights` separately: changing
+    /// one without the other silently solves for the wrong objective.
+    ReshapeModeEnum mode = ReshapeModeEnum::Flatten;
+    ReshapeWeights weights = makeWeights(ReshapeModeEnum::Flatten);
 
     /// Cap on accepted moves, so a pathological case terminates rather than
     /// running until someone kills MMapper.
@@ -20,10 +23,11 @@ struct NODISCARD ReshapeSolverOptions final
     /// movable room to improve.
     size_t maxSweeps = 500;
 
-    /// Keep z where it is. The first milestone optimizes x/y only; the
-    /// machinery below is written so that lifting this does not require
-    /// restructuring the search.
-    bool freezeZ = true;
+    /// Keep every room on its current layer. Both modes need this off --
+    /// flattening means moving rooms down, and volumetric layout means
+    /// moving them up -- so it exists only to isolate the horizontal search
+    /// in tests.
+    bool freezeZ = false;
 
     /// Allow whole rows and columns to be inserted or removed, not just
     /// single rooms nudged. Off only for testing the unit-move search in
@@ -59,6 +63,14 @@ struct NODISCARD ReshapeSolverOptions final
     /// unchanged but made a 100-room area markedly worse. Scaling the budget
     /// inversely with room count keeps total work roughly constant instead.
     size_t maxStructuralRefinements = 0;
+
+    NODISCARD static ReshapeSolverOptions forMode(const ReshapeModeEnum mode)
+    {
+        ReshapeSolverOptions options;
+        options.mode = mode;
+        options.weights = makeWeights(mode);
+        return options;
+    }
 };
 
 /// Local search over room positions.

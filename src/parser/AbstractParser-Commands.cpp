@@ -933,19 +933,30 @@ void AbstractParser::doMapCommand(StringView input)
 
     auto diff = [this]() { doMapDiff(); };
 
-    auto reshapeCurrentArea = [this]() {
-        sendToUser(SendToUserSourceEnum::FromMMapper,
-                   [this](AnsiOstream &os) { doMapAreaReshape(os, std::nullopt, true); });
+    // Modes are separate verbs rather than an extra argument, so that an area
+    // name can never be mistaken for a mode or the other way round.
+    auto hereAction = [this](const ReshapeModeEnum mode, const bool apply) {
+        return [this, mode, apply]() {
+            sendToUser(SendToUserSourceEnum::FromMMapper, [this, mode, apply](AnsiOstream &os) {
+                doMapAreaReshape(os, std::nullopt, apply, mode);
+            });
+        };
     };
-    auto checkCurrentArea = [this]() {
-        sendToUser(SendToUserSourceEnum::FromMMapper,
-                   [this](AnsiOstream &os) { doMapAreaReshape(os, std::nullopt, false); });
+    auto namedAction = [this](const ReshapeModeEnum mode, const bool apply) {
+        return [this, mode, apply](User &user, const Pair *const args) {
+            // stringToken("area") matches without contributing a value, so
+            // the matched vector holds just the verb and the area name.
+            const auto v = getAnyVectorReversed(args);
+            doMapAreaReshape(user.getOstream(), v[1].getString(), apply, mode);
+        };
     };
-    auto reshapeNamedArea = [this](User &user, const Pair *const args) {
-        // stringToken("area") matches without contributing a value, so the
-        // matched vector holds just the "reshape" token and the area name.
-        const auto v = getAnyVectorReversed(args);
-        doMapAreaReshape(user.getOstream(), v[1].getString(), true);
+    auto namedSyntax = [&namedAction](const char *const verb,
+                                      const char *const help,
+                                      const ReshapeModeEnum mode,
+                                      const bool apply) {
+        return syntax::buildSyntax(syntax::abbrevToken(verb),
+                                   syntax::TokenMatcher::alloc<syntax::ArgString>(),
+                                   syntax::Accept(namedAction(mode, apply), help));
     };
 
     auto printMulti = [this]() {
@@ -1042,13 +1053,18 @@ void AbstractParser::doMapCommand(StringView input)
 
     auto areaSyntax = syntax::buildSyntax(
         syntax::stringToken("area"),
-        syn("reshape", "reshape the area you are standing in", reshapeCurrentArea),
+        syn("reshape",
+            "tidy the area you are standing in, collapsing layers where possible",
+            hereAction(ReshapeModeEnum::Flatten, true)),
+        namedSyntax("reshape", "...but for the named area", ReshapeModeEnum::Flatten, true),
+        syn("reshape3d",
+            "tidy the current area, keeping its layers and honouring up/down exits",
+            hereAction(ReshapeModeEnum::Volumetric, true)),
+        namedSyntax("reshape3d", "...but for the named area", ReshapeModeEnum::Volumetric, true),
         syn("check",
-            "report layout problems in the current area without changing it",
-            checkCurrentArea),
-        syntax::buildSyntax(syntax::abbrevToken("reshape"),
-                            syntax::TokenMatcher::alloc<syntax::ArgString>(),
-                            syntax::Accept(reshapeNamedArea, "reshape the named area")));
+            "report layout problems in the current area without changing anything",
+            hereAction(ReshapeModeEnum::Flatten, false)),
+        namedSyntax("check", "...but for the named area", ReshapeModeEnum::Flatten, false));
 
     auto gotoFn = [this](User &user, const Pair *const args) {
         auto &os = user.getOstream();

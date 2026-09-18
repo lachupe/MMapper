@@ -22,10 +22,13 @@ namespace {
 /// (inserting or removing a whole row or column) come later; these four are
 /// enough to straighten and space a layout locally.
 // Not constexpr: Coordinate's constructor is not constexpr.
-const std::array<Coordinate, 4> UNIT_MOVES = {Coordinate{1, 0, 0},
+// The vertical pair is skipped when z is frozen.
+const std::array<Coordinate, 6> UNIT_MOVES = {Coordinate{1, 0, 0},
                                               Coordinate{-1, 0, 0},
                                               Coordinate{0, 1, 0},
-                                              Coordinate{0, -1, 0}};
+                                              Coordinate{0, -1, 0},
+                                              Coordinate{0, 0, 1},
+                                              Coordinate{0, 0, -1}};
 
 /// Mutable search state over one graph.
 ///
@@ -42,12 +45,17 @@ private:
     LayoutPositions m_positions;
     /// Edge indices touching each room, from either end.
     std::vector<std::vector<size_t>> m_incident;
+    std::vector<std::vector<size_t>> m_verticalIncident;
     /// Rooms currently standing on each cell.
     std::unordered_map<Coordinate, int64_t> m_cellCounts;
     /// x and y tallies for movable rooms, so the bounding box that drives the
     /// compactness term can be read off the ends.
     std::map<int, size_t> m_xs;
     std::map<int, size_t> m_ys;
+    /// Layers in use by movable rooms. Needed because the cost of an extra
+    /// layer is a property of the whole scope rather than of one room, and
+    /// it is the single largest term once z can change.
+    std::map<int, size_t> m_zs;
 
 public:
     SearchState(const MapReshapeGraph &graph, const ReshapeWeights &weights)
@@ -55,6 +63,7 @@ public:
         , m_weights{weights}
         , m_positions{MapReshapeScorer::currentPositions(graph)}
         , m_incident(graph.getRooms().size())
+        , m_verticalIncident(graph.getRooms().size())
     {
         const auto &edges = graph.getHorizontalEdges();
         for (size_t e = 0; e < edges.size(); ++e) {
@@ -63,11 +72,19 @@ public:
                 m_incident[edges[e].toIndex].push_back(e);
             }
         }
+        const auto &vertical = graph.getVerticalEdges();
+        for (size_t e = 0; e < vertical.size(); ++e) {
+            m_verticalIncident[vertical[e].fromIndex].push_back(e);
+            if (vertical[e].toIndex != vertical[e].fromIndex) {
+                m_verticalIncident[vertical[e].toIndex].push_back(e);
+            }
+        }
         for (size_t i = 0; i < m_positions.size(); ++i) {
             ++m_cellCounts[m_positions[i]];
             if (isMovable(graph.getRooms()[i].role)) {
                 ++m_xs[m_positions[i].x];
                 ++m_ys[m_positions[i].y];
+                ++m_zs[m_positions[i].z];
             }
         }
     }
@@ -82,11 +99,13 @@ public:
         m_cellCounts.clear();
         m_xs.clear();
         m_ys.clear();
+        m_zs.clear();
         for (size_t i = 0; i < m_positions.size(); ++i) {
             ++m_cellCounts[m_positions[i]];
             if (canMove(i)) {
                 ++m_xs[m_positions[i].x];
                 ++m_ys[m_positions[i].y];
+                ++m_zs[m_positions[i].z];
             }
         }
     }
@@ -124,8 +143,22 @@ public:
                      - MapReshapeScorer::edgeCost(edge, oldFrom, oldTo, m_weights);
         }
 
+        delta += MapReshapeScorer::zMovementCost(room, to, m_weights)
+                 - MapReshapeScorer::zMovementCost(room, from, m_weights);
+
+        for (const size_t e : m_verticalIncident[index]) {
+            const LayoutEdge &edge = m_graph.getVerticalEdges()[e];
+            const Coordinate oldFrom = m_positions[edge.fromIndex];
+            const Coordinate oldTo = m_positions[edge.toIndex];
+            const Coordinate newFrom = (edge.fromIndex == index) ? to : oldFrom;
+            const Coordinate newTo = (edge.toIndex == index) ? to : oldTo;
+            delta += MapReshapeScorer::verticalEdgeCost(edge, newFrom, newTo, m_weights)
+                     - MapReshapeScorer::verticalEdgeCost(edge, oldFrom, oldTo, m_weights);
+        }
+
         delta += collisionDelta(index, from, to);
         delta += compactnessDelta(index, from, to);
+        delta += layerCountDelta(index, from, to);
         return delta;
     }
 
@@ -151,6 +184,7 @@ private:
         if (canMove(index)) {
             decrement(m_xs, cell.x);
             decrement(m_ys, cell.y);
+            decrement(m_zs, cell.z);
         }
     }
 
@@ -160,6 +194,7 @@ private:
         if (canMove(index)) {
             ++m_xs[cell.x];
             ++m_ys[cell.y];
+            ++m_zs[cell.z];
         }
     }
 
@@ -230,6 +265,30 @@ private:
         lo = std::min(lo, to);
         hi = std::max(hi, to);
         return (hi - lo) - oldSpan;
+    }
+
+    /// Change in the extra-layer charge. The scope pays for every layer past
+    /// the first, so this only moves when a layer empties out or a new one is
+    /// opened.
+    NODISCARD int64_t layerCountDelta(const size_t index,
+                                      const Coordinate &from,
+                                      const Coordinate &to) const
+    {
+        if (!canMove(index) || from.z == to.z || m_weights.extraZLayer == 0) {
+            return 0;
+        }
+        const int64_t oldCount = static_cast<int64_t>(m_zs.size());
+        int64_t newCount = oldCount;
+        const auto it = m_zs.find(from.z);
+        if (it != m_zs.end() && it->second == 1) {
+            --newCount;
+        }
+        if (m_zs.find(to.z) == m_zs.end()) {
+            ++newCount;
+        }
+        const int64_t before = std::max<int64_t>(0, oldCount - 1);
+        const int64_t after = std::max<int64_t>(0, newCount - 1);
+        return m_weights.extraZLayer * (after - before);
     }
 
     NODISCARD int64_t compactnessDelta(const size_t index,
@@ -538,7 +597,16 @@ LayoutPositions MapReshapeSolver::solvePositions(const MapReshapeGraph &graph,
         }
     }
     resultOut.stats.roomsMoved = resultOut.moves.size();
-    resultOut.stats.zLevelsAfter = resultOut.stats.zLevelsBefore;
+    {
+        // Was equal to zLevelsBefore while rooms could not change layer.
+        std::set<int> layers;
+        for (size_t i = 0; i < rooms.size(); ++i) {
+            if (rooms[i].role != LayoutRoomRoleEnum::FixedExternal) {
+                layers.insert(after[i].z);
+            }
+        }
+        resultOut.stats.zLevelsAfter = layers.size();
+    }
 
     for (const LayoutIssue &issue : MapReshapeScorer::findIssues(graph, after)) {
         if (issue.kind == LayoutIssueEnum::Collision) {

@@ -94,6 +94,25 @@ struct NODISCARD ReshapeOptions final
     int obstaclePadding = 8;
 };
 
+/// What the reshaper is trying to achieve on the z axis.
+///
+/// These are not two algorithms, only two weightings of the same one. The
+/// distinction matters because MUME maps are drawn by people who already
+/// flatten small interiors by hand for readability: a stair landing with
+/// four rooms is routinely laid out side by side on one layer rather than
+/// stacked, precisely so it can be seen. A reshaper that treats every such
+/// place as a mistake to be re-stacked would undo deliberate work.
+enum class NODISCARD ReshapeModeEnum : uint8_t {
+    /// Collapse onto as few layers as possible, and let up/down exits be
+    /// drawn as ordinary horizontal neighbours. The readable default.
+    Flatten,
+    /// Keep and honour real verticality: up exits should genuinely lead
+    /// upwards, and extra layers cost nothing.
+    Volumetric
+};
+
+NODISCARD extern std::string_view to_string_view(ReshapeModeEnum mode);
+
 /// Relative cost of everything the layout can get wrong.
 ///
 /// The ordering matters more than the absolute values. The governing
@@ -132,9 +151,20 @@ struct NODISCARD ReshapeWeights final
     /// Per cell of x/y displacement for a core room. Cheap by design: moving
     /// core rooms is the whole point.
     int64_t coreMovement = 1;
+    /// An up exit whose target is not above it, or a down exit whose target
+    /// is not below. Graded by how wrong it is, like horizontal direction.
+    ///
+    /// Zero when flattening: there, drawing a staircase as two adjacent
+    /// rooms on one layer is the desired answer, not a defect.
+    int64_t verticalDirection = 0;
+
     /// Moving a room that must not move. A bug guard, not a trade-off.
     int64_t immovableMoved = 1'000'000;
 };
+
+/// Weights for a mode. Individual fields can still be overridden afterwards;
+/// the mode only picks a sensible starting point.
+NODISCARD extern ReshapeWeights makeWeights(ReshapeModeEnum mode);
 
 /// Per-component score breakdown. Kept split so diagnostics can say *why* a
 /// layout scores badly, and so weights can be tuned against real areas.
@@ -144,6 +174,7 @@ struct NODISCARD LayoutScore final
     int64_t zLayers = 0;
     int64_t zMovement = 0;
     int64_t layerMismatch = 0;
+    int64_t verticalDirection = 0;
     int64_t direction = 0;
     int64_t alignment = 0;
     int64_t movement = 0;
@@ -154,8 +185,8 @@ struct NODISCARD LayoutScore final
 
     NODISCARD int64_t total() const
     {
-        return collision + zLayers + zMovement + layerMismatch + direction + alignment + movement
-               + edgeLength + boundary + compactness + immovableMoved;
+        return collision + zLayers + zMovement + layerMismatch + verticalDirection + direction
+               + alignment + movement + edgeLength + boundary + compactness + immovableMoved;
     }
 };
 

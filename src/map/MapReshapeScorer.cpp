@@ -134,6 +134,34 @@ int64_t MapReshapeScorer::edgeCost(const LayoutEdge &edge,
     return cost;
 }
 
+int64_t MapReshapeScorer::verticalEdgeCost(const LayoutEdge &edge,
+                                           const Coordinate &from,
+                                           const Coordinate &to,
+                                           const ReshapeWeights &weights)
+{
+    if (weights.verticalDirection == 0) {
+        return 0;
+    }
+    // An up exit wants its target higher, a down exit wants it lower. The
+    // magnitude is deliberately not required to be one: MUME's up and down
+    // do not correspond to a fixed change of level, so only the sign is
+    // asked for.
+    const int rise = (edge.dir == ExitDirEnum::UP) ? (to.z - from.z) : (from.z - to.z);
+    if (rise > 0) {
+        return 0;
+    }
+    // Graded for the same reason horizontal direction is: a flat charge
+    // would leave local search on a plateau with nothing to descend.
+    return weights.verticalDirection * (1 - rise);
+}
+
+int64_t MapReshapeScorer::zMovementCost(const LayoutRoom &room,
+                                        const Coordinate &pos,
+                                        const ReshapeWeights &weights)
+{
+    return weights.zMovement * std::abs(pos.z - room.original.z);
+}
+
 int64_t MapReshapeScorer::movementCost(const LayoutRoom &room,
                                        const Coordinate &pos,
                                        const ReshapeWeights &weights)
@@ -173,11 +201,17 @@ LayoutScore MapReshapeScorer::score(const MapReshapeGraph &graph,
         score.layerMismatch += weights.layerMismatch * g.layers;
     }
 
+    for (const LayoutEdge &edge : graph.getVerticalEdges()) {
+        score.verticalDirection += verticalEdgeCost(edge,
+                                                    positions[edge.fromIndex],
+                                                    positions[edge.toIndex],
+                                                    weights);
+    }
+
     std::set<int> layersInUse;
     for (size_t i = 0; i < rooms.size(); ++i) {
         const LayoutRoom &room = rooms[i];
         const Coordinate &pos = positions[i];
-        const int64_t dz = std::abs(pos.z - room.original.z);
 
         if (isMovable(room.role)) {
             score.movement += movementCost(room, pos, weights);
@@ -185,7 +219,7 @@ LayoutScore MapReshapeScorer::score(const MapReshapeGraph &graph,
         } else {
             score.immovableMoved += movementCost(room, pos, weights);
         }
-        score.zMovement += weights.zMovement * dz;
+        score.zMovement += zMovementCost(room, pos, weights);
     }
 
     if (layersInUse.size() > 1) {

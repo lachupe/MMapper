@@ -16,6 +16,7 @@
 #include "../map/DoorFlags.h"
 #include "../map/ExitFieldVariant.h"
 #include "../map/ExitsFlags.h"
+#include "../map/MapReshapeTypes.h"
 #include "../map/PromptFlags.h"
 #include "../map/RawRoom.h"
 #include "../map/RoomFieldVariant.h"
@@ -424,7 +425,8 @@ private:
     void doGenerateBaseMap();
     void doMapAreaReshape(AnsiOstream &os,
                           const std::optional<std::string> &requestedArea,
-                          bool applyResult);
+                          bool applyResult,
+                          ReshapeModeEnum mode);
     void doSearchCommand(StringView view);
     void doGetDirectionsCommand(StringView view);
 

@@ -88,9 +88,25 @@ public:
                                       const ReshapeWeights &weights);
 
     /// Cost of one room sitting at `pos` instead of where it started.
+    /// Horizontal displacement only; z is charged separately so diagnostics
+    /// can tell "nudged sideways" apart from "moved to another layer".
     NODISCARD static int64_t movementCost(const LayoutRoom &room,
                                           const Coordinate &pos,
                                           const ReshapeWeights &weights);
+
+    /// Cost of one room having left its original layer.
+    NODISCARD static int64_t zMovementCost(const LayoutRoom &room,
+                                           const Coordinate &pos,
+                                           const ReshapeWeights &weights);
+
+    /// Cost of one up/down exit at the given endpoint positions.
+    ///
+    /// Zero weight when flattening, where a staircase drawn as two adjacent
+    /// rooms on one layer is the intended result rather than a defect.
+    NODISCARD static int64_t verticalEdgeCost(const LayoutEdge &edge,
+                                              const Coordinate &from,
+                                              const Coordinate &to,
+                                              const ReshapeWeights &weights);
 
     /// Human-readable breakdown for `_map area reshape`-style diagnostics.
     static void printReport(const MapReshapeGraph &graph,

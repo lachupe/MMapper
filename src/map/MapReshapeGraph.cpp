@@ -32,6 +32,45 @@ std::string_view to_string_view(const LayoutRoomRoleEnum role)
     return "unknown";
 }
 
+std::string_view to_string_view(const ReshapeModeEnum mode)
+{
+    switch (mode) {
+    case ReshapeModeEnum::Flatten:
+        return "flatten";
+    case ReshapeModeEnum::Volumetric:
+        return "volumetric";
+    }
+    return "unknown";
+}
+
+ReshapeWeights makeWeights(const ReshapeModeEnum mode)
+{
+    ReshapeWeights weights;
+    switch (mode) {
+    case ReshapeModeEnum::Flatten:
+        // Layers are the thing to get rid of, so an extra one has to cost far
+        // more than the moves needed to collapse it. At these values it pays
+        // to shift up to five hundred rooms off a layer to be rid of it.
+        weights.extraZLayer = 100'000;
+        weights.zMovement = 200;
+        // Up and down exits express no preference here: drawing a stair as
+        // two rooms side by side on one layer is the desired answer.
+        weights.verticalDirection = 0;
+        break;
+
+    case ReshapeModeEnum::Volumetric:
+        // Layers are free, so nothing pushes the map flat.
+        weights.extraZLayer = 0;
+        // Existing height is a strong prior rather than something to undo.
+        weights.zMovement = 2'000;
+        // An up exit should genuinely lead up, which also means this mode
+        // will pull apart a stack that was flattened by hand.
+        weights.verticalDirection = 5'000;
+        break;
+    }
+    return weights;
+}
+
 std::string_view to_string_view(const ReshapeStatusEnum status)
 {
     switch (status) {

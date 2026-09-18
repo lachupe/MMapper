@@ -964,10 +964,15 @@ void TestMapReshape::solvedLayoutIsLocalMinimumTest()
     const LayoutPositions solved = MapReshapeSolver::solvePositions(graph, {}, result);
     const int64_t settled = MapReshapeScorer::score(graph, solved).total();
 
+    // Includes the vertical steps: the z terms (leaving a layer, and the
+    // scope-wide charge for an extra layer) live outside the per-room cost
+    // functions, so they were the easiest ones for the delta to miss.
     const std::vector<Coordinate> steps = {Coordinate{1, 0, 0},
                                            Coordinate{-1, 0, 0},
                                            Coordinate{0, 1, 0},
-                                           Coordinate{0, -1, 0}};
+                                           Coordinate{0, -1, 0},
+                                           Coordinate{0, 0, 1},
+                                           Coordinate{0, 0, -1}};
     for (size_t i = 0; i < graph.getRooms().size(); ++i) {
         if (!isMovable(graph.getRooms()[i].role)) {
             continue;
@@ -1321,14 +1326,21 @@ void TestMapReshape::areaSubcommandsDispatchTest()
         dispatched = "named:" + v[1].getString();
     };
 
-    const auto areaSyntax = buildSyntax(stringToken("area"),
-                                        syn0("reshape",
-                                             "reshape the area you are standing in",
-                                             "current"),
-                                        syn0("check", "report layout problems", "check"),
-                                        buildSyntax(abbrevToken("reshape"),
-                                                    TokenMatcher::alloc<ArgString>(),
-                                                    Accept(named, "reshape the named area")));
+    auto named3d = [&dispatched](User &, const Pair *const args) {
+        const auto v = getAnyVectorReversed(args);
+        dispatched = "named3d:" + v[1].getString();
+    };
+    const auto areaSyntax
+        = buildSyntax(stringToken("area"),
+                      syn0("reshape", "reshape the area you are standing in", "current"),
+                      buildSyntax(abbrevToken("reshape"),
+                                  TokenMatcher::alloc<ArgString>(),
+                                  Accept(named, "reshape the named area")),
+                      syn0("reshape3d", "reshape in three dimensions", "volumetric"),
+                      buildSyntax(abbrevToken("reshape3d"),
+                                  TokenMatcher::alloc<ArgString>(),
+                                  Accept(named3d, "reshape the named area in three dimensions")),
+                      syn0("check", "report layout problems", "check"));
     const auto root = buildSyntax(stringToken("_map"), areaSyntax);
 
     const auto run = [&dispatched, &root](const char *const args) {
@@ -1345,6 +1357,157 @@ void TestMapReshape::areaSubcommandsDispatchTest()
     QCOMPARE(run("area reshape \"Great East Road\""), std::string("named:Great East Road"));
     // Nonsense must not silently dispatch to anything.
     QCOMPARE(run("area bogus"), std::string());
+}
+
+// ---------------------------------------------------------------------------
+// Z handling
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/// Rooms 0 and 1 side by side on one layer, joined by an up exit -- a
+/// staircase a mapper drew flat so it could be read.
+NODISCARD Map buildHandFlattenedStair()
+{
+    SyntheticMap b;
+    b.addRoom(0, Coordinate{0, 0, 0});
+    b.addRoom(1, Coordinate{1, 0, 0});
+    b.linkBoth(0, ExitDirEnum::UP, 1);
+    return b.build();
+}
+
+NODISCARD RoomIdSet coreOf(const Map &map, const std::vector<uint32_t> &ids)
+{
+    return makeCore(map, ids);
+}
+
+} // namespace
+
+void TestMapReshape::flattenCollapsesUnnecessaryLayerTest()
+{
+    mmqt::HideQDebug forThisTest;
+    // A north exit that also changes layer, for no reason: there is free
+    // space directly north of room 1 on its own layer.
+    SyntheticMap b;
+    b.addRoom(0, Coordinate{0, 0, 0});
+    b.addRoom(1, Coordinate{1, 0, 0});
+    b.addRoom(2, Coordinate{1, 1, 1});
+    b.linkBoth(0, ExitDirEnum::EAST, 1);
+    b.linkBoth(1, ExitDirEnum::NORTH, 2);
+    const Map map = b.build();
+
+    ReshapeOptions options;
+    options.marginRings = 1;
+    const MapReshapeGraph graph = MapReshapeGraph::build(map, coreOf(map, {0, 1, 2}), options);
+    QCOMPARE(graph.countZLevels(), size_t(2));
+
+    ReshapeResult result;
+    const LayoutPositions solved = MapReshapeSolver::solvePositions(graph,
+                                                                    ReshapeSolverOptions::forMode(
+                                                                        ReshapeModeEnum::Flatten),
+                                                                    result);
+
+    QCOMPARE(result.status, ReshapeStatusEnum::Improved);
+    QCOMPARE(result.stats.zLevelsAfter, size_t(1));
+    for (const Coordinate &pos : solved) {
+        QCOMPARE(pos.z, 0);
+    }
+}
+
+void TestMapReshape::flattenLeavesHandFlattenedStackAloneTest()
+{
+    mmqt::HideQDebug forThisTest;
+    // The case that matters most in practice. Mappers routinely draw small
+    // interiors flat for readability, and those are deliberate, not mistakes.
+    // Flattening must leave them exactly as they are rather than deciding an
+    // up exit ought to mean another layer.
+    const Map map = buildHandFlattenedStair();
+
+    ReshapeOptions options;
+    options.marginRings = 1;
+    const MapReshapeGraph graph = MapReshapeGraph::build(map, coreOf(map, {0, 1}), options);
+
+    ReshapeResult result;
+    const LayoutPositions solved = MapReshapeSolver::solvePositions(graph,
+                                                                    ReshapeSolverOptions::forMode(
+                                                                        ReshapeModeEnum::Flatten),
+                                                                    result);
+
+    for (const Coordinate &pos : solved) {
+        QCOMPARE(pos.z, 0);
+    }
+    QCOMPARE(result.stats.zLevelsAfter, size_t(1));
+}
+
+void TestMapReshape::volumetricRestoresVerticalityTest()
+{
+    mmqt::HideQDebug forThisTest;
+    // The same flattened staircase, asked for in three dimensions instead.
+    const Map map = buildHandFlattenedStair();
+
+    ReshapeOptions options;
+    options.marginRings = 1;
+    const MapReshapeGraph graph = MapReshapeGraph::build(map, coreOf(map, {0, 1}), options);
+
+    ReshapeResult result;
+    const LayoutPositions solved = MapReshapeSolver::solvePositions(graph,
+                                                                    ReshapeSolverOptions::forMode(
+                                                                        ReshapeModeEnum::Volumetric),
+                                                                    result);
+
+    QCOMPARE(result.status, ReshapeStatusEnum::Improved);
+    const Coordinate lower = solved[scopeIndex(graph, map, 0)];
+    const Coordinate upper = solved[scopeIndex(graph, map, 1)];
+    QVERIFY2(upper.z > lower.z, "an up exit should lead upwards when asked for real height");
+}
+
+void TestMapReshape::volumetricKeepsExistingStackTest()
+{
+    mmqt::HideQDebug forThisTest;
+    // Genuine verticality must survive: nothing in this mode should flatten.
+    SyntheticMap b;
+    b.addRoom(0, Coordinate{0, 0, 0});
+    b.addRoom(1, Coordinate{0, 0, 1});
+    b.addRoom(2, Coordinate{0, 0, 2});
+    b.linkBoth(0, ExitDirEnum::UP, 1);
+    b.linkBoth(1, ExitDirEnum::UP, 2);
+    const Map map = b.build();
+
+    ReshapeOptions options;
+    options.marginRings = 1;
+    const MapReshapeGraph graph = MapReshapeGraph::build(map, coreOf(map, {0, 1, 2}), options);
+
+    ReshapeResult result;
+    const LayoutPositions solved = MapReshapeSolver::solvePositions(graph,
+                                                                    ReshapeSolverOptions::forMode(
+                                                                        ReshapeModeEnum::Volumetric),
+                                                                    result);
+
+    QCOMPARE(solved[scopeIndex(graph, map, 0)].z, 0);
+    QCOMPARE(solved[scopeIndex(graph, map, 1)].z, 1);
+    QCOMPARE(solved[scopeIndex(graph, map, 2)].z, 2);
+}
+
+void TestMapReshape::flattenNeverOpensANewLayerTest()
+{
+    mmqt::HideQDebug forThisTest;
+    // The spec's governing rule, now enforced by the solver rather than only
+    // by the score: a crowded layout must be resolved by spreading sideways,
+    // never by moving a room onto another layer.
+    const Map map = buildPackedLadder();
+    const MapReshapeGraph graph = packedLadderGraph(map);
+    QCOMPARE(graph.countZLevels(), size_t(1));
+
+    ReshapeResult result;
+    const LayoutPositions solved = MapReshapeSolver::solvePositions(graph,
+                                                                    ReshapeSolverOptions::forMode(
+                                                                        ReshapeModeEnum::Flatten),
+                                                                    result);
+
+    QCOMPARE(result.stats.zLevelsAfter, size_t(1));
+    for (const Coordinate &pos : solved) {
+        QCOMPARE(pos.z, 0);
+    }
 }
 
 QTEST_MAIN(TestMapReshape)

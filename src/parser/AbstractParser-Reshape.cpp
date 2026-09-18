@@ -56,7 +56,8 @@ void forwardReport(AnsiOstream &os, const std::function<void(std::ostream &)> &w
 
 void AbstractParser::doMapAreaReshape(AnsiOstream &os,
                                       const std::optional<std::string> &requestedArea,
-                                      const bool applyResult)
+                                      const bool applyResult,
+                                      const ReshapeModeEnum mode)
 {
     MapData &mapData = m_mapData;
 
@@ -73,7 +74,7 @@ void AbstractParser::doMapAreaReshape(AnsiOstream &os,
         return;
     }
 
-    os << "Area: \"" << area->getStdStringViewUtf8() << "\"\n";
+    os << "Area: \"" << area->getStdStringViewUtf8() << "\" (" << to_string_view(mode) << ")\n";
     describeScope(os, *graph);
 
     if (!applyResult) {
@@ -86,23 +87,25 @@ void AbstractParser::doMapAreaReshape(AnsiOstream &os,
                << " (random, special or unmapped exits say nothing reliable about geometry)\n";
         }
 
-        // The z terms usually dominate the total, and while this milestone
-        // keeps rooms on their own layer none of it can be acted on. Saying so
-        // avoids the score looking barely improved after a reshape that fixed
-        // everything it was actually allowed to touch.
+        // The z terms usually dominate the total, and which of them can be
+        // acted on depends entirely on the mode asked for, so say so rather
+        // than leaving the reader to guess why a big number barely moved.
         const LayoutScore score = MapReshapeScorer::score(*graph,
-                                                          MapReshapeScorer::currentPositions(
-                                                              *graph));
-        const int64_t frozen = score.zLayers + score.zMovement + score.layerMismatch;
-        if (frozen != 0) {
-            os << "Of that, " << frozen << " comes from z layers, which this version does not "
-               << "change; " << (score.total() - frozen) << " is what a reshape can address.\n";
+                                                          MapReshapeScorer::currentPositions(*graph),
+                                                          makeWeights(mode));
+        os << "z levels in use: " << graph->countZLevels() << "\n";
+        const int64_t layerCost = score.zLayers + score.layerMismatch;
+        if (layerCost != 0) {
+            os << "Of the score, " << layerCost << " comes from layer usage. \"reshape\" "
+               << "collapses layers where it can; \"reshape3d\" leaves them and honours "
+               << "up/down exits instead.\n";
         }
         return;
     }
 
     ReshapeResult result;
-    const LayoutPositions solved = MapReshapeSolver::solvePositions(*graph, {}, result);
+    const LayoutPositions solved
+        = MapReshapeSolver::solvePositions(*graph, ReshapeSolverOptions::forMode(mode), result);
 
     switch (result.status) {
     case ReshapeStatusEnum::Unchanged:
