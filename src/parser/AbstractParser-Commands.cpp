@@ -933,6 +933,21 @@ void AbstractParser::doMapCommand(StringView input)
 
     auto diff = [this]() { doMapDiff(); };
 
+    auto reshapeCurrentArea = [this]() {
+        sendToUser(SendToUserSourceEnum::FromMMapper,
+                   [this](AnsiOstream &os) { doMapAreaReshape(os, std::nullopt, true); });
+    };
+    auto checkCurrentArea = [this]() {
+        sendToUser(SendToUserSourceEnum::FromMMapper,
+                   [this](AnsiOstream &os) { doMapAreaReshape(os, std::nullopt, false); });
+    };
+    auto reshapeNamedArea = [this](User &user, const Pair *const args) {
+        // stringToken("area") matches without contributing a value, so the
+        // matched vector holds just the "reshape" token and the area name.
+        const auto v = getAnyVectorReversed(args);
+        doMapAreaReshape(user.getOstream(), v[1].getString(), true);
+    };
+
     auto printMulti = [this]() {
         // TODO: multi should probably select the rooms in question.
         launchAsyncAnsiViewerWorker<Map>("map show multi",
@@ -1025,6 +1040,16 @@ void AbstractParser::doMapCommand(StringView input)
 
     auto consistSyntax = syn("check-consistency", "checks map consistency", checkConsistency);
 
+    auto areaSyntax = syntax::buildSyntax(
+        syntax::stringToken("area"),
+        syn("reshape", "reshape the area you are standing in", reshapeCurrentArea),
+        syn("check",
+            "report layout problems in the current area without changing it",
+            checkCurrentArea),
+        syntax::buildSyntax(syntax::abbrevToken("reshape"),
+                            syntax::TokenMatcher::alloc<syntax::ArgString>(),
+                            syntax::Accept(reshapeNamedArea, "reshape the named area")));
+
     auto gotoFn = [this](User &user, const Pair *const args) {
         auto &os = user.getOstream();
         const auto v = getAnyVectorReversed(args);
@@ -1105,6 +1130,7 @@ void AbstractParser::doMapCommand(StringView input)
                                                              "undelete room # (if possible)"));
 
     auto mapSyntax = syntax::buildSyntax(gotoSyntax,
+                                         areaSyntax,
                                          diffSyntax,
                                          statsSynax,
                                          showSyntax,

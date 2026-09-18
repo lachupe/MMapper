@@ -337,6 +337,8 @@ set(mmapper_SRCS
     map/Map.h
     map/MapConsistencyError.cpp
     map/MapConsistencyError.h
+    map/MapReshapeApply.cpp
+    map/MapReshapeApply.h
     map/MapReshapeGraph.cpp
     map/MapReshapeGraph.h
     map/MapReshapeScorer.cpp
@@ -510,6 +512,7 @@ set(mmapper_SRCS
     parser/AbstractParser-Group.cpp
     parser/AbstractParser-Hotkey.cpp
     parser/AbstractParser-Mark.cpp
+    parser/AbstractParser-Reshape.cpp
     parser/AbstractParser-Room.cpp
     parser/AbstractParser-Timer.cpp
     parser/AbstractParser-Utils.cpp

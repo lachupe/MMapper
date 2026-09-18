@@ -422,6 +422,9 @@ private:
     void doRemoveDoorNamesCommand();
     void doMapDiff();
     void doGenerateBaseMap();
+    void doMapAreaReshape(AnsiOstream &os,
+                          const std::optional<std::string> &requestedArea,
+                          bool applyResult);
     void doSearchCommand(StringView view);
     void doGetDirectionsCommand(StringView view);
 

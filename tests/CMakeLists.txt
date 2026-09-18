@@ -286,7 +286,20 @@ set(TestMapReshape_SRCS
         TestMapReshape.cpp
         TestMapReshape.h
 )
-add_executable(TestMapReshape ${TestMapReshape_SRCS})
+# The syntax sources live in the mmapper executable rather than a library, so
+# compile them in directly to test how the reshape subcommands resolve.
+set(TestMapReshape_syntax_SRCS
+        ../src/syntax/Accept.cpp
+        ../src/syntax/IArgument.cpp
+        ../src/syntax/MatchResult.cpp
+        ../src/syntax/ParserInput.cpp
+        ../src/syntax/Sublist.cpp
+        ../src/syntax/SyntaxArgs.cpp
+        ../src/syntax/TokenMatcher.cpp
+        ../src/syntax/TreeParser.cpp
+        ../src/syntax/Value.cpp
+)
+add_executable(TestMapReshape ${TestMapReshape_SRCS} ${TestMapReshape_syntax_SRCS})
 add_dependencies(TestMapReshape mm_test mm_global mm_map)
 target_link_libraries(TestMapReshape
         mm_map

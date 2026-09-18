@@ -60,4 +60,13 @@ private Q_SLOTS:
     static void structuralShiftEscapesDeadlockTest();
     static void insertedColumnCreatesNoFakeRoomTest();
     static void structuralShiftRespectsImmovableRoomsTest();
+
+    // Applying a solved layout back to the map.
+    static void naiveApplyCorruptsTheMapTest();
+    static void stagedApplyKeepsMapConsistentTest();
+    static void stagedApplyIsOneUndoStepTest();
+    static void emptyMoveListProducesNoChangesTest();
+
+    // The `_map area ...` subcommand tree.
+    static void areaSubcommandsDispatchTest();
 };

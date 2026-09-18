@@ -5,9 +5,12 @@
 
 #include "../src/global/HideQDebug.h"
 #include "../src/global/progresscounter.h"
+#include "../src/map/ChangeList.h"
+#include "../src/map/ChangeTypes.h"
 #include "../src/map/ExitDirection.h"
 #include "../src/map/ExitFlags.h"
 #include "../src/map/Map.h"
+#include "../src/map/MapReshapeApply.h"
 #include "../src/map/MapReshapeGraph.h"
 #include "../src/map/MapReshapeScorer.h"
 #include "../src/map/MapReshapeSolver.h"
@@ -18,6 +21,10 @@
 #include "../src/map/coordinate.h"
 #include "../src/map/mmapper2room.h"
 #include "../src/map/roomid.h"
+#include "../src/syntax/Sublist.h"
+#include "../src/syntax/SyntaxArgs.h"
+#include "../src/syntax/TokenMatcher.h"
+#include "../src/syntax/syntax-helpers.h"
 
 #include <algorithm>
 #include <optional>
@@ -1186,6 +1193,158 @@ void TestMapReshape::structuralShiftRespectsImmovableRoomsTest()
         }
     }
     QVERIFY(result.conflicts.empty());
+}
+
+namespace {
+
+/// Shift every room of a chain one cell east.
+NODISCARD std::vector<RoomMove> shiftChainEast(const Map &map, const uint32_t count)
+{
+    std::vector<RoomMove> moves;
+    for (uint32_t id = 0; id < count; ++id) {
+        const RoomHandle room = map.getRoomHandle(ExternalRoomId{id});
+        moves.push_back(
+            RoomMove{room.getId(), room.getPosition(), room.getPosition() + Coordinate{1, 0, 0}});
+    }
+    return moves;
+}
+
+NODISCARD bool isConsistent(const Map &map)
+{
+    try {
+        ProgressCounter pc;
+        map.checkConsistency(pc);
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
+} // namespace
+
+void TestMapReshape::naiveApplyCorruptsTheMapTest()
+{
+    mmqt::HideQDebug forThisTest;
+    // Documents why staging exists. Applying the same movements as plain
+    // per-room changes leaves every room at the right coordinate, yet the map
+    // is broken: changes are applied one at a time, so the first room lands
+    // on the second's cell before the second has vacated it, and the spatial
+    // index -- which stores only one room per coordinate -- quietly drops the
+    // room that was overwritten.
+    const Map map = buildChain(3);
+    ProgressCounter pc;
+
+    ChangeList naive;
+    for (const RoomMove &move : shiftChainEast(map, 3)) {
+        naive.add(room_change_types::MoveRelative{move.room, move.to - move.from});
+    }
+    const Map after = map.apply(pc, naive).map;
+
+    // Positions look right...
+    QCOMPARE(after.getRoomHandle(ExternalRoomId{0}).getPosition(), Coordinate(1, 0, 0));
+    QCOMPARE(after.getRoomHandle(ExternalRoomId{2}).getPosition(), Coordinate(3, 0, 0));
+    // ...but the rooms can no longer be found by coordinate, and the map does
+    // not pass its own consistency check.
+    QVERIFY(!after.findRoomHandle(Coordinate{1, 0, 0}));
+    QVERIFY(!isConsistent(after));
+}
+
+void TestMapReshape::stagedApplyKeepsMapConsistentTest()
+{
+    mmqt::HideQDebug forThisTest;
+    const Map map = buildChain(3);
+    ProgressCounter pc;
+
+    const std::vector<RoomMove> moves = shiftChainEast(map, 3);
+    const Map after = map.apply(pc, map_reshape::buildChanges(map, moves)).map;
+
+    // Same destinations as the naive version...
+    for (const RoomMove &move : moves) {
+        QCOMPARE(after.getRoomHandle(after.getExternalRoomId(move.room)).getPosition(), move.to);
+    }
+    // ...but every room is still findable by coordinate, and the map is sound.
+    for (int x = 1; x <= 3; ++x) {
+        QVERIFY(after.findRoomHandle(Coordinate{x, 0, 0}));
+    }
+    QVERIFY(!after.findRoomHandle(Coordinate{0, 0, 0}));
+    QVERIFY(isConsistent(after));
+    QCOMPARE(after.getRoomsCount(), map.getRoomsCount());
+}
+
+void TestMapReshape::stagedApplyIsOneUndoStepTest()
+{
+    mmqt::HideQDebug forThisTest;
+    // Undo works by snapshotting the whole immutable map per applyChanges
+    // call, so a reshape is atomic as long as every movement travels in one
+    // change list. Staging must not break that by needing a second call.
+    const Map map = buildChain(4);
+    const ChangeList changes = map_reshape::buildChanges(map, shiftChainEast(map, 4));
+
+    // One staging translation plus one change per room.
+    QCOMPARE(changes.getChanges().size(), size_t(5));
+
+    ProgressCounter pc;
+    const Map after = map.apply(pc, changes).map;
+    QVERIFY(after != map);
+    QVERIFY(isConsistent(after));
+}
+
+void TestMapReshape::emptyMoveListProducesNoChangesTest()
+{
+    mmqt::HideQDebug forThisTest;
+    const Map map = buildChain(2);
+    QVERIFY(map_reshape::buildChanges(map, {}).empty());
+}
+
+void TestMapReshape::areaSubcommandsDispatchTest()
+{
+    mmqt::HideQDebug forThisTest;
+    using namespace syntax;
+
+    // Mirrors the tree built in doMapCommand. The risky part is that
+    // "reshape" appears twice as a sibling -- once bare, once taking an area
+    // name -- so this checks the parser resolves both instead of treating
+    // them as ambiguous.
+    std::string dispatched;
+    auto syn0 = [&dispatched](std::string name, std::string help, std::string tag) {
+        auto fn = [&dispatched, tag](User &, const Pair *const) { dispatched = tag; };
+        return buildSyntax(stringToken(std::move(name)), Accept(fn, std::move(help)));
+    };
+    auto named = [&dispatched](User &, const Pair *const args) {
+        const auto v = getAnyVectorReversed(args);
+        // Pinned deliberately. stringToken("area") matches without
+        // contributing a value while abbrevToken("reshape") does, so the name
+        // lands at index 1. Getting this wrong throws at runtime, where only
+        // someone actually typing the command would find it.
+        QCOMPARE(v.size(), size_t(2));
+        QCOMPARE(v[0].getString(), std::string("reshape"));
+        dispatched = "named:" + v[1].getString();
+    };
+
+    const auto areaSyntax = buildSyntax(stringToken("area"),
+                                        syn0("reshape",
+                                             "reshape the area you are standing in",
+                                             "current"),
+                                        syn0("check", "report layout problems", "check"),
+                                        buildSyntax(abbrevToken("reshape"),
+                                                    TokenMatcher::alloc<ArgString>(),
+                                                    Accept(named, "reshape the named area")));
+    const auto root = buildSyntax(stringToken("_map"), areaSyntax);
+
+    const auto run = [&dispatched, &root](const char *const args) {
+        dispatched.clear();
+        const std::string owned{args};
+        std::ignore = processSyntax(root, "_map", StringView{owned});
+        return dispatched;
+    };
+
+    QCOMPARE(run("area reshape"), std::string("current"));
+    QCOMPARE(run("area check"), std::string("check"));
+    QCOMPARE(run("area reshape Bree"), std::string("named:Bree"));
+    // Area names contain spaces, so the argument must swallow them.
+    QCOMPARE(run("area reshape \"Great East Road\""), std::string("named:Great East Road"));
+    // Nonsense must not silently dispatch to anything.
+    QCOMPARE(run("area bogus"), std::string());
 }
 
 QTEST_MAIN(TestMapReshape)
