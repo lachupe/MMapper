@@ -3,6 +3,7 @@
 
 #include "MapReshapeSolver.h"
 
+#include "../global/progresscounter.h"
 #include "ExitDirection.h"
 
 #include <algorithm>
@@ -373,7 +374,8 @@ void refineWithUnitMoves(const MapReshapeGraph &graph,
                          SearchState &state,
                          size_t &moves,
                          size_t &iterations,
-                         const size_t iterationLimit)
+                         const size_t iterationLimit,
+                         ProgressCounter *const pc)
 {
     const std::vector<LayoutRoom> &rooms = graph.getRooms();
 
@@ -390,6 +392,11 @@ void refineWithUnitMoves(const MapReshapeGraph &graph,
 
     while (!queue.empty() && moves < options.maxMoves && iterations < iterationLimit) {
         ++iterations;
+        if (pc != nullptr) {
+            // Also how cancellation reaches the search: step() throws once
+            // the user asks the task to stop.
+            pc->step();
+        }
         const size_t index = queue.front();
         queue.pop_front();
         queued[index] = false;
@@ -449,7 +456,8 @@ NODISCARD std::optional<LayoutPositions> bestStructuralShift(const MapReshapeGra
                                                              size_t &moves,
                                                              size_t &iterations,
                                                              size_t &refinementBudget,
-                                                             const size_t iterationLimit)
+                                                             const size_t iterationLimit,
+                                                             ProgressCounter *const pc)
 {
     const ReshapeWeights &weights = options.weights;
     const LayoutScore baseScore = MapReshapeScorer::score(graph, current, weights);
@@ -498,12 +506,17 @@ NODISCARD std::optional<LayoutPositions> bestStructuralShift(const MapReshapeGra
             break;
         }
         --refinementBudget;
+        // Counted before the nested search rather than after it, so the
+        // check at the top of this loop keeps the total within the budget
+        // instead of overshooting by one per candidate.
+        ++iterations;
         SearchState trial{graph, weights};
         trial.reset(std::move(shortlist[i].positions));
-        size_t trialMoves = 0;
-        size_t trialIterations = 0;
-        refineWithUnitMoves(graph, options, trial, trialMoves, trialIterations, iterationLimit);
-        iterations += trialIterations + 1;
+        // Counted against the same budget as everything else. Giving each
+        // trial its own fresh allowance meant the real bound was the budget
+        // times the number of trials, which only stayed invisible while
+        // frozen z let every refinement converge almost immediately.
+        refineWithUnitMoves(graph, options, trial, moves, iterations, iterationLimit, pc);
 
         const int64_t score = MapReshapeScorer::score(graph, trial.positions(), weights).total();
         if (score < bestScore) {
@@ -532,7 +545,8 @@ NODISCARD size_t countCollisions(const MapReshapeGraph &graph, const LayoutPosit
 
 LayoutPositions MapReshapeSolver::solvePositions(const MapReshapeGraph &graph,
                                                  const ReshapeSolverOptions &options,
-                                                 ReshapeResult &resultOut)
+                                                 ReshapeResult &resultOut,
+                                                 ProgressCounter *const pc)
 {
     const std::vector<LayoutRoom> &rooms = graph.getRooms();
     const LayoutPositions before = MapReshapeScorer::currentPositions(graph);
@@ -560,7 +574,11 @@ LayoutPositions MapReshapeSolver::solvePositions(const MapReshapeGraph &graph,
     // local helps; the outer one then tries shifting a whole row or column,
     // which is the only way to make space that is not already there. A
     // successful shift opens up new local improvements, so the pair repeats.
-    refineWithUnitMoves(graph, options, state, moves, iterations, iterationLimit);
+    if (pc != nullptr) {
+        pc->setCurrentTask(ProgressMsg{"reshaping layout"});
+        pc->increaseTotalStepsBy(iterationLimit);
+    }
+    refineWithUnitMoves(graph, options, state, moves, iterations, iterationLimit, pc);
     size_t refinementBudget = options.maxStructuralRefinements;
     if (refinementBudget == 0) {
         // Each look-ahead costs about one small solve, so keep budget times
@@ -580,7 +598,8 @@ LayoutPositions MapReshapeSolver::solvePositions(const MapReshapeGraph &graph,
                                          moves,
                                          iterations,
                                          refinementBudget,
-                                         iterationLimit);
+                                         iterationLimit,
+                                         pc);
         if (!shift) {
             break;
         }
@@ -635,9 +654,10 @@ LayoutPositions MapReshapeSolver::solvePositions(const MapReshapeGraph &graph,
 }
 
 ReshapeResult MapReshapeSolver::solve(const MapReshapeGraph &graph,
-                                      const ReshapeSolverOptions &options)
+                                      const ReshapeSolverOptions &options,
+                                      ProgressCounter *const pc)
 {
     ReshapeResult result;
-    (void) solvePositions(graph, options, result);
+    (void) solvePositions(graph, options, result, pc);
     return result;
 }

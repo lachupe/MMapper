@@ -2,6 +2,10 @@
 // Copyright (C) 2026 The MMapper Authors
 
 #include "../global/AnsiOstream.h"
+#include "../global/AsyncTasks.h"
+#include "../global/SendToUser.h"
+#include "../global/progresscounter.h"
+#include "../global/thread_utils.h"
 #include "../map/ChangeList.h"
 #include "../map/Map.h"
 #include "../map/MapReshapeApply.h"
@@ -14,9 +18,13 @@
 #include "../mapdata/mapdata.h"
 #include "abstractparser.h"
 
+#include <memory>
 #include <optional>
 #include <sstream>
 #include <string>
+
+#include <QPointer>
+#include <QString>
 
 namespace {
 
@@ -36,7 +44,7 @@ NODISCARD std::optional<RoomArea> resolveArea(MapData &mapData,
     return here.getArea();
 }
 
-void describeScope(AnsiOstream &os, const MapReshapeGraph &graph)
+void describeScope(std::ostream &os, const MapReshapeGraph &graph)
 {
     const ReshapeStatistics stats = graph.computeStatistics();
     os << "Rooms in scope: " << stats.roomsProcessed << " (core " << stats.coreRooms << ", margin "
@@ -44,12 +52,93 @@ void describeScope(AnsiOstream &os, const MapReshapeGraph &graph)
        << stats.fixedExternalRooms << ")\n";
 }
 
-/// Forward a std::ostream-based report into the user's AnsiOstream.
-void forwardReport(AnsiOstream &os, const std::function<void(std::ostream &)> &writer)
+/// Everything one invocation needs, so the background thread can work from a
+/// snapshot and the main thread can finish up afterwards.
+///
+/// The Map is an immutable persistent structure, so handing a copy to another
+/// thread is both safe and cheap. Only applying the result has to come back
+/// to the main thread.
+struct NODISCARD ReshapeJob final
 {
-    std::ostringstream buffer;
-    writer(buffer);
-    os << buffer.str();
+    Map map;
+    RoomArea area;
+    ReshapeModeEnum mode = ReshapeModeEnum::Flatten;
+    bool apply = false;
+
+    ReshapeResult result;
+    ChangeList changes;
+    std::string report;
+    bool hasChanges = false;
+};
+
+void runInBackground(ReshapeJob &job, ProgressCounter &pc)
+{
+    std::ostringstream os;
+
+    ReshapeOptions options;
+    const auto graph = MapReshapeGraph::buildForArea(job.map, job.area, options);
+    if (!graph) {
+        os << "No rooms found in area \"" << job.area.getStdStringViewUtf8() << "\".\n";
+        job.report = os.str();
+        return;
+    }
+
+    os << "Area: \"" << job.area.getStdStringViewUtf8() << "\" (" << to_string_view(job.mode)
+       << ")\n";
+    describeScope(os, *graph);
+
+    const ReshapeWeights weights = makeWeights(job.mode);
+
+    if (!job.apply) {
+        const LayoutPositions positions = MapReshapeScorer::currentPositions(*graph);
+        MapReshapeScorer::printReport(*graph, positions, os, weights);
+
+        const auto &ignored = graph->getUnsupportedExits();
+        if (!ignored.empty()) {
+            os << "ignored exits: " << ignored.size()
+               << " (random, special or unmapped exits say nothing reliable about geometry)\n";
+        }
+        os << "z levels in use: " << graph->countZLevels() << "\n";
+
+        const LayoutScore score = MapReshapeScorer::score(*graph, positions, weights);
+        const int64_t layerCost = score.zLayers + score.layerMismatch;
+        if (layerCost != 0) {
+            os << "Of the score, " << layerCost
+               << " comes from layer usage. \"reshape\" collapses layers where it can; "
+                  "\"reshape3d\" keeps them and honours up/down exits instead.\n";
+        }
+        job.report = os.str();
+        return;
+    }
+
+    std::ignore = MapReshapeSolver::solvePositions(*graph,
+                                                   ReshapeSolverOptions::forMode(job.mode),
+                                                   job.result,
+                                                   &pc);
+    switch (job.result.status) {
+    case ReshapeStatusEnum::Unchanged:
+        os << "No better layout found; the area is left alone.\n";
+        break;
+
+    case ReshapeStatusEnum::InfeasibleWithCurrentBoundary:
+        // Reporting the problem beats returning a malformed layout.
+        os << "Cannot reshape this area while preserving the surrounding rooms.\n"
+           << "Unresolved collisions: " << job.result.stats.conflictsAfter << " (was "
+           << job.result.stats.conflictsBefore << ")\n"
+           << "Try increasing the reshape margin, or including the neighbouring area.\n";
+        break;
+
+    case ReshapeStatusEnum::Improved:
+        job.changes = map_reshape::buildChanges(job.map, job.result.moves);
+        job.hasChanges = !job.changes.empty();
+        os << "Rooms moved: " << job.result.stats.roomsMoved << "\n"
+           << "Layout score: " << job.result.stats.scoreBefore << " -> "
+           << job.result.stats.scoreAfter << "\n"
+           << "Z levels: " << job.result.stats.zLevelsBefore << " -> "
+           << job.result.stats.zLevelsAfter << "\n";
+        break;
+    }
+    job.report = os.str();
 }
 
 } // namespace
@@ -66,72 +155,44 @@ void AbstractParser::doMapAreaReshape(AnsiOstream &os,
         return;
     }
 
-    const Map map = mapData.getCurrentMap();
-    ReshapeOptions options;
-    const auto graph = MapReshapeGraph::buildForArea(map, *area, options);
-    if (!graph) {
-        os << "No rooms found in area \"" << area->getStdStringViewUtf8() << "\".\n";
-        return;
-    }
+    auto job = std::make_shared<ReshapeJob>();
+    job->map = mapData.getCurrentMap();
+    job->area = *area;
+    job->mode = mode;
+    job->apply = applyResult;
 
-    os << "Area: \"" << area->getStdStringViewUtf8() << "\" (" << to_string_view(mode) << ")\n";
-    describeScope(os, *graph);
+    // Reshaping a large area takes seconds, and doing it inline would freeze
+    // the window with nothing to show that work is happening -- queued output
+    // cannot reach the user while the main thread is busy producing it. The
+    // search is pure, reading a snapshot and returning a list of movements,
+    // so only applying the result has to return to the main thread.
+    //
+    // The parser is held weakly rather than captured outright: a session can
+    // end while the task is still running, leaving nothing to apply to.
+    QPointer<AbstractParser> self{this};
+    const std::string taskName = applyResult ? "map area reshape" : "map area check";
 
-    if (!applyResult) {
-        forwardReport(os, [&graph](std::ostream &out) {
-            MapReshapeScorer::printReport(*graph, MapReshapeScorer::currentPositions(*graph), out);
+    const async_tasks::AsyncTaskHandle handle = async_tasks::startAsyncTask(
+        AsyncTaskTypeEnum::Task,
+        AllowCancelEnum::Allow,
+        taskName,
+        [job](ProgressCounter &pc) { runInBackground(deref(job), pc); },
+        [job, self]() {
+            ABORT_IF_NOT_ON_MAIN_THREAD();
+            ReshapeJob &finished = deref(job);
+            std::string text = finished.report;
+            if (finished.hasChanges) {
+                if (self.isNull()) {
+                    text += "The session ended before the reshape could be applied.\n";
+                } else if (!self->m_mapData.applyChanges(finished.changes)) {
+                    text += "Failed to apply the reshape; the map is unchanged.\n";
+                } else {
+                    text += "Applied as a single undo step.\n";
+                }
+            }
+            global::sendToUser(QString::fromStdString(text));
         });
-        const auto &ignored = graph->getUnsupportedExits();
-        if (!ignored.empty()) {
-            os << "ignored exits: " << ignored.size()
-               << " (random, special or unmapped exits say nothing reliable about geometry)\n";
-        }
 
-        // The z terms usually dominate the total, and which of them can be
-        // acted on depends entirely on the mode asked for, so say so rather
-        // than leaving the reader to guess why a big number barely moved.
-        const LayoutScore score = MapReshapeScorer::score(*graph,
-                                                          MapReshapeScorer::currentPositions(*graph),
-                                                          makeWeights(mode));
-        os << "z levels in use: " << graph->countZLevels() << "\n";
-        const int64_t layerCost = score.zLayers + score.layerMismatch;
-        if (layerCost != 0) {
-            os << "Of the score, " << layerCost << " comes from layer usage. \"reshape\" "
-               << "collapses layers where it can; \"reshape3d\" leaves them and honours "
-               << "up/down exits instead.\n";
-        }
-        return;
-    }
-
-    ReshapeResult result;
-    const LayoutPositions solved
-        = MapReshapeSolver::solvePositions(*graph, ReshapeSolverOptions::forMode(mode), result);
-
-    switch (result.status) {
-    case ReshapeStatusEnum::Unchanged:
-        os << "No better layout found; the area is left alone.\n";
-        return;
-
-    case ReshapeStatusEnum::InfeasibleWithCurrentBoundary:
-        // Reporting the problem beats returning a malformed layout.
-        os << "Cannot reshape this area while preserving the surrounding rooms.\n";
-        os << "Unresolved collisions: " << result.stats.conflictsAfter << " (was "
-           << result.stats.conflictsBefore << ")\n";
-        os << "Try increasing the reshape margin, or including the neighbouring area.\n";
-        return;
-
-    case ReshapeStatusEnum::Improved:
-        break;
-    }
-
-    const ChangeList changes = map_reshape::buildChanges(map, result.moves);
-    if (!mapData.applyChanges(changes)) {
-        os << "Failed to apply the reshape; the map is unchanged.\n";
-        return;
-    }
-
-    os << "Rooms moved: " << result.stats.roomsMoved << "\n";
-    os << "Layout score: " << result.stats.scoreBefore << " -> " << result.stats.scoreAfter << "\n";
-    os << "Z levels: " << result.stats.zLevelsBefore << " -> " << result.stats.zLevelsAfter << "\n";
-    os << "This counts as a single undo step.\n";
+    os << "Started task #" << handle.getId() << " (" << taskName
+       << "); the result will appear when it finishes.\n";
 }

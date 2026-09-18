@@ -9,6 +9,8 @@
 
 #include <cstddef>
 
+class ProgressCounter;
+
 struct NODISCARD ReshapeSolverOptions final
 {
     /// Prefer forMode() over setting this and `weights` separately: changing
@@ -19,9 +21,10 @@ struct NODISCARD ReshapeSolverOptions final
     /// Cap on accepted moves, so a pathological case terminates rather than
     /// running until someone kills MMapper.
     size_t maxMoves = 100'000;
-    /// Cap on passes over the room set. Each pass is one chance for every
-    /// movable room to improve.
-    size_t maxSweeps = 500;
+    /// Cap on passes over the room set, counting every pass the search makes
+    /// anywhere -- including the trial refinements used to judge a structural
+    /// shift, which share this budget rather than each getting their own.
+    size_t maxSweeps = 60;
 
     /// Keep every room on its current layer. Both modes need this off --
     /// flattening means moving rooms down, and volumetric layout means
@@ -108,12 +111,17 @@ struct NODISCARD ReshapeSolverOptions final
 class NODISCARD MapReshapeSolver final
 {
 public:
+    /// An optional ProgressCounter makes the solve visible and cancellable.
+    /// Steps are counted against the iteration budget, so the percentage is
+    /// an upper bound: a solve that converges early finishes ahead of it.
     NODISCARD static ReshapeResult solve(const MapReshapeGraph &graph,
-                                         const ReshapeSolverOptions &options = {});
+                                         const ReshapeSolverOptions &options = {},
+                                         ProgressCounter *pc = nullptr);
 
     /// The solved layout itself, for callers that want to inspect or rescore
     /// it rather than apply it. Parallel to MapReshapeGraph::getRooms().
     NODISCARD static LayoutPositions solvePositions(const MapReshapeGraph &graph,
                                                     const ReshapeSolverOptions &options,
-                                                    ReshapeResult &resultOut);
+                                                    ReshapeResult &resultOut,
+                                                    ProgressCounter *pc = nullptr);
 };

@@ -69,6 +69,7 @@ private Q_SLOTS:
 
     // The `_map area ...` subcommand tree.
     static void areaSubcommandsDispatchTest();
+    static void solveRespectsIterationBudgetTest();
 
     // Z handling: the two modes.
     static void flattenCollapsesUnnecessaryLayerTest();

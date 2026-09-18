@@ -1510,4 +1510,27 @@ void TestMapReshape::flattenNeverOpensANewLayerTest()
     }
 }
 
+void TestMapReshape::solveRespectsIterationBudgetTest()
+{
+    mmqt::HideQDebug forThisTest;
+    // Structural look-ahead runs a nested search per candidate. Those nested
+    // searches used to start with a fresh allowance each, so the real bound
+    // was the budget multiplied by the number of candidates -- which stayed
+    // hidden only while frozen z let every refinement converge at once. On a
+    // three-layer lattice that was the difference between five and a half
+    // seconds and a second and a half.
+    const Map map = buildPackedLadder();
+    const MapReshapeGraph graph = packedLadderGraph(map);
+
+    ReshapeSolverOptions options = ReshapeSolverOptions::forMode(ReshapeModeEnum::Flatten);
+    options.maxSweeps = 3;
+    const size_t cap = options.maxSweeps * graph.getRooms().size();
+
+    ReshapeResult result;
+    std::ignore = MapReshapeSolver::solvePositions(graph, options, result);
+
+    QVERIFY2(result.stats.iterations <= cap,
+             "every search, nested ones included, must share one iteration budget");
+}
+
 QTEST_MAIN(TestMapReshape)
