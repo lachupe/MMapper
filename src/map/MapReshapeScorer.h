@@ -1,0 +1,84 @@
+#pragma once
+// SPDX-License-Identifier: GPL-2.0-or-later
+// Copyright (C) 2026 The MMapper Authors
+
+#include "../global/macros.h"
+#include "ExitDirection.h"
+#include "MapReshapeGraph.h"
+#include "MapReshapeTypes.h"
+#include "coordinate.h"
+#include "roomid.h"
+
+#include <cstdint>
+#include <ostream>
+#include <string>
+#include <vector>
+
+/// Candidate coordinates, parallel to MapReshapeGraph::getRooms().
+///
+/// The graph holds the problem (topology, roles, obstacles) and never changes
+/// during a solve; positions hold the candidate solution. Keeping them apart
+/// lets a local search score a trial layout without touching the graph, and
+/// lets the same graph be scored against several candidates.
+using LayoutPositions = std::vector<Coordinate>;
+
+/// What a specific piece of the layout gets wrong. Reported for diagnostics;
+/// scoring aggregates the same conditions numerically.
+enum class NODISCARD LayoutIssueEnum : uint8_t {
+    /// An exit points to the wrong side, e.g. east to a room further west.
+    WrongDirection,
+    /// A NESW exit sits off its axis: north/south want equal x, east/west
+    /// want equal y.
+    Misaligned,
+    /// A horizontal exit spans more than one cell. Not wrong -- spacing is
+    /// elastic -- but preferably shorter.
+    Overlong,
+    /// A NESW exit whose endpoints sit on different z layers.
+    LayerMismatch,
+    /// Two rooms on the same cell.
+    Collision,
+    /// A pinned or external room is not where it started.
+    ImmovableMoved
+};
+
+NODISCARD extern std::string_view to_string_view(LayoutIssueEnum kind);
+
+struct NODISCARD LayoutIssue final
+{
+    LayoutIssueEnum kind = LayoutIssueEnum::WrongDirection;
+    RoomId from = INVALID_ROOMID;
+    /// INVALID_ROOMID for issues about a single room.
+    RoomId to = INVALID_ROOMID;
+    ExitDirEnum dir = ExitDirEnum::NONE;
+    /// Signed offset from `from` to `to`, for edge issues.
+    Coordinate delta;
+    /// How far off, in cells: perpendicular offset, excess length, or layers.
+    int amount = 0;
+};
+
+/// Scores a layout without modifying anything.
+///
+/// Scoring exists before any optimizer so the model can be checked against
+/// real areas first: if the scorer disagrees with a human's sense of which
+/// areas look bad, the weights or the model are wrong, and finding that out
+/// before writing a solver is much cheaper than after.
+class NODISCARD MapReshapeScorer final
+{
+public:
+    /// The layout as it stands in the map today.
+    NODISCARD static LayoutPositions currentPositions(const MapReshapeGraph &graph);
+
+    NODISCARD static LayoutScore score(const MapReshapeGraph &graph,
+                                       const LayoutPositions &positions,
+                                       const ReshapeWeights &weights = {});
+
+    /// Everything wrong with the layout, in graph order.
+    NODISCARD static std::vector<LayoutIssue> findIssues(const MapReshapeGraph &graph,
+                                                         const LayoutPositions &positions);
+
+    /// Human-readable breakdown for `_map area reshape`-style diagnostics.
+    static void printReport(const MapReshapeGraph &graph,
+                            const LayoutPositions &positions,
+                            std::ostream &os,
+                            const ReshapeWeights &weights = {});
+};

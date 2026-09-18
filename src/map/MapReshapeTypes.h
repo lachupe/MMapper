@@ -94,6 +94,71 @@ struct NODISCARD ReshapeOptions final
     int obstaclePadding = 8;
 };
 
+/// Relative cost of everything the layout can get wrong.
+///
+/// The ordering matters more than the absolute values. The governing
+/// relationship is that reasonable x/y distortion must always cost less than
+/// unnecessary z separation, so that a layout which can be fixed by stretching
+/// horizontally is never "fixed" by moving a room to another layer instead.
+/// Keep the numbers here rather than scattering constants through the solver.
+struct NODISCARD ReshapeWeights final
+{
+    /// Two rooms on one cell. Effectively forbidden rather than merely costly.
+    int64_t collision = 1'000'000;
+    /// Occupying a z layer beyond the first. Extremely expensive: extra layers
+    /// are the thing the reshaper exists to avoid.
+    int64_t extraZLayer = 100'000;
+    /// Per cell of z displacement from a room's original layer.
+    int64_t zMovement = 10'000;
+    /// Per layer a horizontal exit jumps. Tracked apart from zMovement: "this
+    /// area spans two layers" and "this east exit changes layer" are different
+    /// defects with different fixes, and diagnostics should not conflate them.
+    int64_t layerMismatch = 10'000;
+    /// An exit pointing the wrong way, e.g. an east exit whose target is west.
+    int64_t wrongDirection = 5'000;
+    /// Per cell a NESW exit sits off its axis: a north exit wants equal x.
+    int64_t alignment = 500;
+    /// Per cell of x/y displacement, multiplied by a margin room's distance
+    /// from the core, so resistance grows with distance.
+    int64_t marginMovementBase = 50;
+    /// Per cell an interior exit is longer than one.
+    int64_t edgeLength = 10;
+    /// Per cell a boundary-crossing exit is longer than one. Deliberately
+    /// cheaper: letting these stretch is what makes area reshaping possible
+    /// when the surrounding world is fixed.
+    int64_t boundaryEdgeLength = 2;
+    /// Per cell of the scope's bounding-box perimeter.
+    int64_t compactness = 1;
+    /// Per cell of x/y displacement for a core room. Cheap by design: moving
+    /// core rooms is the whole point.
+    int64_t coreMovement = 1;
+    /// Moving a room that must not move. A bug guard, not a trade-off.
+    int64_t immovableMoved = 1'000'000;
+};
+
+/// Per-component score breakdown. Kept split so diagnostics can say *why* a
+/// layout scores badly, and so weights can be tuned against real areas.
+struct NODISCARD LayoutScore final
+{
+    int64_t collision = 0;
+    int64_t zLayers = 0;
+    int64_t zMovement = 0;
+    int64_t layerMismatch = 0;
+    int64_t direction = 0;
+    int64_t alignment = 0;
+    int64_t movement = 0;
+    int64_t edgeLength = 0;
+    int64_t boundary = 0;
+    int64_t compactness = 0;
+    int64_t immovableMoved = 0;
+
+    NODISCARD int64_t total() const
+    {
+        return collision + zLayers + zMovement + layerMismatch + direction + alignment + movement
+               + edgeLength + boundary + compactness + immovableMoved;
+    }
+};
+
 enum class NODISCARD ReshapeStatusEnum : uint8_t {
     Improved,
     Unchanged,
