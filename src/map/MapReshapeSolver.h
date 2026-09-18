@@ -36,7 +36,7 @@ struct NODISCARD ReshapeSolverOptions final
     /// and the refinement count now capped directly, a 600-room selection
     /// was exhausting the old allowance in a tenth of a second and stopping
     /// with the job half done -- spending the budget rather than the time.
-    size_t maxSweeps = 300;
+    size_t maxSweeps = 3'000;
 
     /// Floor under the total iteration budget, for scopes too small for
     /// maxSweeps times the room count to mean anything.
@@ -46,13 +46,13 @@ struct NODISCARD ReshapeSolverOptions final
     /// solve -- enough to explore almost nothing. A five-room tower was
     /// stopping two floors short for exactly this reason. Iterations on a
     /// small scope cost almost nothing, so the floor is cheap.
-    size_t minIterations = 20'000;
+    size_t minIterations = 200'000;
 
     /// Ceiling on the same budget, so a large scope stays responsive.
     /// Without it, sweeps times rooms grows without limit, and the sweep
     /// count is now generous enough that a few thousand rooms would spend
     /// seconds for very little gain.
-    size_t maxIterations = 400'000;
+    size_t maxIterations = 50'000'000;
 
     /// Keep every room on its current layer. Both modes need this off --
     /// flattening means moving rooms down, and volumetric layout means
@@ -77,7 +77,7 @@ struct NODISCARD ReshapeSolverOptions final
     /// whole reason look-ahead exists is that the best shift usually looks
     /// slightly bad at first -- so this trades some quality for bounded time,
     /// and the bound is deliberately generous.
-    size_t maxStructuralCandidates = 32;
+    size_t maxStructuralCandidates = 96;
 
     /// Total look-aheads allowed across the whole solve, or 0 to scale it to
     /// the size of the area.
@@ -99,13 +99,13 @@ struct NODISCARD ReshapeSolverOptions final
     /// shift. Every candidate is copied and fully rescored before the
     /// refinement budget applies, so on a wide area an exhaustive list is
     /// itself the expensive part. 0 means no limit.
-    size_t maxCutPoints = 48;
+    size_t maxCutPoints = 128;
 
     /// Connected groups offered a whole-group move per round, largest first.
     /// Bounded for the same reason as the cut points: listing candidates is
     /// itself expensive, and a fragmented selection has as many groups as
     /// rooms.
-    size_t maxGroupsConsidered = 24;
+    size_t maxGroupsConsidered = 64;
 
     NODISCARD static ReshapeSolverOptions forMode(const ReshapeModeEnum mode)
     {
@@ -117,6 +117,14 @@ struct NODISCARD ReshapeSolverOptions final
 };
 
 /// Local search over room positions.
+///
+/// The budgets below are deliberately generous. Hill climbing stops of its
+/// own accord once nothing improves, so a large allowance costs nothing on
+/// a layout that settles early -- it is spent only where there is still
+/// something to gain. Reshaping runs on a worker thread behind a progress
+/// bar and can be cancelled, so minutes of work on a difficult area is a
+/// better trade than stopping early and handing back a layout that is
+/// half tidied.
 ///
 /// Deliberately a small domain-specific optimizer rather than a general
 /// graph-layout library: the constraints here (elastic spacing, semantic exit

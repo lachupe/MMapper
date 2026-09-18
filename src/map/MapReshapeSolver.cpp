@@ -783,9 +783,9 @@ LayoutPositions MapReshapeSolver::solvePositions(const MapReshapeGraph &graph,
     if (refinementBudget == 0) {
         // Each look-ahead costs about one small solve, so keep budget times
         // room count roughly constant.
-        constexpr size_t TOTAL_WORK = 60'000;
-        constexpr size_t MIN_BUDGET = 32;
-        constexpr size_t MAX_BUDGET = 512;
+        constexpr size_t TOTAL_WORK = 5'000'000;
+        constexpr size_t MIN_BUDGET = 2'000;
+        constexpr size_t MAX_BUDGET = 20'000;
         refinementBudget = std::clamp(TOTAL_WORK / std::max<size_t>(1, rooms.size()),
                                       MIN_BUDGET,
                                       MAX_BUDGET);
@@ -809,7 +809,12 @@ LayoutPositions MapReshapeSolver::solvePositions(const MapReshapeGraph &graph,
 
     const LayoutPositions &after = state.positions();
     resultOut.stats.iterations = iterations;
-    resultOut.stats.hitLimits = (iterations >= iterationLimit) || (moves >= effective.maxMoves);
+    // Includes running out of structural look-aheads, which is usually the
+    // binding constraint and was not reported at all: a solve could stop
+    // with plenty of iterations left, say it had not been limited, and have
+    // given up purely for want of look-aheads.
+    resultOut.stats.hitLimits = (iterations >= iterationLimit) || (moves >= effective.maxMoves)
+                                || (options.allowStructuralMoves && refinementBudget == 0);
     resultOut.stats.scoreAfter = MapReshapeScorer::score(graph, after, effective.weights).total();
 
     for (size_t i = 0; i < rooms.size(); ++i) {
