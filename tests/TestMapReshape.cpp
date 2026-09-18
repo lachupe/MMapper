@@ -10,6 +10,7 @@
 #include "../src/map/Map.h"
 #include "../src/map/MapReshapeGraph.h"
 #include "../src/map/MapReshapeScorer.h"
+#include "../src/map/MapReshapeSolver.h"
 #include "../src/map/MapReshapeTypes.h"
 #include "../src/map/RawRoom.h"
 #include "../src/map/RoomHandle.h"
@@ -453,7 +454,11 @@ void TestMapReshape::wrongDirectionIsPenalizedTest()
 
     const LayoutScore s = MapReshapeScorer::score(graph, positions);
     const ReshapeWeights weights;
-    QCOMPARE(s.direction, weights.wrongDirection * 2);
+    // The penalty is graded by how wrong the direction is, not a flat charge,
+    // so that local search has a gradient to descend instead of a plateau.
+    // Each of the two directed edges is one cell past the boundary, costing
+    // (1 - along) = 2 units of the weight.
+    QCOMPARE(s.direction, weights.wrongDirection * 4);
     QCOMPARE(countIssues(MapReshapeScorer::findIssues(graph, positions),
                          LayoutIssueEnum::WrongDirection),
              size_t(2));
@@ -735,6 +740,282 @@ void TestMapReshape::collisionOutranksEverythingTest()
     QVERIFY2(MapReshapeScorer::score(graph, colliding).total()
                  > MapReshapeScorer::score(graph, ugly).total(),
              "a collision must outrank any amount of merely ugly geometry");
+}
+
+// ---------------------------------------------------------------------------
+// Solver
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/// A 3x2 lattice, already laid out correctly:
+///     A-B-C
+///     | | |
+///     D-E-F
+NODISCARD Map buildCleanGrid()
+{
+    SyntheticMap builder;
+    builder.addRoom(0, Coordinate{0, 1, 0});
+    builder.addRoom(1, Coordinate{1, 1, 0});
+    builder.addRoom(2, Coordinate{2, 1, 0});
+    builder.addRoom(3, Coordinate{0, 0, 0});
+    builder.addRoom(4, Coordinate{1, 0, 0});
+    builder.addRoom(5, Coordinate{2, 0, 0});
+    builder.linkBoth(0, ExitDirEnum::EAST, 1);
+    builder.linkBoth(1, ExitDirEnum::EAST, 2);
+    builder.linkBoth(3, ExitDirEnum::EAST, 4);
+    builder.linkBoth(4, ExitDirEnum::EAST, 5);
+    builder.linkBoth(0, ExitDirEnum::SOUTH, 3);
+    builder.linkBoth(1, ExitDirEnum::SOUTH, 4);
+    builder.linkBoth(2, ExitDirEnum::SOUTH, 5);
+    return builder.build();
+}
+
+NODISCARD RoomIdSet allRooms(const Map &map, const uint32_t count)
+{
+    std::vector<uint32_t> ids;
+    for (uint32_t i = 0; i < count; ++i) {
+        ids.push_back(i);
+    }
+    return makeCore(map, ids);
+}
+
+} // namespace
+
+void TestMapReshape::cleanGridIsLeftAloneTest()
+{
+    mmqt::HideQDebug forThisTest;
+    const Map map = buildCleanGrid();
+
+    ReshapeOptions options;
+    options.marginRings = 1;
+    const MapReshapeGraph graph = MapReshapeGraph::build(map, allRooms(map, 6), options);
+
+    const ReshapeResult result = MapReshapeSolver::solve(graph);
+
+    // A layout with nothing wrong with it must not be churned: "no
+    // unnecessary movement" is the baseline the spec asks for first.
+    QCOMPARE(result.status, ReshapeStatusEnum::Unchanged);
+    QVERIFY(result.moves.empty());
+}
+
+void TestMapReshape::misalignedRoomIsStraightenedTest()
+{
+    mmqt::HideQDebug forThisTest;
+    SyntheticMap builder;
+    builder.addRoom(0, Coordinate{0, 0, 0});
+    // Correct side, but well off the east-west axis.
+    builder.addRoom(1, Coordinate{1, 3, 0});
+    builder.linkBoth(0, ExitDirEnum::EAST, 1);
+    const Map map = builder.build();
+
+    ReshapeOptions options;
+    options.marginRings = 1;
+    const MapReshapeGraph graph = MapReshapeGraph::build(map, allRooms(map, 2), options);
+
+    ReshapeResult result;
+    const LayoutPositions solved = MapReshapeSolver::solvePositions(graph, {}, result);
+
+    QCOMPARE(result.status, ReshapeStatusEnum::Improved);
+    // An east exit should end up sharing a row with its source.
+    const Coordinate a = solved[scopeIndex(graph, map, 0)];
+    const Coordinate b = solved[scopeIndex(graph, map, 1)];
+    QCOMPARE(a.y, b.y);
+    QVERIFY(b.x > a.x);
+}
+
+void TestMapReshape::wrongDirectionIsFixedTest()
+{
+    mmqt::HideQDebug forThisTest;
+    SyntheticMap builder;
+    builder.addRoom(0, Coordinate{0, 0, 0});
+    // East exit whose target sits to the west: the layout contradicts the map.
+    // Placed off-axis deliberately. Two rooms sharing a row cannot be swapped
+    // by unit moves at all, because the one that must pass has to step through
+    // the other's cell and pay a collision on the way. Getting round that
+    // needs the structural moves of a later milestone, not a better hill
+    // climber; here there is a clear path around.
+    builder.addRoom(1, Coordinate{-2, 1, 0});
+    builder.linkBoth(0, ExitDirEnum::EAST, 1);
+    const Map map = builder.build();
+
+    ReshapeOptions options;
+    options.marginRings = 1;
+    const MapReshapeGraph graph = MapReshapeGraph::build(map, allRooms(map, 2), options);
+
+    ReshapeResult result;
+    const LayoutPositions solved = MapReshapeSolver::solvePositions(graph, {}, result);
+
+    QCOMPARE(result.status, ReshapeStatusEnum::Improved);
+    QVERIFY2(solved[scopeIndex(graph, map, 1)].x > solved[scopeIndex(graph, map, 0)].x,
+             "the east neighbour must end up east of its source");
+    QCOMPARE(MapReshapeScorer::score(graph, solved).direction, int64_t(0));
+}
+
+void TestMapReshape::unnecessaryGapIsClosedTest()
+{
+    mmqt::HideQDebug forThisTest;
+    SyntheticMap builder;
+    builder.addRoom(0, Coordinate{0, 0, 0});
+    // "A . . . B" with nothing needing the space in between.
+    builder.addRoom(1, Coordinate{4, 0, 0});
+    builder.linkBoth(0, ExitDirEnum::EAST, 1);
+    const Map map = builder.build();
+
+    ReshapeOptions options;
+    options.marginRings = 1;
+    const MapReshapeGraph graph = MapReshapeGraph::build(map, allRooms(map, 2), options);
+
+    ReshapeResult result;
+    const LayoutPositions solved = MapReshapeSolver::solvePositions(graph, {}, result);
+
+    const int gap = solved[scopeIndex(graph, map, 1)].x - solved[scopeIndex(graph, map, 0)].x;
+    QCOMPARE(result.status, ReshapeStatusEnum::Improved);
+    QVERIFY2(gap < 4, "an unnecessary gap should shrink");
+    QVERIFY2(gap >= 1, "but the exit must still point east");
+}
+
+void TestMapReshape::immovableRoomsNeverMoveTest()
+{
+    mmqt::HideQDebug forThisTest;
+    const Map map = buildChain(5);
+
+    ReshapeOptions options;
+    options.marginRings = 1;
+    options.pinned.insert(internalId(map, 1));
+    const MapReshapeGraph graph = MapReshapeGraph::build(map, makeCore(map, {0, 1}), options);
+
+    ReshapeResult result;
+    const LayoutPositions solved = MapReshapeSolver::solvePositions(graph, {}, result);
+
+    for (size_t i = 0; i < graph.getRooms().size(); ++i) {
+        const LayoutRoom &room = graph.getRooms()[i];
+        if (!isMovable(room.role)) {
+            QCOMPARE(solved[i], room.original);
+        }
+    }
+    for (const RoomMove &move : result.moves) {
+        const LayoutRoom &room = graph.getRoom(*graph.findIndex(move.room));
+        QVERIFY(isMovable(room.role));
+    }
+}
+
+void TestMapReshape::solverIntroducesNoCollisionsTest()
+{
+    mmqt::HideQDebug forThisTest;
+    // A hub with four neighbours, all initially scattered, so the solver has
+    // to pull them in without stacking them on one another.
+    SyntheticMap builder;
+    builder.addRoom(0, Coordinate{0, 0, 0});
+    builder.addRoom(1, Coordinate{3, 1, 0});
+    builder.addRoom(2, Coordinate{-3, 1, 0});
+    builder.addRoom(3, Coordinate{1, 4, 0});
+    builder.addRoom(4, Coordinate{1, -4, 0});
+    builder.linkBoth(0, ExitDirEnum::EAST, 1);
+    builder.linkBoth(0, ExitDirEnum::WEST, 2);
+    builder.linkBoth(0, ExitDirEnum::NORTH, 3);
+    builder.linkBoth(0, ExitDirEnum::SOUTH, 4);
+    const Map map = builder.build();
+
+    ReshapeOptions options;
+    options.marginRings = 1;
+    const MapReshapeGraph graph = MapReshapeGraph::build(map, allRooms(map, 5), options);
+
+    ReshapeResult result;
+    const LayoutPositions solved = MapReshapeSolver::solvePositions(graph, {}, result);
+
+    QVERIFY(result.conflicts.empty());
+    QCOMPARE(MapReshapeScorer::score(graph, solved).collision, int64_t(0));
+}
+
+void TestMapReshape::solvedLayoutIsLocalMinimumTest()
+{
+    mmqt::HideQDebug forThisTest;
+    // The solver prices candidate moves with an incremental delta instead of
+    // rescoring the whole layout. If that arithmetic is wrong anywhere -- edge
+    // costs, collision pairs, the bounding box behind compactness -- the
+    // search stops somewhere that is not actually a local minimum. Checking
+    // the finished layout against full scoring catches that without reaching
+    // into the solver's internals.
+    SyntheticMap builder;
+    builder.addRoom(0, Coordinate{0, 0, 0});
+    builder.addRoom(1, Coordinate{4, 2, 0});
+    builder.addRoom(2, Coordinate{-3, 5, 0});
+    builder.addRoom(3, Coordinate{7, -4, 0});
+    builder.addRoom(4, Coordinate{2, 2, 0});
+    builder.linkBoth(0, ExitDirEnum::EAST, 1);
+    builder.linkBoth(1, ExitDirEnum::NORTH, 2);
+    builder.linkBoth(1, ExitDirEnum::SOUTH, 3);
+    builder.linkBoth(0, ExitDirEnum::NORTH, 4);
+    const Map map = builder.build();
+
+    ReshapeOptions options;
+    options.marginRings = 1;
+    const MapReshapeGraph graph = MapReshapeGraph::build(map, allRooms(map, 5), options);
+
+    ReshapeResult result;
+    const LayoutPositions solved = MapReshapeSolver::solvePositions(graph, {}, result);
+    const int64_t settled = MapReshapeScorer::score(graph, solved).total();
+
+    const std::vector<Coordinate> steps = {Coordinate{1, 0, 0},
+                                           Coordinate{-1, 0, 0},
+                                           Coordinate{0, 1, 0},
+                                           Coordinate{0, -1, 0}};
+    for (size_t i = 0; i < graph.getRooms().size(); ++i) {
+        if (!isMovable(graph.getRooms()[i].role)) {
+            continue;
+        }
+        for (const Coordinate &step : steps) {
+            LayoutPositions trial = solved;
+            trial[i] = trial[i] + step;
+            QVERIFY2(MapReshapeScorer::score(graph, trial).total() >= settled,
+                     "solver stopped at a layout a single unit move could improve, so the "
+                     "incremental score delta disagrees with full scoring");
+        }
+    }
+}
+
+void TestMapReshape::solverNeverWorsensScoreTest()
+{
+    mmqt::HideQDebug forThisTest;
+    SyntheticMap builder;
+    builder.addRoom(0, Coordinate{0, 0, 0});
+    builder.addRoom(1, Coordinate{5, 5, 0});
+    builder.addRoom(2, Coordinate{-6, 3, 0});
+    builder.linkBoth(0, ExitDirEnum::EAST, 1);
+    builder.linkBoth(0, ExitDirEnum::SOUTH, 2);
+    const Map map = builder.build();
+
+    ReshapeOptions options;
+    options.marginRings = 1;
+    const MapReshapeGraph graph = MapReshapeGraph::build(map, allRooms(map, 3), options);
+
+    ReshapeResult result;
+    const LayoutPositions solved = MapReshapeSolver::solvePositions(graph, {}, result);
+
+    // Reported figures must match what an independent full scoring says, and
+    // a reshape must never hand back something worse than it started with.
+    QCOMPARE(MapReshapeScorer::score(graph, solved).total(), result.stats.scoreAfter);
+    QVERIFY(result.stats.scoreAfter <= result.stats.scoreBefore);
+    if (result.status == ReshapeStatusEnum::Improved) {
+        QVERIFY(result.stats.scoreAfter < result.stats.scoreBefore);
+        QVERIFY(!result.moves.empty());
+    }
+}
+
+void TestMapReshape::emptyScopeIsUnchangedTest()
+{
+    mmqt::HideQDebug forThisTest;
+    const Map map = buildChain(2);
+
+    ReshapeOptions options;
+    options.marginRings = 0;
+    const MapReshapeGraph graph = MapReshapeGraph::build(map, RoomIdSet{}, options);
+
+    QVERIFY(graph.empty());
+    const ReshapeResult result = MapReshapeSolver::solve(graph);
+    QCOMPARE(result.status, ReshapeStatusEnum::Unchanged);
+    QVERIFY(result.moves.empty());
 }
 
 QTEST_MAIN(TestMapReshape)

@@ -76,6 +76,22 @@ public:
     NODISCARD static std::vector<LayoutIssue> findIssues(const MapReshapeGraph &graph,
                                                          const LayoutPositions &positions);
 
+    /// Cost of one horizontal edge at the given endpoint positions.
+    ///
+    /// Exposed because the solver evaluates candidate moves incrementally and
+    /// must charge each edge exactly what the scorer would. Two copies of this
+    /// arithmetic would eventually disagree, and a solver optimizing a
+    /// different function than the one being reported is a hard bug to see.
+    NODISCARD static int64_t edgeCost(const LayoutEdge &edge,
+                                      const Coordinate &from,
+                                      const Coordinate &to,
+                                      const ReshapeWeights &weights);
+
+    /// Cost of one room sitting at `pos` instead of where it started.
+    NODISCARD static int64_t movementCost(const LayoutRoom &room,
+                                          const Coordinate &pos,
+                                          const ReshapeWeights &weights);
+
     /// Human-readable breakdown for `_map area reshape`-style diagnostics.
     static void printReport(const MapReshapeGraph &graph,
                             const LayoutPositions &positions,

@@ -75,6 +75,18 @@ NODISCARD int64_t movementWeightFor(const LayoutRoom &room, const ReshapeWeights
     return weights.immovableMoved;
 }
 
+/// Is `cell` owned by a fixed room that is not part of the scope?
+///
+/// Such a room is authoritative: it never moves, so it is the candidate
+/// placement that has to give way.
+NODISCARD bool hasExternalObstacle(const MapReshapeGraph &graph,
+                                   const Coordinate &cell,
+                                   const RoomId self)
+{
+    const auto occupant = graph.findOccupant(cell);
+    return occupant && *occupant != self && !graph.findIndex(*occupant);
+}
+
 void requireMatchingSize(const MapReshapeGraph &graph, const LayoutPositions &positions)
 {
     if (positions.size() != graph.getRooms().size()) {
@@ -94,6 +106,47 @@ LayoutPositions MapReshapeScorer::currentPositions(const MapReshapeGraph &graph)
     return positions;
 }
 
+int64_t MapReshapeScorer::edgeCost(const LayoutEdge &edge,
+                                   const Coordinate &from,
+                                   const Coordinate &to,
+                                   const ReshapeWeights &weights)
+{
+    const EdgeGeometry g = measure(edge.dir, from, to);
+    int64_t cost = 0;
+    if (g.along <= 0) {
+        // Graded, not a flat charge. A binary penalty makes every wrong-side
+        // position cost the same, so unit-move local search sees a plateau:
+        // stepping an east neighbour from two cells west to one cell west
+        // changes nothing and is never taken, leaving the exit backwards
+        // forever. Charging by how wrong it is gives the search a gradient to
+        // follow, and "less backwards" genuinely is better.
+        cost += weights.wrongDirection * (1 - g.along);
+    } else {
+        // Spacing is elastic, so only the excess beyond one cell costs, and a
+        // boundary edge is allowed to stretch far more cheaply.
+        cost += (edge.crossesBoundary ? weights.boundaryEdgeLength : weights.edgeLength)
+                * (g.along - 1);
+    }
+    cost += weights.alignment * g.perp;
+    // A horizontal exit crossing layers is a defect regardless of how many
+    // layers the area uses overall.
+    cost += weights.layerMismatch * g.layers;
+    return cost;
+}
+
+int64_t MapReshapeScorer::movementCost(const LayoutRoom &room,
+                                       const Coordinate &pos,
+                                       const ReshapeWeights &weights)
+{
+    const int64_t dx = std::abs(pos.x - room.original.x);
+    const int64_t dy = std::abs(pos.y - room.original.y);
+    const int64_t dz = std::abs(pos.z - room.original.z);
+    if (!isMovable(room.role)) {
+        return (dx != 0 || dy != 0 || dz != 0) ? weights.immovableMoved : 0;
+    }
+    return movementWeightFor(room, weights) * (dx + dy);
+}
+
 LayoutScore MapReshapeScorer::score(const MapReshapeGraph &graph,
                                     const LayoutPositions &positions,
                                     const ReshapeWeights &weights)
@@ -107,10 +160,8 @@ LayoutScore MapReshapeScorer::score(const MapReshapeGraph &graph,
         const EdgeGeometry g = measure(edge.dir, positions[edge.fromIndex], positions[edge.toIndex]);
 
         if (g.along <= 0) {
-            score.direction += weights.wrongDirection;
+            score.direction += weights.wrongDirection * (1 - g.along);
         } else {
-            // Spacing is elastic, so only the excess beyond one cell costs,
-            // and a boundary edge is allowed to stretch far more cheaply.
             const int64_t excess = g.along - 1;
             if (edge.crossesBoundary) {
                 score.boundary += weights.boundaryEdgeLength * excess;
@@ -119,8 +170,6 @@ LayoutScore MapReshapeScorer::score(const MapReshapeGraph &graph,
             }
         }
         score.alignment += weights.alignment * g.perp;
-        // A horizontal exit crossing layers is a layout defect regardless of
-        // how many layers the area uses overall.
         score.layerMismatch += weights.layerMismatch * g.layers;
     }
 
@@ -128,15 +177,13 @@ LayoutScore MapReshapeScorer::score(const MapReshapeGraph &graph,
     for (size_t i = 0; i < rooms.size(); ++i) {
         const LayoutRoom &room = rooms[i];
         const Coordinate &pos = positions[i];
-        const int64_t dx = std::abs(pos.x - room.original.x);
-        const int64_t dy = std::abs(pos.y - room.original.y);
         const int64_t dz = std::abs(pos.z - room.original.z);
 
         if (isMovable(room.role)) {
-            score.movement += movementWeightFor(room, weights) * (dx + dy);
+            score.movement += movementCost(room, pos, weights);
             layersInUse.insert(pos.z);
-        } else if (dx != 0 || dy != 0 || dz != 0) {
-            score.immovableMoved += weights.immovableMoved;
+        } else {
+            score.immovableMoved += movementCost(room, pos, weights);
         }
         score.zMovement += weights.zMovement * dz;
     }
@@ -148,17 +195,21 @@ LayoutScore MapReshapeScorer::score(const MapReshapeGraph &graph,
     // Collisions, both among scope rooms and against fixed rooms that were
     // never part of the scope. An external occupant is authoritative: the
     // candidate placement is the thing that has to give way.
-    std::unordered_map<Coordinate, RoomId> taken;
-    taken.reserve(rooms.size());
+    // Counted per unordered pair sharing a cell, plus one per room landing on
+    // an external fixed room. Pairwise rather than "everyone after the first"
+    // so the count does not depend on iteration order -- the solver needs an
+    // order-independent delta when it moves a single room.
+    std::unordered_map<Coordinate, int64_t> cellCounts;
+    cellCounts.reserve(rooms.size());
     for (size_t i = 0; i < rooms.size(); ++i) {
-        const Coordinate &pos = positions[i];
-        if (!taken.emplace(pos, rooms[i].id).second) {
+        ++cellCounts[positions[i]];
+        if (hasExternalObstacle(graph, positions[i], rooms[i].id)) {
             score.collision += weights.collision;
-            continue;
         }
-        const auto occupant = graph.findOccupant(pos);
-        if (occupant && *occupant != rooms[i].id && !graph.findIndex(*occupant)) {
-            score.collision += weights.collision;
+    }
+    for (const auto &[cell, count] : cellCounts) {
+        if (count > 1) {
+            score.collision += weights.collision * (count * (count - 1) / 2);
         }
     }
 
@@ -259,12 +310,11 @@ std::vector<LayoutIssue> MapReshapeScorer::findIssues(const MapReshapeGraph &gra
             issues.push_back(issue);
             continue;
         }
-        const auto occupant = graph.findOccupant(pos);
-        if (occupant && *occupant != room.id && !graph.findIndex(*occupant)) {
+        if (hasExternalObstacle(graph, pos, room.id)) {
             LayoutIssue issue;
             issue.kind = LayoutIssueEnum::Collision;
             issue.from = room.id;
-            issue.to = *occupant;
+            issue.to = *graph.findOccupant(pos);
             issues.push_back(issue);
         }
     }

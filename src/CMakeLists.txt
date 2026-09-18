@@ -341,6 +341,8 @@ set(mmapper_SRCS
     map/MapReshapeGraph.h
     map/MapReshapeScorer.cpp
     map/MapReshapeScorer.h
+    map/MapReshapeSolver.cpp
+    map/MapReshapeSolver.h
     map/MapReshapeTypes.h
     map/ParseTree.cpp
     map/ParseTree.h

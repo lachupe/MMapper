@@ -44,4 +44,15 @@ private Q_SLOTS:
     static void distantMarginCostsMoreTest();
     static void coreMovesCheaperThanMarginTest();
     static void collisionOutranksEverythingTest();
+
+    // Solver.
+    static void cleanGridIsLeftAloneTest();
+    static void misalignedRoomIsStraightenedTest();
+    static void wrongDirectionIsFixedTest();
+    static void unnecessaryGapIsClosedTest();
+    static void immovableRoomsNeverMoveTest();
+    static void solverIntroducesNoCollisionsTest();
+    static void solvedLayoutIsLocalMinimumTest();
+    static void solverNeverWorsensScoreTest();
+    static void emptyScopeIsUnchangedTest();
 };
