@@ -81,6 +81,7 @@ private Q_SLOTS:
     static void draggedApartIslandClosesUpTest();
     static void distantNeighbourDoesNotDominateTest();
     static void scorerAndSolverAgreeOnEdgeCostTest();
+    static void twoRoomsBelowDoNotDragASelectionTest();
     static void volumetricStacksRoomsAboveEachOtherTest();
     static void volumetricKeepsHorizontalExitsOnOneLayerTest();
     static void volumetricIgnoresOriginalHeightTest();

@@ -630,7 +630,27 @@ NODISCARD std::optional<LayoutPositions> bestStructuralShift(
         shortlist.push_back(Candidate{score.total() - score.collision, std::move(candidate)});
     };
 
+    // Sampled like the cut points, and for the same reason: every candidate
+    // costs a copy of the layout and a full rescore before any budget
+    // applies, so a selection that breaks into hundreds of groups spends
+    // seconds merely listing what it might try. Largest first, since those
+    // are the moves no other mechanism can make.
+    std::vector<const std::vector<size_t> *> ranked;
+    ranked.reserve(groups.size());
     for (const std::vector<size_t> &group : groups) {
+        ranked.push_back(&group);
+    }
+    const size_t groupBudget = std::min(ranked.size(), options.maxGroupsConsidered);
+    std::partial_sort(ranked.begin(),
+                      ranked.begin() + static_cast<std::ptrdiff_t>(groupBudget),
+                      ranked.end(),
+                      [](const std::vector<size_t> *a, const std::vector<size_t> *b) {
+                          return a->size() > b->size();
+                      });
+    ranked.resize(groupBudget);
+
+    for (const std::vector<size_t> *const pGroup : ranked) {
+        const std::vector<size_t> &group = *pGroup;
         // Offered for lone rooms as well as real groups. These look like
         // duplicates of what the inner search already tries, and are not: a
         // candidate raised here is refined afterwards, so it can be accepted
@@ -739,8 +759,9 @@ LayoutPositions MapReshapeSolver::solvePositions(const MapReshapeGraph &graph,
     SearchState state{graph, options.weights};
     size_t moves = 0;
     size_t iterations = 0;
-    const size_t iterationLimit = std::max(options.minIterations,
-                                           options.maxSweeps * std::max<size_t>(1, rooms.size()));
+    const size_t iterationLimit = std::clamp(options.maxSweeps * std::max<size_t>(1, rooms.size()),
+                                             options.minIterations,
+                                             std::max(options.minIterations, options.maxIterations));
     ReshapeSolverOptions effective = options;
     if (effective.maxMoves == 0) {
         // Scaled to the scope so that every room can actually travel, rather

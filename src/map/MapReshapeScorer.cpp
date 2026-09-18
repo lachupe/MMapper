@@ -184,7 +184,17 @@ int64_t MapReshapeScorer::verticalEdgeCost(const LayoutEdge &edge,
     // Rooms joined by a stair generally belong above one another, so
     // horizontal drift between them costs -- except when flattening, where
     // sitting side by side is the whole point and this weight is zero.
-    cost += weights.verticalAlignment * (std::abs(to.x - from.x) + std::abs(to.y - from.y));
+    //
+    // Capped, because past a few cells the two are simply not above each
+    // other and being further away is no more wrong. Uncapped, the pull
+    // grew without limit, so a couple of rooms below could drag a whole
+    // selection clear across the map to sit over them, away from the
+    // entrance it actually hangs from. Crossing real distance is the
+    // business of the group alignment move, which does it in one step
+    // rather than by making every intermediate position expensive.
+    constexpr int MAX_STAIR_DRIFT = 3;
+    const int drift = std::abs(to.x - from.x) + std::abs(to.y - from.y);
+    cost += weights.verticalAlignment * std::min(drift, MAX_STAIR_DRIFT);
     // Attenuated with distance from the core, like horizontal edges.
     return cost / edgeInfluenceDivisor(edge.scopeDistance);
 }

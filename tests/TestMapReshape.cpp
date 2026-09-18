@@ -1528,6 +1528,7 @@ void TestMapReshape::solveRespectsIterationBudgetTest()
     // The floor that normally protects small scopes is lifted here, so the
     // sweep cap is the thing under test rather than the floor.
     options.minIterations = 0;
+    options.maxIterations = 0;
     const size_t cap = options.maxSweeps * graph.getRooms().size();
 
     ReshapeResult result;
@@ -2140,6 +2141,70 @@ void TestMapReshape::scorerAndSolverAgreeOnEdgeCostTest()
     QCOMPARE(score.direction + score.alignment + score.edgeLength + score.boundary
                  + score.layerMismatch,
              edgeTotal);
+}
+
+void TestMapReshape::twoRoomsBelowDoNotDragASelectionTest()
+{
+    mmqt::HideQDebug forThisTest;
+    // A block of rooms reached through an entrance to its south, with a
+    // couple of rooms on the layer below reached by a stair from its far
+    // corner. The block should stay by its entrance.
+    //
+    // It did not. The charge for a stair's two ends not being above one
+    // another grew without limit, so those two rooms below could pull the
+    // whole block north to sit over them -- away from the entrance, which
+    // lies outside the selection and is therefore weighted down. Past a few
+    // cells the two ends are simply not above each other, and being further
+    // away is no more wrong, so the charge is capped.
+    SyntheticMap b;
+    const auto id = [](int x, int y) { return static_cast<uint32_t>(y * 5 + x); };
+    for (int y = 0; y < 3; ++y) {
+        for (int x = 0; x < 5; ++x) {
+            b.addRoom(id(x, y), Coordinate{x, y, 0});
+        }
+    }
+    for (int y = 0; y < 3; ++y) {
+        for (int x = 0; x + 1 < 5; ++x) {
+            b.linkBoth(id(x, y), ExitDirEnum::EAST, id(x + 1, y));
+        }
+    }
+    for (int y = 0; y + 1 < 3; ++y) {
+        for (int x = 0; x < 5; ++x) {
+            b.linkBoth(id(x, y), ExitDirEnum::NORTH, id(x, y + 1));
+        }
+    }
+    // The entrance, south of the block and outside the selection.
+    b.addRoom(80, Coordinate{0, -1, 0});
+    b.linkBoth(80, ExitDirEnum::NORTH, id(0, 0));
+    // Two rooms a layer down, well to the north, reached from the far corner.
+    b.addRoom(90, Coordinate{0, 20, -1});
+    b.addRoom(91, Coordinate{1, 20, -1});
+    b.linkBoth(90, ExitDirEnum::EAST, 91);
+    b.linkBoth(id(4, 2), ExitDirEnum::DOWN, 90);
+    const Map map = b.build();
+
+    ReshapeOptions options;
+    options.marginRings = 1;
+    RoomIdSet core;
+    for (int y = 0; y < 3; ++y) {
+        for (int x = 0; x < 5; ++x) {
+            core.insert(internalId(map, id(x, y)));
+        }
+    }
+    const MapReshapeGraph graph = MapReshapeGraph::build(map, core, options);
+
+    ReshapeResult result;
+    const LayoutPositions solved = MapReshapeSolver::solvePositions(graph,
+                                                                    ReshapeSolverOptions::forMode(
+                                                                        ReshapeModeEnum::Volumetric),
+                                                                    result);
+
+    // The block began beside its entrance and there is no reason to leave.
+    const Coordinate entrance = solved[scopeIndex(graph, map, 80)];
+    const Coordinate nearest = solved[scopeIndex(graph, map, id(0, 0))];
+    QVERIFY2(std::abs(nearest.y - entrance.y) <= 2,
+             "the selection should stay by the entrance it is reached through");
+    QVERIFY2(nearest.y > entrance.y, "and remain north of it, as the exit says");
 }
 
 QTEST_MAIN(TestMapReshape)

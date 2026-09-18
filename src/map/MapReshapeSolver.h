@@ -30,7 +30,13 @@ struct NODISCARD ReshapeSolverOptions final
     /// Cap on passes over the room set, counting every pass the search makes
     /// anywhere -- including the trial refinements used to judge a structural
     /// shift, which share this budget rather than each getting their own.
-    size_t maxSweeps = 60;
+    ///
+    /// Was set far lower when look-ahead had no bound of its own and this
+    /// was the only thing keeping a solve finite. With the candidate lists
+    /// and the refinement count now capped directly, a 600-room selection
+    /// was exhausting the old allowance in a tenth of a second and stopping
+    /// with the job half done -- spending the budget rather than the time.
+    size_t maxSweeps = 300;
 
     /// Floor under the total iteration budget, for scopes too small for
     /// maxSweeps times the room count to mean anything.
@@ -41,6 +47,12 @@ struct NODISCARD ReshapeSolverOptions final
     /// stopping two floors short for exactly this reason. Iterations on a
     /// small scope cost almost nothing, so the floor is cheap.
     size_t minIterations = 20'000;
+
+    /// Ceiling on the same budget, so a large scope stays responsive.
+    /// Without it, sweeps times rooms grows without limit, and the sweep
+    /// count is now generous enough that a few thousand rooms would spend
+    /// seconds for very little gain.
+    size_t maxIterations = 400'000;
 
     /// Keep every room on its current layer. Both modes need this off --
     /// flattening means moving rooms down, and volumetric layout means
@@ -88,6 +100,12 @@ struct NODISCARD ReshapeSolverOptions final
     /// refinement budget applies, so on a wide area an exhaustive list is
     /// itself the expensive part. 0 means no limit.
     size_t maxCutPoints = 48;
+
+    /// Connected groups offered a whole-group move per round, largest first.
+    /// Bounded for the same reason as the cut points: listing candidates is
+    /// itself expensive, and a fragmented selection has as many groups as
+    /// rooms.
+    size_t maxGroupsConsidered = 24;
 
     NODISCARD static ReshapeSolverOptions forMode(const ReshapeModeEnum mode)
     {
