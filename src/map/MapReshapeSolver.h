@@ -19,8 +19,14 @@ struct NODISCARD ReshapeSolverOptions final
     ReshapeWeights weights = makeWeights(ReshapeModeEnum::Flatten);
 
     /// Cap on accepted moves, so a pathological case terminates rather than
-    /// running until someone kills MMapper.
-    size_t maxMoves = 100'000;
+    /// running until someone kills MMapper. 0 scales it to the scope.
+    ///
+    /// A fixed cap is a trap on a large scope: a hundred thousand moves is
+    /// roughly three per room across thirty thousand rooms, and because the
+    /// search works through a queue, that budget is spent entirely on the
+    /// rooms it reaches first. The rest are never touched, and the result
+    /// looks like a broken reshape rather than an unfinished one.
+    size_t maxMoves = 0;
     /// Cap on passes over the room set, counting every pass the search makes
     /// anywhere -- including the trial refinements used to judge a structural
     /// shift, which share this budget rather than each getting their own.
@@ -66,6 +72,12 @@ struct NODISCARD ReshapeSolverOptions final
     /// unchanged but made a 100-room area markedly worse. Scaling the budget
     /// inversely with room count keeps total work roughly constant instead.
     size_t maxStructuralRefinements = 0;
+
+    /// Cut points considered per axis when looking for a row or column to
+    /// shift. Every candidate is copied and fully rescored before the
+    /// refinement budget applies, so on a wide area an exhaustive list is
+    /// itself the expensive part. 0 means no limit.
+    size_t maxCutPoints = 48;
 
     NODISCARD static ReshapeSolverOptions forMode(const ReshapeModeEnum mode)
     {

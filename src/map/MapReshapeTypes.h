@@ -232,6 +232,14 @@ struct NODISCARD ReshapeStatistics final
     int64_t scoreAfter = 0;
 
     size_t iterations = 0;
+
+    /// The search stopped because it ran out of budget rather than because
+    /// it had nothing left to improve.
+    ///
+    /// Worth surfacing: a solve that gives up partway leaves some of the
+    /// area reshaped and the rest untouched, which looks like a broken
+    /// result rather than an unfinished one.
+    bool hitLimits = false;
 };
 
 struct NODISCARD ReshapeResult final

@@ -423,8 +423,11 @@ private:
     void doRemoveDoorNamesCommand();
     void doMapDiff();
     void doGenerateBaseMap();
+    /// Exactly one of `requestedArea` / `radius` selects the scope; with
+    /// neither, the area the player is standing in is used.
     void doMapAreaReshape(AnsiOstream &os,
                           const std::optional<std::string> &requestedArea,
+                          std::optional<int> radius,
                           bool applyResult,
                           ReshapeModeEnum mode);
     void doSearchCommand(StringView view);

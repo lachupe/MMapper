@@ -69,7 +69,13 @@ private Q_SLOTS:
 
     // The `_map area ...` subcommand tree.
     static void areaSubcommandsDispatchTest();
+    static void nearSubcommandsDispatchTest();
     static void solveRespectsIterationBudgetTest();
+
+    // Whole-storey moves in z.
+    static void volumetricLiftsWholeStoreyTest();
+    static void liftingOneRoomAloneIsRejectedTest();
+    static void flattenCollapsesStoreyOntoParentTest();
 
     // Z handling: the two modes.
     static void flattenCollapsesUnnecessaryLayerTest();

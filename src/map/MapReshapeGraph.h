@@ -56,6 +56,13 @@ public:
                                            const RoomIdSet &coreRooms,
                                            const ReshapeOptions &options);
 
+    /// Core is every room within `radius` graph steps of `origin`.
+    ///
+    /// The way in for maps whose rooms all sit in one enormous area, or none
+    /// at all: reshaping such a map by area would mean reshaping the whole
+    /// world at once, which is neither fast nor reviewable.
+    NODISCARD static RoomIdSet collectWithinRadius(const Map &map, RoomId origin, int radius);
+
     /// Convenience overload: core is every room of the named area.
     /// Returns nullopt when the area does not exist or is empty.
     NODISCARD static std::optional<MapReshapeGraph> buildForArea(const Map &map,

@@ -938,7 +938,7 @@ void AbstractParser::doMapCommand(StringView input)
     auto hereAction = [this](const ReshapeModeEnum mode, const bool apply) {
         return [this, mode, apply]() {
             sendToUser(SendToUserSourceEnum::FromMMapper, [this, mode, apply](AnsiOstream &os) {
-                doMapAreaReshape(os, std::nullopt, apply, mode);
+                doMapAreaReshape(os, std::nullopt, std::nullopt, apply, mode);
             });
         };
     };
@@ -947,7 +947,7 @@ void AbstractParser::doMapCommand(StringView input)
             // stringToken("area") matches without contributing a value, so
             // the matched vector holds just the verb and the area name.
             const auto v = getAnyVectorReversed(args);
-            doMapAreaReshape(user.getOstream(), v[1].getString(), apply, mode);
+            doMapAreaReshape(user.getOstream(), v[1].getString(), std::nullopt, apply, mode);
         };
     };
     auto namedSyntax = [&namedAction](const char *const verb,
@@ -1051,6 +1051,43 @@ void AbstractParser::doMapCommand(StringView input)
 
     auto consistSyntax = syn("check-consistency", "checks map consistency", checkConsistency);
 
+    auto radiusAction = [this](const ReshapeModeEnum mode, const bool apply) {
+        return [this, mode, apply](User &user, const Pair *const args) {
+            const auto v = getAnyVectorReversed(args);
+            doMapAreaReshape(user.getOstream(),
+                             std::nullopt,
+                             static_cast<int>(v[1].getInt()),
+                             apply,
+                             mode);
+        };
+    };
+    auto radiusSyntax = [&radiusAction](const char *const verb,
+                                        const char *const help,
+                                        const ReshapeModeEnum mode,
+                                        const bool apply) {
+        return syntax::buildSyntax(syntax::abbrevToken(verb),
+                                   syntax::TokenMatcher::alloc<syntax::ArgInt>(),
+                                   syntax::Accept(radiusAction(mode, apply), help));
+    };
+
+    // Scope by distance from the player rather than by area. Some maps put
+    // every room in one huge area, or in none, where reshaping "the area"
+    // would mean reshaping the whole world at once.
+    auto nearSyntax = syntax::buildSyntax(
+        syntax::stringToken("near"),
+        radiusSyntax("reshape",
+                     "flatten and tidy rooms within N steps of here",
+                     ReshapeModeEnum::Flatten,
+                     true),
+        radiusSyntax("reshape3d",
+                     "tidy rooms within N steps of here, honouring up/down exits",
+                     ReshapeModeEnum::Volumetric,
+                     true),
+        radiusSyntax("check",
+                     "report layout problems within N steps of here",
+                     ReshapeModeEnum::Flatten,
+                     false));
+
     auto areaSyntax = syntax::buildSyntax(
         syntax::stringToken("area"),
         syn("reshape",
@@ -1147,6 +1184,7 @@ void AbstractParser::doMapCommand(StringView input)
 
     auto mapSyntax = syntax::buildSyntax(gotoSyntax,
                                          areaSyntax,
+                                         nearSyntax,
                                          diffSyntax,
                                          statsSynax,
                                          showSyntax,

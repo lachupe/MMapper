@@ -14,6 +14,7 @@
 #include "../map/MapReshapeSolver.h"
 #include "../map/MapReshapeTypes.h"
 #include "../map/RoomHandle.h"
+#include "../map/World.h"
 #include "../map/mmapper2room.h"
 #include "../mapdata/mapdata.h"
 #include "abstractparser.h"
@@ -28,20 +29,55 @@
 
 namespace {
 
-/// The area to reshape: the one named, or the one the player is standing in.
-NODISCARD std::optional<RoomArea> resolveArea(MapData &mapData,
-                                              const std::optional<std::string> &requested,
-                                              AnsiOstream &os)
+/// Beyond this many rooms a reshape is no longer reviewable, and the search
+/// cannot finish one within any budget that keeps the client responsive.
+///
+/// Refusing is the honest outcome. Some maps put every room in a single
+/// area, or in none at all, where reshaping "the area" would mean reshaping
+/// the entire world in one go -- and a search that gives up partway through
+/// leaves half the world moved and half untouched.
+constexpr size_t MAX_SCOPE_ROOMS = 5000;
+
+struct NODISCARD ResolvedScope final
 {
+    RoomIdSet core;
+    std::string label;
+};
+
+/// What to reshape: the named area, everything within a few steps of the
+/// player, or the area the player is standing in.
+NODISCARD std::optional<ResolvedScope> resolveScope(MapData &mapData,
+                                                    const Map &map,
+                                                    const std::optional<std::string> &requested,
+                                                    const std::optional<int> radius,
+                                                    AnsiOstream &os)
+{
+    const auto fromArea = [&map](const RoomArea &area) -> ResolvedScope {
+        RoomIdSet core;
+        if (const auto *const rooms = map.getWorld().findAreaRoomSet(area)) {
+            rooms->for_each([&core](const RoomId id) { core.insert(id); });
+        }
+        const std::string name = std::string{area.getStdStringViewUtf8()};
+        return ResolvedScope{std::move(core),
+                             name.empty() ? std::string{"the unnamed area"}
+                                          : ("area \"" + name + "\"")};
+    };
+
     if (requested) {
-        return makeRoomArea(*requested);
+        return fromArea(makeRoomArea(*requested));
     }
+
     const RoomHandle here = mapData.getCurrentRoom();
     if (!here) {
-        os << "You are not in a known room, so there is no area to reshape.\n";
+        os << "You are not in a known room, so there is nothing to reshape.\n";
         return std::nullopt;
     }
-    return here.getArea();
+
+    if (radius) {
+        return ResolvedScope{MapReshapeGraph::collectWithinRadius(map, here.getId(), *radius),
+                             "rooms within " + std::to_string(*radius) + " steps of here"};
+    }
+    return fromArea(here.getArea());
 }
 
 void describeScope(std::ostream &os, const MapReshapeGraph &graph)
@@ -61,7 +97,11 @@ void describeScope(std::ostream &os, const MapReshapeGraph &graph)
 struct NODISCARD ReshapeJob final
 {
     Map map;
-    RoomArea area;
+    /// Pre-resolved, because working out "the area I am standing in" or
+    /// "everything within N steps" needs the current room, which belongs to
+    /// the main thread.
+    RoomIdSet core;
+    std::string scopeLabel;
     ReshapeModeEnum mode = ReshapeModeEnum::Flatten;
     bool apply = false;
 
@@ -76,31 +116,30 @@ void runInBackground(ReshapeJob &job, ProgressCounter &pc)
     std::ostringstream os;
 
     ReshapeOptions options;
-    const auto graph = MapReshapeGraph::buildForArea(job.map, job.area, options);
-    if (!graph) {
-        os << "No rooms found in area \"" << job.area.getStdStringViewUtf8() << "\".\n";
+    const MapReshapeGraph graph = MapReshapeGraph::build(job.map, job.core, options);
+    if (graph.empty()) {
+        os << "No rooms found in " << job.scopeLabel << ".\n";
         job.report = os.str();
         return;
     }
 
-    os << "Area: \"" << job.area.getStdStringViewUtf8() << "\" (" << to_string_view(job.mode)
-       << ")\n";
-    describeScope(os, *graph);
+    os << "Scope: " << job.scopeLabel << " (" << to_string_view(job.mode) << ")\n";
+    describeScope(os, graph);
 
     const ReshapeWeights weights = makeWeights(job.mode);
 
     if (!job.apply) {
-        const LayoutPositions positions = MapReshapeScorer::currentPositions(*graph);
-        MapReshapeScorer::printReport(*graph, positions, os, weights);
+        const LayoutPositions positions = MapReshapeScorer::currentPositions(graph);
+        MapReshapeScorer::printReport(graph, positions, os, weights);
 
-        const auto &ignored = graph->getUnsupportedExits();
+        const auto &ignored = graph.getUnsupportedExits();
         if (!ignored.empty()) {
             os << "ignored exits: " << ignored.size()
                << " (random, special or unmapped exits say nothing reliable about geometry)\n";
         }
-        os << "z levels in use: " << graph->countZLevels() << "\n";
+        os << "z levels in use: " << graph.countZLevels() << "\n";
 
-        const LayoutScore score = MapReshapeScorer::score(*graph, positions, weights);
+        const LayoutScore score = MapReshapeScorer::score(graph, positions, weights);
         const int64_t layerCost = score.zLayers + score.layerMismatch;
         if (layerCost != 0) {
             os << "Of the score, " << layerCost
@@ -111,7 +150,7 @@ void runInBackground(ReshapeJob &job, ProgressCounter &pc)
         return;
     }
 
-    std::ignore = MapReshapeSolver::solvePositions(*graph,
+    std::ignore = MapReshapeSolver::solvePositions(graph,
                                                    ReshapeSolverOptions::forMode(job.mode),
                                                    job.result,
                                                    &pc);
@@ -136,6 +175,14 @@ void runInBackground(ReshapeJob &job, ProgressCounter &pc)
            << job.result.stats.scoreAfter << "\n"
            << "Z levels: " << job.result.stats.zLevelsBefore << " -> "
            << job.result.stats.zLevelsAfter << "\n";
+        if (job.result.stats.hitLimits) {
+            // Never leave this implicit: a solve that ran out of budget
+            // leaves part of the scope reshaped and the rest untouched,
+            // which reads as a broken result rather than an unfinished one.
+            os << "NOTE: the search ran out of budget, so this reshape is "
+                  "incomplete -- some rooms were never reached. Undo it and "
+                  "work on a smaller scope instead.\n";
+        }
         break;
     }
     job.report = os.str();
@@ -145,19 +192,35 @@ void runInBackground(ReshapeJob &job, ProgressCounter &pc)
 
 void AbstractParser::doMapAreaReshape(AnsiOstream &os,
                                       const std::optional<std::string> &requestedArea,
+                                      const std::optional<int> radius,
                                       const bool applyResult,
                                       const ReshapeModeEnum mode)
 {
     MapData &mapData = m_mapData;
+    const Map map = mapData.getCurrentMap();
 
-    const std::optional<RoomArea> area = resolveArea(mapData, requestedArea, os);
-    if (!area) {
+    std::optional<ResolvedScope> scope = resolveScope(mapData, map, requestedArea, radius, os);
+    if (!scope) {
+        return;
+    }
+    if (scope->core.empty()) {
+        os << "No rooms found in " << scope->label << ".\n";
+        return;
+    }
+    if (scope->core.size() > MAX_SCOPE_ROOMS) {
+        os << scope->label << " holds " << scope->core.size() << " rooms, which is too many to "
+           << "reshape in one go (the limit is " << MAX_SCOPE_ROOMS << ").\n"
+           << "Reshaping that much at once cannot finish quickly enough to stay responsive, and "
+           << "a partial result would leave some of the map moved and the rest untouched.\n"
+           << "Use \"_map near reshape <radius>\" to work outwards from where you are "
+           << "instead.\n";
         return;
     }
 
     auto job = std::make_shared<ReshapeJob>();
-    job->map = mapData.getCurrentMap();
-    job->area = *area;
+    job->map = map;
+    job->core = std::move(scope->core);
+    job->scopeLabel = std::move(scope->label);
     job->mode = mode;
     job->apply = applyResult;
 
@@ -170,7 +233,7 @@ void AbstractParser::doMapAreaReshape(AnsiOstream &os,
     // The parser is held weakly rather than captured outright: a session can
     // end while the task is still running, leaving nothing to apply to.
     QPointer<AbstractParser> self{this};
-    const std::string taskName = applyResult ? "map area reshape" : "map area check";
+    const std::string taskName = applyResult ? "map reshape" : "map check";
 
     const async_tasks::AsyncTaskHandle handle = async_tasks::startAsyncTask(
         AsyncTaskTypeEnum::Task,

@@ -1533,4 +1533,159 @@ void TestMapReshape::solveRespectsIterationBudgetTest()
              "every search, nested ones included, must share one iteration budget");
 }
 
+namespace {
+
+/// A two-storey building drawn flat, the way a mapper draws one so it can be
+/// read: ground floor 0-1, upper floor 2-3, each floor joined sideways, and
+/// a staircase from 1 up to 2. Every room on one layer.
+NODISCARD Map buildFlatTwoStorey()
+{
+    SyntheticMap b;
+    b.addRoom(0, Coordinate{0, 0, 0});
+    b.addRoom(1, Coordinate{1, 0, 0});
+    b.addRoom(2, Coordinate{2, 0, 0});
+    b.addRoom(3, Coordinate{3, 0, 0});
+    b.linkBoth(0, ExitDirEnum::EAST, 1);
+    b.linkBoth(2, ExitDirEnum::EAST, 3);
+    b.linkBoth(1, ExitDirEnum::UP, 2);
+    return b.build();
+}
+
+NODISCARD MapReshapeGraph twoStoreyGraph(const Map &map)
+{
+    ReshapeOptions options;
+    options.marginRings = 1;
+    RoomIdSet core;
+    for (const uint32_t id : {0u, 1u, 2u, 3u}) {
+        core.insert(internalId(map, id));
+    }
+    return MapReshapeGraph::build(map, core, options);
+}
+
+} // namespace
+
+void TestMapReshape::volumetricLiftsWholeStoreyTest()
+{
+    mmqt::HideQDebug forThisTest;
+    const Map map = buildFlatTwoStorey();
+    const MapReshapeGraph graph = twoStoreyGraph(map);
+    QCOMPARE(graph.countZLevels(), size_t(1));
+
+    ReshapeResult result;
+    const LayoutPositions solved = MapReshapeSolver::solvePositions(graph,
+                                                                    ReshapeSolverOptions::forMode(
+                                                                        ReshapeModeEnum::Volumetric),
+                                                                    result);
+
+    QCOMPARE(result.status, ReshapeStatusEnum::Improved);
+    // Each floor keeps its own rooms together, and the upper one ends up
+    // above the lower. Absolute height does not matter, only the relation.
+    const int ground = solved[scopeIndex(graph, map, 0)].z;
+    const int upper = solved[scopeIndex(graph, map, 2)].z;
+    QCOMPARE(solved[scopeIndex(graph, map, 1)].z, ground);
+    QCOMPARE(solved[scopeIndex(graph, map, 3)].z, upper);
+    QVERIFY2(upper > ground, "the upper storey should end up above the lower one");
+}
+
+void TestMapReshape::liftingOneRoomAloneIsRejectedTest()
+{
+    mmqt::HideQDebug forThisTest;
+    // Why whole-storey moves have to exist. Raising just the room at the top
+    // of the stair fixes the staircase but drags its horizontal exit across
+    // a layer, which costs more than it saves -- so no sequence of
+    // single-room moves can ever unflatten this, whatever the weights are.
+    const Map map = buildFlatTwoStorey();
+    const MapReshapeGraph graph = twoStoreyGraph(map);
+    const ReshapeWeights weights = makeWeights(ReshapeModeEnum::Volumetric);
+
+    const LayoutPositions flat = MapReshapeScorer::currentPositions(graph);
+    LayoutPositions oneLifted = flat;
+    oneLifted[scopeIndex(graph, map, 2)].z += 1;
+
+    LayoutPositions storeyLifted = flat;
+    storeyLifted[scopeIndex(graph, map, 2)].z += 1;
+    storeyLifted[scopeIndex(graph, map, 3)].z += 1;
+
+    const int64_t flatScore = MapReshapeScorer::score(graph, flat, weights).total();
+    const int64_t oneScore = MapReshapeScorer::score(graph, oneLifted, weights).total();
+    const int64_t storeyScore = MapReshapeScorer::score(graph, storeyLifted, weights).total();
+
+    QVERIFY2(oneScore > flatScore, "lifting one room out of its storey must be a loss");
+    QVERIFY2(storeyScore < flatScore, "lifting the whole storey must be a gain");
+}
+
+void TestMapReshape::flattenCollapsesStoreyOntoParentTest()
+{
+    mmqt::HideQDebug forThisTest;
+    // The same building, this time genuinely stacked, asked to lie flat.
+    SyntheticMap b;
+    b.addRoom(0, Coordinate{0, 0, 0});
+    b.addRoom(1, Coordinate{1, 0, 0});
+    b.addRoom(2, Coordinate{1, 0, 1});
+    b.addRoom(3, Coordinate{2, 0, 1});
+    b.linkBoth(0, ExitDirEnum::EAST, 1);
+    b.linkBoth(2, ExitDirEnum::EAST, 3);
+    b.linkBoth(1, ExitDirEnum::UP, 2);
+    const Map map = b.build();
+    const MapReshapeGraph graph = twoStoreyGraph(map);
+    QCOMPARE(graph.countZLevels(), size_t(2));
+
+    ReshapeResult result;
+    const LayoutPositions solved = MapReshapeSolver::solvePositions(graph,
+                                                                    ReshapeSolverOptions::forMode(
+                                                                        ReshapeModeEnum::Flatten),
+                                                                    result);
+
+    QCOMPARE(result.status, ReshapeStatusEnum::Improved);
+    QCOMPARE(result.stats.zLevelsAfter, size_t(1));
+    // Collapsed by moving the storey as a unit, not by scattering its rooms.
+    QCOMPARE(solved[scopeIndex(graph, map, 2)].z, solved[scopeIndex(graph, map, 3)].z);
+    QVERIFY(MapReshapeScorer::score(graph, solved).collision == 0);
+}
+
+void TestMapReshape::nearSubcommandsDispatchTest()
+{
+    mmqt::HideQDebug forThisTest;
+    using namespace syntax;
+
+    // The radius-scoped verbs, which is how a map with one enormous area or
+    // none at all gets reshaped in pieces. Each takes an integer rather than
+    // a name, so the matched values differ from the area forms -- worth
+    // pinning, since getting that index wrong throws only when someone
+    // actually types the command.
+    std::string dispatched;
+    auto radius = [&dispatched](const char *const tag) {
+        return [&dispatched, tag](User &, const Pair *const args) {
+            const auto v = getAnyVectorReversed(args);
+            QCOMPARE(v.size(), size_t(2));
+            dispatched = std::string{tag} + ":" + std::to_string(v[1].getInt());
+        };
+    };
+    const auto nearSyntax
+        = buildSyntax(stringToken("near"),
+                      buildSyntax(abbrevToken("reshape"),
+                                  TokenMatcher::alloc<ArgInt>(),
+                                  Accept(radius("flat"), "flatten within N steps")),
+                      buildSyntax(abbrevToken("reshape3d"),
+                                  TokenMatcher::alloc<ArgInt>(),
+                                  Accept(radius("3d"), "three dimensions within N steps")),
+                      buildSyntax(abbrevToken("check"),
+                                  TokenMatcher::alloc<ArgInt>(),
+                                  Accept(radius("check"), "report within N steps")));
+    const auto root = buildSyntax(stringToken("_map"), nearSyntax);
+
+    const auto run = [&dispatched, &root](const char *const args) {
+        dispatched.clear();
+        const std::string owned{args};
+        std::ignore = processSyntax(root, "_map", StringView{owned});
+        return dispatched;
+    };
+
+    QCOMPARE(run("near reshape 10"), std::string("flat:10"));
+    QCOMPARE(run("near reshape3d 4"), std::string("3d:4"));
+    QCOMPARE(run("near check 25"), std::string("check:25"));
+    // A radius is required: without one there is no sensible default scope.
+    QCOMPARE(run("near reshape"), std::string());
+}
+
 QTEST_MAIN(TestMapReshape)

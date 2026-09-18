@@ -299,6 +299,38 @@ MapReshapeGraph MapReshapeGraph::build(const Map &map,
     return graph;
 }
 
+RoomIdSet MapReshapeGraph::collectWithinRadius(const Map &map, const RoomId origin, const int radius)
+{
+    RoomIdSet result;
+    if (!map.findRoomHandle(origin) || radius < 0) {
+        return result;
+    }
+    std::unordered_map<RoomId, int> depth;
+    std::deque<RoomId> queue;
+    depth.emplace(origin, 0);
+    queue.push_back(origin);
+    result.insert(origin);
+
+    while (!queue.empty()) {
+        const RoomId current = queue.front();
+        queue.pop_front();
+        const int d = depth.at(current);
+        if (d >= radius) {
+            continue;
+        }
+        forEachGraphNeighbor(map, current, [&](const RoomId neighbor) {
+            if (!map.findRoomHandle(neighbor)) {
+                return;
+            }
+            if (depth.emplace(neighbor, d + 1).second) {
+                result.insert(neighbor);
+                queue.push_back(neighbor);
+            }
+        });
+    }
+    return result;
+}
+
 std::optional<MapReshapeGraph> MapReshapeGraph::buildForArea(const Map &map,
                                                              const RoomArea &area,
                                                              const ReshapeOptions &options)
