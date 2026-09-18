@@ -29,14 +29,18 @@
 
 namespace {
 
-/// Beyond this many rooms a reshape is no longer reviewable, and the search
-/// cannot finish one within any budget that keeps the client responsive.
+/// Beyond this many rooms a reshape stops being reviewable, whatever it
+/// costs to compute.
 ///
-/// Refusing is the honest outcome. Some maps put every room in a single
-/// area, or in none at all, where reshaping "the area" would mean reshaping
-/// the entire world in one go -- and a search that gives up partway through
-/// leaves half the world moved and half untouched.
-constexpr size_t MAX_SCOPE_ROOMS = 5000;
+/// Speed is not the binding constraint: a release build flattens ten
+/// thousand rooms in under a second. The limit is that nobody can check a
+/// change that large, and the spec is explicit that reshaping the whole
+/// world should not be an ordinary action. Some maps put every room in one
+/// area, or in none, where reshaping "the area" means exactly that -- hence
+/// the radius-scoped commands, which give those maps a way in piece by
+/// piece. A debug build is roughly forty times slower than the figure
+/// above, so this is generous there rather than tight.
+constexpr size_t MAX_SCOPE_ROOMS = 20000;
 
 struct NODISCARD ResolvedScope final
 {
@@ -179,9 +183,13 @@ void runInBackground(ReshapeJob &job, ProgressCounter &pc)
             // Never leave this implicit: a solve that ran out of budget
             // leaves part of the scope reshaped and the rest untouched,
             // which reads as a broken result rather than an unfinished one.
-            os << "NOTE: the search ran out of budget, so this reshape is "
-                  "incomplete -- some rooms were never reached. Undo it and "
-                  "work on a smaller scope instead.\n";
+            // Deliberately not called "incomplete": the search stopping on
+            // budget usually still leaves a much better layout, and saying
+            // otherwise sends people to undo a result worth keeping.
+            os << "NOTE: the search stopped on its budget rather than because "
+                  "it had run out of improvements. Running this again will "
+                  "carry on from here, or use a smaller scope for a more "
+                  "thorough pass.\n";
         }
         break;
     }
