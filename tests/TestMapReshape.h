@@ -55,4 +55,9 @@ private Q_SLOTS:
     static void solvedLayoutIsLocalMinimumTest();
     static void solverNeverWorsensScoreTest();
     static void emptyScopeIsUnchangedTest();
+
+    // Structural moves: whole-row and whole-column shifts.
+    static void structuralShiftEscapesDeadlockTest();
+    static void insertedColumnCreatesNoFakeRoomTest();
+    static void structuralShiftRespectsImmovableRoomsTest();
 };

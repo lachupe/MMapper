@@ -10,6 +10,8 @@
 #include <cstdlib>
 #include <deque>
 #include <map>
+#include <optional>
+#include <set>
 #include <unordered_map>
 #include <vector>
 
@@ -71,9 +73,31 @@ public:
 
     NODISCARD const LayoutPositions &positions() const { return m_positions; }
 
+    /// Replace the whole layout, e.g. after a structural shift moved many
+    /// rooms at once, and rebuild the incremental bookkeeping from scratch.
+    void reset(LayoutPositions positions)
+    {
+        m_positions = std::move(positions);
+        m_cellCounts.clear();
+        m_xs.clear();
+        m_ys.clear();
+        for (size_t i = 0; i < m_positions.size(); ++i) {
+            ++m_cellCounts[m_positions[i]];
+            if (canMove(i)) {
+                ++m_xs[m_positions[i].x];
+                ++m_ys[m_positions[i].y];
+            }
+        }
+    }
+
     NODISCARD bool canMove(const size_t index) const
     {
         return isMovable(m_graph.getRooms()[index].role);
+    }
+
+    NODISCARD const std::vector<size_t> &incidentEdges(const size_t index) const
+    {
+        return m_incident[index];
     }
 
     /// Change in total score if room `index` moved to `to`. Negative is an
@@ -220,41 +244,78 @@ private:
     }
 };
 
-NODISCARD size_t countCollisions(const MapReshapeGraph &graph, const LayoutPositions &positions)
+enum class NODISCARD ShiftAxisEnum : uint8_t { X, Y };
+
+/// Shift every movable room at or beyond `threshold` along `axis` by `delta`.
+///
+/// Immovable rooms deliberately stay where they are. That is what lets an
+/// area grow into free space while the world around it holds still: the exits
+/// crossing the boundary simply get longer, which the scorer charges for
+/// gently on purpose.
+NODISCARD LayoutPositions shifted(const MapReshapeGraph &graph,
+                                  const LayoutPositions &positions,
+                                  const ShiftAxisEnum axis,
+                                  const int threshold,
+                                  const int delta)
 {
-    size_t count = 0;
-    for (const LayoutIssue &issue : MapReshapeScorer::findIssues(graph, positions)) {
-        if (issue.kind == LayoutIssueEnum::Collision) {
-            ++count;
+    LayoutPositions result = positions;
+    for (size_t i = 0; i < result.size(); ++i) {
+        if (!isMovable(graph.getRooms()[i].role)) {
+            continue;
+        }
+        const int value = (axis == ShiftAxisEnum::X) ? result[i].x : result[i].y;
+        if (value < threshold) {
+            continue;
+        }
+        if (axis == ShiftAxisEnum::X) {
+            result[i].x += delta;
+        } else {
+            result[i].y += delta;
         }
     }
-    return count;
+    return result;
 }
 
-} // namespace
+/// Coordinates worth cutting at: every occupied line, plus one past the end,
+/// so a column can be inserted after the last one too.
+NODISCARD std::vector<int> cutPoints(const MapReshapeGraph &graph,
+                                     const LayoutPositions &positions,
+                                     const ShiftAxisEnum axis)
+{
+    std::set<int> values;
+    for (size_t i = 0; i < positions.size(); ++i) {
+        if (!isMovable(graph.getRooms()[i].role)) {
+            continue;
+        }
+        values.insert((axis == ShiftAxisEnum::X) ? positions[i].x : positions[i].y);
+    }
+    if (values.empty()) {
+        return {};
+    }
+    std::vector<int> result(values.begin(), values.end());
+    result.push_back(*values.rbegin() + 1);
+    return result;
+}
 
-LayoutPositions MapReshapeSolver::solvePositions(const MapReshapeGraph &graph,
-                                                 const ReshapeSolverOptions &options,
-                                                 ReshapeResult &resultOut)
+NODISCARD int64_t totalScore(const MapReshapeGraph &graph,
+                             const LayoutPositions &positions,
+                             const ReshapeWeights &weights)
+{
+    return MapReshapeScorer::score(graph, positions, weights).total();
+}
+
+/// Run unit-move hill climbing until nothing local helps.
+///
+/// Shared by the main search and by structural look-ahead, which has to know
+/// what a shift is worth *after* the layout settles around it, not before.
+void refineWithUnitMoves(const MapReshapeGraph &graph,
+                         const ReshapeSolverOptions &options,
+                         SearchState &state,
+                         size_t &moves,
+                         size_t &iterations,
+                         const size_t iterationLimit)
 {
     const std::vector<LayoutRoom> &rooms = graph.getRooms();
-    const LayoutPositions before = MapReshapeScorer::currentPositions(graph);
-
-    resultOut = ReshapeResult{};
-    resultOut.stats = graph.computeStatistics();
-    resultOut.stats.scoreBefore = MapReshapeScorer::score(graph, before, options.weights).total();
-    // Counted the same way as conflictsAfter, so the two are comparable.
-    // computeStatistics() only sees in-scope overlaps, while findIssues also
-    // reports rooms standing on external fixed rooms.
-    resultOut.stats.conflictsBefore = countCollisions(graph, before);
-
-    if (graph.empty()) {
-        resultOut.status = ReshapeStatusEnum::Unchanged;
-        resultOut.stats.scoreAfter = resultOut.stats.scoreBefore;
-        return before;
-    }
-
-    SearchState state{graph, options.weights};
 
     // Work queue rather than repeated full sweeps: only rooms whose
     // surroundings changed can have a new best move.
@@ -266,10 +327,6 @@ LayoutPositions MapReshapeSolver::solvePositions(const MapReshapeGraph &graph,
             queued[i] = true;
         }
     }
-
-    size_t moves = 0;
-    size_t iterations = 0;
-    const size_t iterationLimit = options.maxSweeps * std::max<size_t>(1, rooms.size());
 
     while (!queue.empty() && moves < options.maxMoves && iterations < iterationLimit) {
         ++iterations;
@@ -308,13 +365,135 @@ LayoutPositions MapReshapeSolver::solvePositions(const MapReshapeGraph &graph,
             }
         };
         requeue(index);
-        for (const LayoutEdge &edge : graph.getHorizontalEdges()) {
-            if (edge.fromIndex == index) {
-                requeue(edge.toIndex);
-            } else if (edge.toIndex == index) {
-                requeue(edge.fromIndex);
+        for (const size_t e : state.incidentEdges(index)) {
+            const LayoutEdge &edge = graph.getHorizontalEdges()[e];
+            requeue(edge.fromIndex == index ? edge.toIndex : edge.fromIndex);
+        }
+    }
+}
+
+/// Best row/column shift, judged by where the layout settles afterwards.
+///
+/// A shift is usually not an improvement on its own: opening a column costs a
+/// little extra edge length immediately, and only pays off once a room moves
+/// into the space that appeared. Judging shifts on their immediate score
+/// therefore rejects exactly the ones worth making, so each candidate is
+/// refined with unit moves before being compared.
+///
+/// Candidates that introduce collisions are dropped before that refinement.
+/// Hill climbing will not walk a room back out through an occupied cell, so
+/// refining from an overlapping start is wasted work.
+NODISCARD std::optional<LayoutPositions> bestStructuralShift(const MapReshapeGraph &graph,
+                                                             const ReshapeSolverOptions &options,
+                                                             const LayoutPositions &current,
+                                                             size_t &moves,
+                                                             size_t &iterations,
+                                                             const size_t iterationLimit)
+{
+    const ReshapeWeights &weights = options.weights;
+    const LayoutScore baseScore = MapReshapeScorer::score(graph, current, weights);
+    const int64_t base = baseScore.total();
+
+    std::optional<LayoutPositions> best;
+    int64_t bestScore = base;
+
+    for (const ShiftAxisEnum axis : {ShiftAxisEnum::X, ShiftAxisEnum::Y}) {
+        for (const int threshold : cutPoints(graph, current, axis)) {
+            for (const int delta : {1, -1}) {
+                if (iterations >= iterationLimit || moves >= options.maxMoves) {
+                    return best;
+                }
+                LayoutPositions candidate = shifted(graph, current, axis, threshold, delta);
+                if (candidate == current) {
+                    continue;
+                }
+                if (MapReshapeScorer::score(graph, candidate, weights).collision
+                    > baseScore.collision) {
+                    continue;
+                }
+
+                SearchState trial{graph, weights};
+                trial.reset(std::move(candidate));
+                size_t trialMoves = 0;
+                size_t trialIterations = 0;
+                refineWithUnitMoves(graph,
+                                    options,
+                                    trial,
+                                    trialMoves,
+                                    trialIterations,
+                                    iterationLimit);
+                iterations += trialIterations + 1;
+
+                const int64_t score = MapReshapeScorer::score(graph, trial.positions(), weights)
+                                          .total();
+                if (score < bestScore) {
+                    bestScore = score;
+                    best = trial.positions();
+                }
             }
         }
+    }
+    if (best) {
+        ++moves;
+    }
+    return best;
+}
+
+NODISCARD size_t countCollisions(const MapReshapeGraph &graph, const LayoutPositions &positions)
+{
+    size_t count = 0;
+    for (const LayoutIssue &issue : MapReshapeScorer::findIssues(graph, positions)) {
+        if (issue.kind == LayoutIssueEnum::Collision) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+} // namespace
+
+LayoutPositions MapReshapeSolver::solvePositions(const MapReshapeGraph &graph,
+                                                 const ReshapeSolverOptions &options,
+                                                 ReshapeResult &resultOut)
+{
+    const std::vector<LayoutRoom> &rooms = graph.getRooms();
+    const LayoutPositions before = MapReshapeScorer::currentPositions(graph);
+
+    resultOut = ReshapeResult{};
+    resultOut.stats = graph.computeStatistics();
+    resultOut.stats.scoreBefore = MapReshapeScorer::score(graph, before, options.weights).total();
+    // Counted the same way as conflictsAfter, so the two are comparable.
+    // computeStatistics() only sees in-scope overlaps, while findIssues also
+    // reports rooms standing on external fixed rooms.
+    resultOut.stats.conflictsBefore = countCollisions(graph, before);
+
+    if (graph.empty()) {
+        resultOut.status = ReshapeStatusEnum::Unchanged;
+        resultOut.stats.scoreAfter = resultOut.stats.scoreBefore;
+        return before;
+    }
+
+    SearchState state{graph, options.weights};
+    size_t moves = 0;
+    size_t iterations = 0;
+    const size_t iterationLimit = options.maxSweeps * std::max<size_t>(1, rooms.size());
+
+    // Two nested searches. The inner one nudges single rooms until nothing
+    // local helps; the outer one then tries shifting a whole row or column,
+    // which is the only way to make space that is not already there. A
+    // successful shift opens up new local improvements, so the pair repeats.
+    refineWithUnitMoves(graph, options, state, moves, iterations, iterationLimit);
+    while (options.allowStructuralMoves && moves < options.maxMoves && iterations < iterationLimit) {
+        auto shift = bestStructuralShift(graph,
+                                         options,
+                                         state.positions(),
+                                         moves,
+                                         iterations,
+                                         iterationLimit);
+        if (!shift) {
+            break;
+        }
+        state.reset(std::move(*shift));
     }
 
     const LayoutPositions &after = state.positions();

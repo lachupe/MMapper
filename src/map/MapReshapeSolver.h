@@ -24,6 +24,11 @@ struct NODISCARD ReshapeSolverOptions final
     /// machinery below is written so that lifting this does not require
     /// restructuring the search.
     bool freezeZ = true;
+
+    /// Allow whole rows and columns to be inserted or removed, not just
+    /// single rooms nudged. Off only for testing the unit-move search in
+    /// isolation.
+    bool allowStructuralMoves = true;
 };
 
 /// Local search over room positions.
@@ -39,6 +44,15 @@ struct NODISCARD ReshapeSolverOptions final
 /// their best move may have changed. Candidate moves are evaluated with an
 /// incremental score delta rather than by rescoring the whole layout, which
 /// is what makes an area of a few thousand rooms tractable.
+///
+/// Unit moves alone cannot open up space: shifting one room into a crowded
+/// neighbourhood just trades one problem for another. So the search also
+/// offers structural moves -- shift every movable room on one side of a given
+/// column or row by one cell. That inserts an empty column where the grid is
+/// too tight, or closes one where the spacing serves no purpose, without
+/// inventing rooms to fill it. Those candidates are priced by rescoring the
+/// whole layout rather than incrementally: they move many rooms at once, and
+/// they are tried far less often than unit moves.
 ///
 /// Known limitation of unit moves: two rooms that need to swap sides cannot
 /// do so if they share a row or column. The one that must pass would have to

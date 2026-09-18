@@ -1018,4 +1018,174 @@ void TestMapReshape::emptyScopeIsUnchangedTest()
     QVERIFY(result.moves.empty());
 }
 
+namespace {
+
+/// Two rows tied together by vertical exits, packed with no slack, plus one
+/// extra room on the bottom row that has nowhere to sit.
+///
+/// Every single-room move out of this is a loss: sliding a room right lands
+/// on its neighbour, and sliding the rightmost one right breaks a vertical
+/// alignment for more than the move saves. Only shifting a whole column can
+/// open the space, and even that pays off just after a room fills it.
+///
+///     10 11 12 13        (top row, ids 10..13)
+///      0  1  2  3        (bottom row, ids 0..3)
+///         99             (the homeless room, connected between 1 and 2)
+NODISCARD Map buildPackedLadder()
+{
+    SyntheticMap b;
+    b.addRoom(0, Coordinate{0, 0, 0});
+    b.addRoom(1, Coordinate{1, 0, 0});
+    b.addRoom(2, Coordinate{2, 0, 0});
+    b.addRoom(3, Coordinate{3, 0, 0});
+    b.addRoom(10, Coordinate{0, 1, 0});
+    b.addRoom(11, Coordinate{1, 1, 0});
+    b.addRoom(12, Coordinate{2, 1, 0});
+    b.addRoom(13, Coordinate{3, 1, 0});
+    b.addRoom(99, Coordinate{1, -1, 0});
+    b.linkBoth(0, ExitDirEnum::EAST, 1);
+    b.linkBoth(1, ExitDirEnum::EAST, 99);
+    b.linkBoth(99, ExitDirEnum::EAST, 2);
+    b.linkBoth(2, ExitDirEnum::EAST, 3);
+    b.linkBoth(10, ExitDirEnum::EAST, 11);
+    b.linkBoth(11, ExitDirEnum::EAST, 12);
+    b.linkBoth(12, ExitDirEnum::EAST, 13);
+    b.linkBoth(0, ExitDirEnum::NORTH, 10);
+    b.linkBoth(1, ExitDirEnum::NORTH, 11);
+    b.linkBoth(2, ExitDirEnum::NORTH, 12);
+    b.linkBoth(3, ExitDirEnum::NORTH, 13);
+    return b.build();
+}
+
+NODISCARD MapReshapeGraph packedLadderGraph(const Map &map)
+{
+    ReshapeOptions options;
+    options.marginRings = 1;
+    RoomIdSet core;
+    for (const uint32_t id : {0u, 1u, 2u, 3u, 10u, 11u, 12u, 13u, 99u}) {
+        core.insert(internalId(map, id));
+    }
+    return MapReshapeGraph::build(map, core, options);
+}
+
+/// The x coordinates of the given rooms, which must all share one row.
+NODISCARD std::vector<int> rowColumns(const MapReshapeGraph &graph,
+                                      const Map &map,
+                                      const LayoutPositions &positions,
+                                      const std::vector<uint32_t> &ids)
+{
+    std::vector<int> xs;
+    for (const uint32_t id : ids) {
+        xs.push_back(positions[scopeIndex(graph, map, id)].x);
+    }
+    std::sort(xs.begin(), xs.end());
+    return xs;
+}
+
+NODISCARD bool allShareRow(const MapReshapeGraph &graph,
+                           const Map &map,
+                           const LayoutPositions &positions,
+                           const std::vector<uint32_t> &ids)
+{
+    const int y = positions[scopeIndex(graph, map, ids.front())].y;
+    for (const uint32_t id : ids) {
+        if (positions[scopeIndex(graph, map, id)].y != y) {
+            return false;
+        }
+    }
+    return true;
+}
+
+} // namespace
+
+void TestMapReshape::structuralShiftEscapesDeadlockTest()
+{
+    mmqt::HideQDebug forThisTest;
+    const Map map = buildPackedLadder();
+    const MapReshapeGraph graph = packedLadderGraph(map);
+
+    ReshapeSolverOptions unitOnly;
+    unitOnly.allowStructuralMoves = false;
+
+    ReshapeResult unitResult;
+    (void) MapReshapeSolver::solvePositions(graph, unitOnly, unitResult);
+
+    // Unit moves alone are genuinely stuck here: every single-room move makes
+    // the layout worse, so hill climbing accepts none of them.
+    QCOMPARE(unitResult.status, ReshapeStatusEnum::Unchanged);
+    QCOMPARE(unitResult.stats.scoreAfter, unitResult.stats.scoreBefore);
+
+    ReshapeResult structuralResult;
+    const LayoutPositions solved = MapReshapeSolver::solvePositions(graph, {}, structuralResult);
+
+    QCOMPARE(structuralResult.status, ReshapeStatusEnum::Improved);
+    QVERIFY2(structuralResult.stats.scoreAfter < unitResult.stats.scoreAfter,
+             "shifting a whole column must reach what unit moves cannot");
+    QVERIFY(structuralResult.conflicts.empty());
+    QCOMPARE(MapReshapeScorer::score(graph, solved).collision, int64_t(0));
+}
+
+void TestMapReshape::insertedColumnCreatesNoFakeRoomTest()
+{
+    mmqt::HideQDebug forThisTest;
+    const Map map = buildPackedLadder();
+    const MapReshapeGraph graph = packedLadderGraph(map);
+
+    ReshapeResult result;
+    const LayoutPositions solved = MapReshapeSolver::solvePositions(graph, {}, result);
+    QCOMPARE(result.status, ReshapeStatusEnum::Improved);
+
+    // Assertions are translation-invariant: what matters is the shape, not
+    // where the solver happened to park it.
+    const std::vector<uint32_t> bottom = {0u, 1u, 99u, 2u, 3u};
+    const std::vector<uint32_t> top = {10u, 11u, 12u, 13u};
+    QVERIFY(allShareRow(graph, map, solved, bottom));
+    QVERIFY(allShareRow(graph, map, solved, top));
+
+    // The bottom row now holds all five rooms side by side.
+    const std::vector<int> bottomXs = rowColumns(graph, map, solved, bottom);
+    QCOMPARE(bottomXs.back() - bottomXs.front(), 4);
+    for (size_t i = 1; i < bottomXs.size(); ++i) {
+        QCOMPARE(bottomXs[i] - bottomXs[i - 1], 1);
+    }
+
+    // The top row spans the same five columns with only four rooms, so one
+    // column is simply empty. That gap is the point: the solver allocated
+    // geometric space rather than inventing a room to fill it.
+    const std::vector<int> topXs = rowColumns(graph, map, solved, top);
+    QCOMPARE(topXs.size(), size_t(4));
+    QCOMPARE(topXs.back() - topXs.front(), 4);
+
+    // And the scope still contains exactly the rooms it started with.
+    QCOMPARE(graph.getRooms().size(), size_t(9));
+}
+
+void TestMapReshape::structuralShiftRespectsImmovableRoomsTest()
+{
+    mmqt::HideQDebug forThisTest;
+    const Map map = buildPackedLadder();
+
+    ReshapeOptions options;
+    options.marginRings = 1;
+    // Freeze one room in the middle of the block. A whole-column shift must
+    // step around it rather than dragging it along.
+    options.pinned.insert(internalId(map, 12));
+    RoomIdSet core;
+    for (const uint32_t id : {0u, 1u, 2u, 3u, 10u, 11u, 12u, 13u, 99u}) {
+        core.insert(internalId(map, id));
+    }
+    const MapReshapeGraph graph = MapReshapeGraph::build(map, core, options);
+
+    ReshapeResult result;
+    const LayoutPositions solved = MapReshapeSolver::solvePositions(graph, {}, result);
+
+    for (size_t i = 0; i < graph.getRooms().size(); ++i) {
+        const LayoutRoom &room = graph.getRooms()[i];
+        if (!isMovable(room.role)) {
+            QCOMPARE(solved[i], room.original);
+        }
+    }
+    QVERIFY(result.conflicts.empty());
+}
+
 QTEST_MAIN(TestMapReshape)
