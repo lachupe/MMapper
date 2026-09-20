@@ -659,6 +659,8 @@ if(WITH_FRONTEND)
         frontend/FrontendMessages.h
         frontend/FrontendServer.cpp
         frontend/FrontendServer.h
+        frontend/FrontendSession.cpp
+        frontend/FrontendSession.h
         frontend/FrontendSubscriptions.cpp
         frontend/FrontendSubscriptions.h
     )

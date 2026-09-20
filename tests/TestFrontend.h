@@ -21,6 +21,7 @@ private Q_SLOTS:
     static void subscriptionMalformedTest();
     static void terminalOutputTest();
     static void sessionStateTest();
+    static void inputSubscriptionTest();
     static void errorTest();
     static void mapPositionTest();
     static void mapPositionWithoutServerIdTest();

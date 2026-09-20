@@ -351,13 +351,14 @@ MainWindow::MainWindow()
                                                       this);
 
 #ifndef MMAPPER_NO_FRONTEND
-        std::invoke([this]() {
+        std::invoke([this, listener]() {
             const auto &settings = getConfig().connection;
             if (!settings.frontendEnabled) {
                 return;
             }
             auto *const frontend = new FrontendServer(deref(m_gameObserver),
                                                       deref(m_mapData),
+                                                      deref(listener),
                                                       this);
             connect(frontend, &FrontendServer::sig_log, this, &MainWindow::slot_log);
             if (!frontend->listen(settings.frontendPort)) {

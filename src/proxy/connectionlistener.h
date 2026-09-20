@@ -52,6 +52,9 @@ class NODISCARD_QOBJECT ConnectionListener final : public QObject
 
 public:
     void startClient(std::unique_ptr<AbstractSocket> socket);
+    /// True while a downstream client owns the session. MMapper accepts only one, so this
+    /// says whether startClient() would be accepted or rejected.
+    NODISCARD bool hasClient() const { return m_proxy != nullptr; }
 
 private:
     MapData &m_mapData;
@@ -87,6 +90,10 @@ private:
 signals:
     void sig_log(const QString &, const QString &);
     void sig_clientSuccessfullyConnected();
+    /// The session slot has been given up and startClient() would be accepted again.
+    /// Emitted while the old session is still being destroyed, so act on it through a
+    /// queued connection rather than inspecting hasClient() straight away.
+    void sig_clientDisconnected();
 
 protected slots:
     void slot_onIncomingConnection(qintptr socketDescriptor);

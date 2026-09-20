@@ -6,6 +6,7 @@
 #include "../global/macros.h"
 #include "../map/roomid.h"
 #include "../proxy/GmcpMessage.h"
+#include "FrontendSession.h"
 #include "FrontendSubscriptions.h"
 
 #include <map>
@@ -15,17 +16,19 @@
 #include <QObject>
 #include <QString>
 
+class ConnectionListener;
 class GameObserver;
 class MapData;
 class QWebSocket;
 class QWebSocketServer;
 
-/// A read-only WebSocket endpoint that publishes MMapper's session to external frontends.
+/// A WebSocket endpoint that publishes MMapper's session to external frontends.
 ///
-/// This is the *observer* half of the frontend protocol. It watches an ordinary MMapper
-/// session -- one driven by a telnet client or by the built-in client -- and mirrors it to
-/// any number of connected frontends. It never occupies MMapper's single downstream
-/// session slot, and it never sends anything upstream to MUME.
+/// Any number of frontends may watch a session. At most one may drive it, because MMapper
+/// accepts a single downstream client: the first frontend to connect while that slot is
+/// free takes it and may send input, and every other frontend observes. A frontend that
+/// connects while a telnet or built-in client already owns the session observes too. Each
+/// frontend is told which it is, in MMapper.Session.State's `role`.
 ///
 /// Frontends speak the same GMCP dialect a telnet client would, minus telnet framing: each
 /// WebSocket text frame is one `Package.Name <optional json>` message. A frontend announces
@@ -49,8 +52,14 @@ private:
 private:
     GameObserver &m_observer;
     MapData &m_mapData;
+    ConnectionListener &m_listener;
     QWebSocketServer *m_server = nullptr;
     std::vector<Client> m_clients;
+
+    /// Attached only while a frontend is driving the session.
+    FrontendSession m_session;
+    /// The frontend holding m_session, or null when none is driving.
+    QWebSocket *m_driver = nullptr;
 
     /// Last known value of each stateful package, replayed to a frontend that connects
     /// mid-session so that it does not have to wait for the next change to become usable.
@@ -62,7 +71,10 @@ private:
     Signal2Lifetime m_lifetime;
 
 public:
-    explicit FrontendServer(GameObserver &observer, MapData &mapData, QObject *parent);
+    explicit FrontendServer(GameObserver &observer,
+                            MapData &mapData,
+                            ConnectionListener &listener,
+                            QObject *parent);
     ~FrontendServer() final;
 
 public:
@@ -94,7 +106,14 @@ private:
     void publish(const GmcpMessage &msg);
     static void sendTo(Client &client, const GmcpMessage &msg);
     void replayTo(Client &client);
+    /// Gives the session to `client` if nothing else owns it. Returns true if it now drives.
+    NODISCARD bool tryTakeSession(const Client &client);
+    /// Gives the session to the longest-waiting frontend if it is free and none holds it.
+    void offerSession();
+    void releaseSession();
+    NODISCARD GmcpMessage sessionStateFor(const Client &client) const;
+    void handleInput(Client &client, const GmcpMessage &msg);
     void rememberIfStateful(const GmcpMessage &msg);
     void publishSessionState();
-    void log(const QString &msg) { emit sig_log("Frontend", msg); }
+    void log(const QString &msg);
 };

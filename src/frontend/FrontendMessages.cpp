@@ -55,13 +55,17 @@ GmcpMessage makeTerminalOutput(const SendToUserSourceEnum source,
     return GmcpMessage{GmcpMessageTypeEnum::MMAPPER_TERMINAL_OUTPUT, toGmcpJson(obj)};
 }
 
-GmcpMessage makeSessionState(const bool upstreamConnected, const bool mapLoaded, const bool echo)
+GmcpMessage makeSessionState(const bool upstreamConnected,
+                             const bool mapLoaded,
+                             const bool echo,
+                             const bool driving)
 {
     QJsonObject obj;
     obj["upstream"] = upstreamConnected ? QStringLiteral("connected")
                                         : QStringLiteral("disconnected");
     obj["mapLoaded"] = mapLoaded;
     obj["echo"] = echo;
+    obj["role"] = driving ? QStringLiteral("driving") : QStringLiteral("observing");
     return GmcpMessage{GmcpMessageTypeEnum::MMAPPER_SESSION_STATE, toGmcpJson(obj)};
 }
 

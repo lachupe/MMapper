@@ -24,6 +24,7 @@
     X(ROOM_CHARS, RoomChars, "room.chars", "Room.Chars") \
     X(ROOM, Room, "room", "Room") \
     /* MMapper-specific modules; these are never forwarded upstream to MUME. */ \
+    X(MMAPPER_INPUT, MMapperInput, "mmapper.input", "MMapper.Input") \
     X(MMAPPER_MAP, MMapperMap, "mmapper.map", "MMapper.Map") \
     X(MMAPPER_SESSION, MMapperSession, "mmapper.session", "MMapper.Session") \
     X(MMAPPER_TERMINAL, MMapperTerminal, "mmapper.terminal", "MMapper.Terminal") \
@@ -39,7 +40,7 @@ enum class NODISCARD GmcpModuleTypeEnum : uint8_t {
 #define X_COUNT(...) +1
 static constexpr const size_t NUM_GMCP_MODULES = XFOREACH_GMCP_MODULE_TYPE(X_COUNT);
 #undef X_COUNT
-static_assert(NUM_GMCP_MODULES == 10);
+static_assert(NUM_GMCP_MODULES == 11);
 static_assert(NUM_GMCP_MODULES == enums::to_underlying(GmcpModuleTypeEnum::UNKNOWN));
 DEFINE_ENUM_COUNT(GmcpModuleTypeEnum, NUM_GMCP_MODULES)
 

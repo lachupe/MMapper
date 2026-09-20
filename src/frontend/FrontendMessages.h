@@ -32,7 +32,14 @@ NODISCARD GmcpMessage makeTerminalOutput(SendToUserSourceEnum source,
                                          bool goAhead);
 
 /// MMapper.Session.State — MMapper's own connection state, distinct from character state.
-NODISCARD GmcpMessage makeSessionState(bool upstreamConnected, bool mapLoaded, bool echo);
+///
+/// `role` is "driving" for the frontend that owns MMapper's single downstream session and
+/// may therefore send input, and "observing" for one watching a session another client
+/// owns. It is per-connection: two frontends attached at once see different values.
+NODISCARD GmcpMessage makeSessionState(bool upstreamConnected,
+                                       bool mapLoaded,
+                                       bool echo,
+                                       bool driving);
 
 /// MMapper.Session.Error — a protocol error reported to one frontend.
 ///
