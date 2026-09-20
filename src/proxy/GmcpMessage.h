@@ -54,6 +54,14 @@ class ParseEvent;
     X(ROOM_CHARS_UPDATE, RoomCharsUpdate, "room.chars.update", "Room.Chars.Update") \
     X(ROOM_INFO, RoomInfo, "room.info", "Room.Info") \
     X(ROOM_UPDATE_EXITS, RoomUpdateExits, "room.update.exits", "Room.Update.Exits") \
+    /* MMapper-specific messages; these are never forwarded upstream to MUME. */ \
+    X(MMAPPER_MAP_POSITION, MMapperMapPosition, "mmapper.map.position", "MMapper.Map.Position") \
+    X(MMAPPER_SESSION_ERROR, MMapperSessionError, "mmapper.session.error", "MMapper.Session.Error") \
+    X(MMAPPER_SESSION_STATE, MMapperSessionState, "mmapper.session.state", "MMapper.Session.State") \
+    X(MMAPPER_TERMINAL_OUTPUT, \
+      MMapperTerminalOutput, \
+      "mmapper.terminal.output", \
+      "MMapper.Terminal.Output") \
     /* define gmcp message types above */
 
 enum class NODISCARD GmcpMessageTypeEnum {
@@ -66,7 +74,7 @@ enum class NODISCARD GmcpMessageTypeEnum {
 #define X_COUNT(...) +1
 static constexpr const size_t NUM_GMCP_MESSAGES = XFOREACH_GMCP_MESSAGE_TYPE(X_COUNT);
 #undef X_COUNT
-static_assert(NUM_GMCP_MESSAGES == 30);
+static_assert(NUM_GMCP_MESSAGES == 34);
 DEFINE_ENUM_COUNT(GmcpMessageTypeEnum, NUM_GMCP_MESSAGES)
 
 namespace tags {
@@ -113,6 +121,7 @@ public:
 #undef X_DECL_GETTERS_AND_SETTERS
 
 public:
+    NODISCARD GmcpMessageTypeEnum getType() const { return m_type; }
     NODISCARD const GmcpMessageName &getName() const { return m_name; }
     NODISCARD const std::optional<GmcpJson> &getJson() const { return m_json; }
     NODISCARD const std::optional<GmcpJsonDocument> &getJsonDocument() const { return m_document; }

@@ -169,6 +169,40 @@ set_target_properties(
 )
 add_test(NAME TestProxy COMMAND TestProxy)
 
+# Frontend protocol
+if(WITH_FRONTEND)
+    set(frontend_SRCS
+        ../src/frontend/FrontendMessages.cpp
+        ../src/frontend/FrontendMessages.h
+        ../src/frontend/FrontendSubscriptions.cpp
+        ../src/frontend/FrontendSubscriptions.h
+        ../src/proxy/GmcpModule.cpp
+        ../src/proxy/GmcpModule.h
+        ../src/proxy/GmcpUtils.cpp
+        ../src/proxy/GmcpUtils.h
+        )
+    set(TestFrontend_SRCS TestFrontend.cpp)
+    add_executable(TestFrontend ${TestFrontend_SRCS} ${frontend_SRCS})
+    add_dependencies(TestFrontend mm_test mm_global mm_map)
+    target_link_libraries(TestFrontend
+            mm_map
+            mm_test
+            mm_global
+            Qt6::Gui
+            Qt6::Network
+            Qt6::Test
+            Qt6::Widgets
+            coverage_config)
+    set_target_properties(
+      TestFrontend PROPERTIES
+      CXX_STANDARD 20
+      CXX_STANDARD_REQUIRED ON
+      CXX_EXTENSIONS OFF
+      COMPILE_FLAGS "${WARNING_FLAGS}"
+    )
+    add_test(NAME TestFrontend COMMAND TestFrontend)
+endif()
+
 # MapScroller is a plain, rendering-independent QObject (see
 # ../src/display/MapScroller.h's file comment: deliberately has no
 # dependency on MapCanvas/OpenGL), so it's linked directly into

@@ -104,6 +104,9 @@ public:
         bool tlsEncryption = false;
         bool proxyConnectionStatus = false;
         bool proxyListensOnAnyInterface = false;
+        /// Read-only frontend protocol endpoint (loopback WebSocket); off by default.
+        bool frontendEnabled = false;
+        uint16_t frontendPort = 0u;
 
     private:
         SUBGROUP();

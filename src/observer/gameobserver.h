@@ -6,15 +6,37 @@
 #include "../clock/mumemoment.h"
 #include "../global/Signal2.h"
 #include "../map/PromptFlags.h"
+#include "../parser/SendToUserSourceEnum.h"
 #include "../proxy/GmcpMessage.h"
+
+#include <QString>
+
+/// A chunk of downstream terminal output, exactly as it was handed to UserTelnet.
+///
+/// Unlike GameObserver::sig2_sentToUserString, the text retains its ANSI escapes and
+/// carries the metadata a terminal needs in order to reproduce the stream faithfully.
+struct NODISCARD TerminalOutput final
+{
+    /// Who produced this chunk: MUME, or one of MMapper's own injectors.
+    SendToUserSourceEnum source = SendToUserSourceEnum::FromMud;
+    /// Text with ANSI escapes intact; not necessarily a whole line.
+    QString text;
+    /// True when the chunk ends at a telnet GO-AHEAD, i.e. it is a prompt or twiddler
+    /// rather than a newline-terminated line.
+    bool goAhead = false;
+};
 
 class NODISCARD GameObserver final
 {
 public:
     Signal2<> sig2_connected;
+    Signal2<> sig2_disconnected;
 
     Signal2<QString> sig2_sentToMudString;  // removes ANSI
     Signal2<QString> sig2_sentToUserString; // removes ANSI
+
+    // Same stream as sig2_sentToUserString, but with ANSI and framing metadata intact.
+    Signal2<TerminalOutput> sig2_sentToUserTerminal;
 
     Signal2<GmcpMessage> sig2_sentToUserGmcp;
     Signal2<bool> sig2_toggledEchoMode;
@@ -39,8 +61,10 @@ private:
 
 public:
     void observeConnected();
+    void observeDisconnected();
     void observeSentToMud(const QString &ba);
     void observeSentToUser(const QString &ba);
+    void observeSentToUserTerminal(SendToUserSourceEnum source, const QString &text, bool goAhead);
     void observeSentToUserGmcp(const GmcpMessage &m);
     void observeToggledEchoMode(bool echo);
 

@@ -39,6 +39,7 @@ class GroupWidget;
 class HotkeyManager;
 class InfomarkSelection;
 class MapCanvasWindow;
+class FrontendServer;
 class MapData;
 class MapWindow;
 class Mmapper2Group;
@@ -93,6 +94,9 @@ private:
     QDockWidget *m_dockDialogAsync = nullptr;
 
     std::unique_ptr<GameObserver> m_gameObserver;
+#ifndef MMAPPER_NO_FRONTEND
+    QPointer<FrontendServer> m_frontendServer;
+#endif
     AutoLogger *m_logger = nullptr;
     ConnectionListener *m_listener = nullptr;
     Mmapper2PathMachine *m_pathMachine = nullptr;
