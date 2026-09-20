@@ -18,6 +18,9 @@
 #include "../display/MapCanvasData.h"
 #include "../display/MapCanvasWindow.h"
 #include "../display/mapwindow.h"
+#ifndef MMAPPER_NO_FRONTEND
+#include "../frontend/FrontendServer.h"
+#endif
 #include "../global/AsyncTasks.h"
 #include "../global/PrintUtils.h"
 #include "../global/SendToUser.h"
@@ -346,6 +349,30 @@ MainWindow::MainWindow()
                                                       deref(getCanvas()).getCore(),
                                                       deref(m_gameObserver),
                                                       this);
+
+#ifndef MMAPPER_NO_FRONTEND
+        std::invoke([this]() {
+            const auto &settings = getConfig().connection;
+            if (!settings.frontendEnabled) {
+                return;
+            }
+            auto *const frontend = new FrontendServer(deref(m_gameObserver),
+                                                      deref(m_mapData),
+                                                      this);
+            connect(frontend, &FrontendServer::sig_log, this, &MainWindow::slot_log);
+            if (!frontend->listen(settings.frontendPort)) {
+                delete frontend;
+                return;
+            }
+            m_frontendServer = frontend;
+
+            // Follow MMapper's confirmed position rather than typed movement commands.
+            connect(m_pathMachine,
+                    &Mmapper2PathMachine::sig_playerMoved,
+                    frontend,
+                    &FrontendServer::onPlayerMoved);
+        });
+#endif
 
         auto *const w = new ClientWidget(deref(listener), deref(m_hotkeyManager), this);
         w->setObjectName("InternalMudClientWidget");

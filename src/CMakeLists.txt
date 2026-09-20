@@ -653,6 +653,17 @@ if(NOT EMSCRIPTEN)
     list(APPEND mmapper_SRCS mpi/remoteeditprocess.cpp mpi/remoteeditprocess.h)
 endif()
 
+if(WITH_FRONTEND)
+    list(APPEND mmapper_SRCS
+        frontend/FrontendMessages.cpp
+        frontend/FrontendMessages.h
+        frontend/FrontendServer.cpp
+        frontend/FrontendServer.h
+        frontend/FrontendSubscriptions.cpp
+        frontend/FrontendSubscriptions.h
+    )
+endif()
+
 qt_add_resources(mmapper_QRC resources/mmapper2.qrc)
 
 if(MMAPPER_BETA)
@@ -967,7 +978,7 @@ if(WITH_OPENSSL)
     endif()
 endif()
 
-if(WITH_WEBSOCKET)
+if(WITH_WEBSOCKET OR WITH_FRONTEND)
     target_link_libraries(mmapper PUBLIC Qt6::WebSockets)
 endif()
 

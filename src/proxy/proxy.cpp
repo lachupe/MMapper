@@ -663,8 +663,13 @@ void Proxy::allocParser()
             if (isMissingNewline) {
                 // add the missing newline.
                 getUserTelnet().onSendToUser(string_consts::S_NEWLINE, false);
+                // Mirror it so that observers see the same stream the user telnet saw.
+                getGameObserver().observeSentToUserTerminal(SendToUserSourceEnum::FromMMapper,
+                                                           string_consts::S_NEWLINE,
+                                                           false);
             }
             getUserTelnet().onSendToUser(s, goAhead);
+            getGameObserver().observeSentToUserTerminal(source, s, goAhead);
 
             // FIXME: This is probably in the wrong location; the game observer should only
             // receive messages originating from the Mud; however in this location it also
@@ -927,6 +932,7 @@ void Proxy::onMudError(const QString &errorStr)
 
     qWarning() << "Mud socket error" << errorStr;
     log(errorStr);
+    getGameObserver().observeDisconnected();
 
     sendNewlineToUser();
     sendErrorToUser(mmqt::toStdStringUtf8(errorStr));
@@ -963,6 +969,7 @@ void Proxy::mudTerminatedConnection()
     m_serverState = ServerStateEnum::Disconnected;
 
     getUserTelnet().onRelayEchoMode(true);
+    getGameObserver().observeDisconnected();
 
     log("Mud terminated connection ...");
 

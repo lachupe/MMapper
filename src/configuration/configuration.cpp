@@ -280,6 +280,8 @@ ConstString KEY_NUMBER_OF_ANTI_ALIASING_SAMPLES = "Number of anti-aliasing sampl
 ConstString KEY_RENDER_SCALE = "Render scale percentage";
 ConstString KEY_PROXY_CONNECTION_STATUS = "Proxy connection status";
 ConstString KEY_PROXY_LISTENS_ON_ANY_INTERFACE = "Proxy listens on any interface";
+ConstString KEY_FRONTEND_ENABLED = "Frontend protocol enabled";
+ConstString KEY_FRONTEND_PORT = "Frontend protocol port";
 ConstString KEY_RELATIVE_PATH_ACCEPTANCE = "relative path acceptance";
 ConstString KEY_RESOURCES_DIRECTORY = "canvas.resourcesDir";
 ConstString KEY_MUME_REMOTE_PORT = "Remote port number";
@@ -663,6 +665,11 @@ void Configuration::ConnectionSettings::read(const QSettings &conf)
 #endif
     proxyConnectionStatus = conf.value(KEY_PROXY_CONNECTION_STATUS, false).toBool();
     proxyListensOnAnyInterface = conf.value(KEY_PROXY_LISTENS_ON_ANY_INTERFACE, false).toBool();
+
+    static constexpr const int DEFAULT_FRONTEND_PORT = 4243;
+    frontendEnabled = conf.value(KEY_FRONTEND_ENABLED, false).toBool();
+    frontendPort = sanitizeUint16(conf.value(KEY_FRONTEND_PORT, DEFAULT_FRONTEND_PORT).toInt(),
+                                  static_cast<uint16_t>(DEFAULT_FRONTEND_PORT));
 }
 
 // closest well-known color is "Outer Space"
@@ -892,6 +899,8 @@ void Configuration::ConnectionSettings::write(QSettings &conf) const
     conf.setValue(KEY_TLS_ENCRYPTION, tlsEncryption);
     conf.setValue(KEY_PROXY_CONNECTION_STATUS, proxyConnectionStatus);
     conf.setValue(KEY_PROXY_LISTENS_ON_ANY_INTERFACE, proxyListensOnAnyInterface);
+    conf.setValue(KEY_FRONTEND_ENABLED, frontendEnabled);
+    conf.setValue(KEY_FRONTEND_PORT, static_cast<int>(frontendPort));
 }
 
 NODISCARD static auto getQColorName(const XNamedColor &color)

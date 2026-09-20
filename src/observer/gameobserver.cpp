@@ -11,6 +11,11 @@ void GameObserver::observeConnected()
     sig2_connected.invoke();
 }
 
+void GameObserver::observeDisconnected()
+{
+    sig2_disconnected.invoke();
+}
+
 void GameObserver::observeSentToMud(const QString &input)
 {
     auto str = input;
@@ -23,6 +28,13 @@ void GameObserver::observeSentToUser(const QString &input)
     auto str = input;
     ParserUtils::removeAnsiMarksInPlace(str);
     sig2_sentToUserString.invoke(str);
+}
+
+void GameObserver::observeSentToUserTerminal(const SendToUserSourceEnum source,
+                                             const QString &text,
+                                             const bool goAhead)
+{
+    sig2_sentToUserTerminal.invoke(TerminalOutput{source, text, goAhead});
 }
 
 void GameObserver::observeSentToUserGmcp(const GmcpMessage &m)
