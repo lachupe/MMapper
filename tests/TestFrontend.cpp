@@ -5,6 +5,7 @@
 
 #include "../src/frontend/FrontendMessages.h"
 #include "../src/frontend/FrontendSubscriptions.h"
+#include "../src/proxy/GmcpModule.h"
 #include "../src/global/progresscounter.h"
 #include "../src/map/Map.h"
 #include "../src/map/RawRoom.h"
@@ -149,14 +150,35 @@ void TestFrontend::terminalOutputTest()
 
 void TestFrontend::sessionStateTest()
 {
-    const GmcpMessage connected = frontend_messages::makeSessionState(true, true, true);
+    const GmcpMessage connected = frontend_messages::makeSessionState(true, true, true, true);
     QCOMPARE(connected.getName().toQByteArray(), QByteArray("MMapper.Session.State"));
     QCOMPARE(payloadOf(connected)["upstream"].toString(), QStringLiteral("connected"));
     QCOMPARE(payloadOf(connected)["mapLoaded"].toBool(), true);
 
-    const GmcpMessage offline = frontend_messages::makeSessionState(false, false, false);
+    const GmcpMessage offline = frontend_messages::makeSessionState(false, false, false, false);
     QCOMPARE(payloadOf(offline)["upstream"].toString(), QStringLiteral("disconnected"));
     QCOMPARE(payloadOf(offline)["echo"].toBool(), false);
+
+    // Only one frontend may drive MMapper's single downstream session; the rest observe it,
+    // and each is told which it is.
+    QCOMPARE(payloadOf(connected)["role"].toString(), QStringLiteral("driving"));
+    QCOMPARE(payloadOf(offline)["role"].toString(), QStringLiteral("observing"));
+}
+
+void TestFrontend::inputSubscriptionTest()
+{
+    // Input is client-to-server, so a frontend never subscribes to receive it; but the
+    // module has to be known, or "MMapper.Input" would be treated as an unrecognised module
+    // and proxied upstream to MUME by UserTelnet's supports filter.
+    const GmcpModule mod{std::string{"mmapper.input"}};
+    QVERIFY(mod.isSupported());
+    QCOMPARE(mod.getType(), GmcpModuleTypeEnum::MMAPPER_INPUT);
+
+    const GmcpMessage command
+        = GmcpMessage::fromRawBytes(QByteArray(R"(MMapper.Input.Command {"text":"north"})"));
+    QVERIFY(command.isMMapperInputCommand());
+    QCOMPARE(command.getJsonDocument()->getObject()->getString("text").value(),
+             QStringLiteral("north"));
 }
 
 void TestFrontend::errorTest()

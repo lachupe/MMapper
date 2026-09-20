@@ -8,10 +8,12 @@
 #include "../map/RoomHandle.h"
 #include "../mapdata/mapdata.h"
 #include "../observer/gameobserver.h"
+#include "../proxy/connectionlistener.h"
 #include "FrontendMessages.h"
 
 #include <algorithm>
 #include <optional>
+#include <tuple>
 
 #include <QDebug>
 #include <QHostAddress>
@@ -70,10 +72,14 @@ NODISCARD std::optional<GmcpMessageTypeEnum> invalidatesSnapshot(const GmcpMessa
 
 } // namespace
 
-FrontendServer::FrontendServer(GameObserver &observer, MapData &mapData, QObject *const parent)
+FrontendServer::FrontendServer(GameObserver &observer,
+                               MapData &mapData,
+                               ConnectionListener &listener,
+                               QObject *const parent)
     : QObject{parent}
     , m_observer{observer}
     , m_mapData{mapData}
+    , m_listener{listener}
 {
     m_observer.sig2_connected.connect(m_lifetime, [this]() {
         m_upstreamConnected = true;
@@ -95,6 +101,14 @@ FrontendServer::FrontendServer(GameObserver &observer, MapData &mapData, QObject
     m_observer.sig2_sentToUserTerminal.connect(m_lifetime, [this](const TerminalOutput &out) {
         publish(frontend_messages::makeTerminalOutput(out.source, out.text, out.goAhead));
     });
+
+    // Queued on purpose: the signal is emitted while the old session is still being torn
+    // down, so the slot only actually frees up once the event loop has unwound.
+    connect(&m_listener,
+            &ConnectionListener::sig_clientDisconnected,
+            this,
+            &FrontendServer::offerSession,
+            Qt::QueuedConnection);
 
     m_observer.sig2_sentToUserGmcp.connect(m_lifetime, [this](const GmcpMessage &msg) {
         // Relayed verbatim: same package name, same payload the game sent. MUME.Client is
@@ -138,6 +152,14 @@ bool FrontendServer::listen(const quint16 port)
     return true;
 }
 
+void FrontendServer::log(const QString &msg)
+{
+    // Also to the terminal: the frontend is driven by an external program, and its state
+    // transitions are the first thing to check when that program misbehaves.
+    qInfo() << "[frontend]" << msg;
+    emit sig_log("Frontend", msg);
+}
+
 bool FrontendServer::isListening() const
 {
     return m_server != nullptr && m_server->isListening();
@@ -159,15 +181,38 @@ void FrontendServer::onNewConnection()
         });
 
         m_clients.push_back(Client{socket, FrontendSubscriptions{}, QStringLiteral("unnamed")});
-        log(QString("Frontend connected (%1 total)").arg(m_clients.size()));
+        // Offered the session straight away, so that a frontend used on its own is a
+        // complete client rather than a viewer waiting for someone else to log in.
+        const bool driving = tryTakeSession(m_clients.back());
+        log(QString("Frontend connected, %1 (%2 total)")
+                .arg(driving ? "driving" : "observing")
+                .arg(m_clients.size()));
     }
 }
 
 void FrontendServer::onDisconnected(QWebSocket *const socket)
 {
+    const bool wasDriving = m_driver == socket;
+    if (wasDriving) {
+        releaseSession();
+    }
     utils::erase_if(m_clients, [socket](const Client &c) { return c.socket == socket; });
     log(QString("Frontend disconnected (%1 remaining)").arg(m_clients.size()));
     socket->deleteLater();
+
+    // The freed session is picked up by offerSession(), once the proxy teardown started by
+    // releaseSession() has finished and ConnectionListener reports the slot free again.
+}
+
+void FrontendServer::offerSession()
+{
+    if (m_driver != nullptr || m_clients.empty()) {
+        return;
+    }
+    log("Session slot freed; offering it to a waiting frontend");
+    if (tryTakeSession(m_clients.front())) {
+        publishSessionState();
+    }
 }
 
 FrontendServer::Client *FrontendServer::findClient(QWebSocket *const socket)
@@ -205,7 +250,8 @@ void FrontendServer::onTextMessage(QWebSocket *const socket, const QString &fram
                 client->name = optObj->getString("client").value_or(QStringLiteral("unnamed"));
             }
         }
-        log(QString("Frontend identified as '%1'").arg(client->name));
+        log(QString("Frontend identified as '%1'%2")
+                .arg(client->name, m_driver == socket ? " (driving)" : ""));
         return;
     }
 
@@ -223,12 +269,77 @@ void FrontendServer::onTextMessage(QWebSocket *const socket, const QString &fram
         return;
     }
 
-    // This endpoint is an observer. Input would have to go through MMapper's single
-    // downstream session, which a telnet or built-in client already owns.
+    if (msg.isMMapperInputCommand()) {
+        handleInput(*client, msg);
+        return;
+    }
+
     sendTo(*client,
-           frontend_messages::makeError("read-only",
-                                        QString("This endpoint is read-only; '%1' was ignored")
+           frontend_messages::makeError("unsupported",
+                                        QString("'%1' is not accepted by this endpoint")
                                             .arg(msg.getName().toQString())));
+}
+
+bool FrontendServer::tryTakeSession(const Client &client)
+{
+    if (m_driver != nullptr) {
+        return m_driver == client.socket;
+    }
+    if (!m_session.attach(m_listener)) {
+        return false;  // A telnet or built-in client owns the session.
+    }
+    m_driver = client.socket;
+    log(QString("Frontend '%1' is driving the session").arg(client.name));
+    return true;
+}
+
+void FrontendServer::releaseSession()
+{
+    if (m_driver == nullptr) {
+        return;
+    }
+    m_driver = nullptr;
+    // Closing the session ends the MUME connection, exactly as closing a telnet client does.
+    m_session.detach();
+    log("Frontend released the session");
+}
+
+GmcpMessage FrontendServer::sessionStateFor(const Client &client) const
+{
+    return frontend_messages::makeSessionState(m_upstreamConnected,
+                                               isMapLoaded(),
+                                               m_echo,
+                                               m_driver != nullptr && m_driver == client.socket);
+}
+
+void FrontendServer::handleInput(Client &client, const GmcpMessage &msg)
+{
+    if (m_driver != client.socket) {
+        sendTo(client,
+               frontend_messages::makeError("read-only",
+                                            "Another client owns the session; this "
+                                            "connection may only observe it"));
+        return;
+    }
+    const auto &optDoc = msg.getJsonDocument();
+    const auto optObj = optDoc.has_value() ? optDoc->getObject() : std::nullopt;
+    if (!optObj.has_value()) {
+        sendTo(client,
+               frontend_messages::makeError("invalid-command",
+                                            "MMapper.Input.Command needs an object payload"));
+        return;
+    }
+    const auto optText = optObj->getString("text");
+    if (!optText.has_value()) {
+        sendTo(client,
+               frontend_messages::makeError("invalid-command",
+                                            "MMapper.Input.Command needs a 'text' string"));
+        return;
+    }
+    // Routed through the normal downstream path, so mapper commands, movement tracking and
+    // logging see it exactly as they see input from the built-in client. The text itself is
+    // never logged here: it may be a password.
+    m_session.sendLine(optText.value());
 }
 
 void FrontendServer::rememberIfStateful(const GmcpMessage &msg)
@@ -270,8 +381,7 @@ void FrontendServer::sendTo(Client &client, const GmcpMessage &msg)
 
 void FrontendServer::replayTo(Client &client)
 {
-    sendTo(client,
-           frontend_messages::makeSessionState(m_upstreamConnected, isMapLoaded(), m_echo));
+    sendTo(client, sessionStateFor(client));
 
     for (const auto &[type, msg] : m_replayCache) {
         sendTo(client, msg);
@@ -286,7 +396,10 @@ void FrontendServer::replayTo(Client &client)
 
 void FrontendServer::publishSessionState()
 {
-    publish(frontend_messages::makeSessionState(m_upstreamConnected, isMapLoaded(), m_echo));
+    // Sent per connection rather than broadcast: `role` differs between clients.
+    for (Client &client : m_clients) {
+        sendTo(client, sessionStateFor(client));
+    }
 }
 
 void FrontendServer::onPlayerMoved(const RoomId id)

@@ -55,6 +55,7 @@ class ParseEvent;
     X(ROOM_INFO, RoomInfo, "room.info", "Room.Info") \
     X(ROOM_UPDATE_EXITS, RoomUpdateExits, "room.update.exits", "Room.Update.Exits") \
     /* MMapper-specific messages; these are never forwarded upstream to MUME. */ \
+    X(MMAPPER_INPUT_COMMAND, MMapperInputCommand, "mmapper.input.command", "MMapper.Input.Command") \
     X(MMAPPER_MAP_POSITION, MMapperMapPosition, "mmapper.map.position", "MMapper.Map.Position") \
     X(MMAPPER_SESSION_ERROR, MMapperSessionError, "mmapper.session.error", "MMapper.Session.Error") \
     X(MMAPPER_SESSION_STATE, MMapperSessionState, "mmapper.session.state", "MMapper.Session.State") \
@@ -74,7 +75,7 @@ enum class NODISCARD GmcpMessageTypeEnum {
 #define X_COUNT(...) +1
 static constexpr const size_t NUM_GMCP_MESSAGES = XFOREACH_GMCP_MESSAGE_TYPE(X_COUNT);
 #undef X_COUNT
-static_assert(NUM_GMCP_MESSAGES == 34);
+static_assert(NUM_GMCP_MESSAGES == 35);
 DEFINE_ENUM_COUNT(GmcpMessageTypeEnum, NUM_GMCP_MESSAGES)
 
 namespace tags {

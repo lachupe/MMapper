@@ -128,6 +128,7 @@ void ConnectionListener::startClient(std::unique_ptr<AbstractSocket> socket)
                                    m_gameOberver,
                                    std::move(socket),
                                    *this);
+        connect(m_proxy, &QObject::destroyed, this, &ConnectionListener::sig_clientDisconnected);
     } else {
         log("New connection: rejected.");
         const auto msg = std::invoke([]() -> QByteArray {
