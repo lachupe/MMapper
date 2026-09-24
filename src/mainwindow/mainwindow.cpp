@@ -360,6 +360,7 @@ MainWindow::MainWindow()
                                                       deref(m_mapData),
                                                       deref(listener),
                                                       this);
+            frontend->setClock(deref(m_mumeClock));
             connect(frontend, &FrontendServer::sig_log, this, &MainWindow::slot_log);
             if (!frontend->listen(settings.frontendPort)) {
                 delete frontend;

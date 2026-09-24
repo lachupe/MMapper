@@ -10,6 +10,8 @@
 #include "../map/PromptFlags.h"
 #include "../observer/gameobserver.h"
 #include "LineFlags.h"
+#include "WeatherLines.h"
+#include "XmlElementTracker.h"
 #include "abstractparser.h"
 
 #include <optional>
@@ -52,6 +54,12 @@ private:
     QString m_tempCharacters;
     QString m_tempTag;
     QString m_stringBuffer;
+    /// Reassembles the tags this parser strips out of the stream into whole elements, which
+    /// are handed to the GameObserver. The room state machine above is unaffected by it.
+    XmlElementTracker m_xmlTracker;
+    /// The ground where the body stands, followed through the room displays and the weather
+    /// lines after them. See GroundTracker.
+    GroundTracker m_groundTracker;
     CommandEnum m_move = CommandEnum::NONE;
     ServerRoomId m_serverId = INVALID_SERVER_ROOMID;
     bool m_readingTag = false;
@@ -61,21 +69,6 @@ private:
     GameObserver &m_observer;
 
 private:
-    enum class NODISCARD XmlAttributeStateEnum : uint8_t {
-        /// received <room/>
-        ELEMENT,
-        /// received <room terrain/>
-        ATTRIBUTE,
-        /// received <room terrain=/>
-        EQUALS,
-        /// received <room terrain=field/>
-        UNQUOTED_VALUE,
-        /// received <room terrain='field'/>
-        SINGLE_QUOTED_VALUE,
-        /// received <room terrain="field"/>
-        DOUBLE_QUOTED_VALUE
-    };
-
 public:
     explicit MumeXmlParser(MapData &,
                            MumeClock &,

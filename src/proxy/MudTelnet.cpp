@@ -570,10 +570,20 @@ void MudTelnet::resetGmcpModules()
 
     // Following modules are enabled by default
     receiveGmcpModule(GmcpModule{GmcpModuleTypeEnum::CHAR, GmcpModuleVersion{1}}, true);
+    // Client, Comm.Channel and Room.Known are not used by MMapper itself. They are requested
+    // because this list asks for every module MUME documents, so that a frontend can
+    // subscribe to any of them: a frontend can only ever receive what is asked for here.
+    // Comm.Channel carries speech with the speaker and channel named, and Room.Known the
+    // rooms this character has personally seen, neither of which can be recovered from the
+    // text stream. Client carries the download links for MUME's Mudlet package and base
+    // map, and no current frontend uses it.
+    receiveGmcpModule(GmcpModule{GmcpModuleTypeEnum::CLIENT, GmcpModuleVersion{1}}, true);
+    receiveGmcpModule(GmcpModule{GmcpModuleTypeEnum::COMM_CHANNEL, GmcpModuleVersion{1}}, true);
     receiveGmcpModule(GmcpModule{GmcpModuleTypeEnum::EVENT, GmcpModuleVersion{1}}, true);
     receiveGmcpModule(GmcpModule{GmcpModuleTypeEnum::EXTERNAL_DISCORD, GmcpModuleVersion{1}}, true);
     receiveGmcpModule(GmcpModule{GmcpModuleTypeEnum::GROUP, GmcpModuleVersion{1}}, true);
     receiveGmcpModule(GmcpModule{GmcpModuleTypeEnum::ROOM_CHARS, GmcpModuleVersion{1}}, true);
+    receiveGmcpModule(GmcpModule{GmcpModuleTypeEnum::ROOM_KNOWN, GmcpModuleVersion{1}}, true);
     receiveGmcpModule(GmcpModule{GmcpModuleTypeEnum::ROOM, GmcpModuleVersion{1}}, true);
     receiveGmcpModule(GmcpModule{GmcpModuleTypeEnum::MUME_CLIENT, GmcpModuleVersion{1}}, true);
 }

@@ -12,22 +12,27 @@
 #include <string>
 #include <unordered_set>
 
-// TODO: Comm
-
 // X(UPPER_CASE, CamelCase, "normalized name", "friendly name")
 #define XFOREACH_GMCP_MODULE_TYPE(X) \
     X(CHAR, Char, "char", "Char") \
+    X(CLIENT, Client, "client", "Client") \
+    X(COMM_CHANNEL, CommChannel, "comm.channel", "Comm.Channel") \
     X(EVENT, Event, "event", "Event") \
     X(GROUP, Group, "group", "Group") \
     X(EXTERNAL_DISCORD, ExternalDiscord, "external.discord", "External.Discord") \
     X(MUME_CLIENT, MumeClient, "mume.client", "MUME.Client") \
     X(ROOM_CHARS, RoomChars, "room.chars", "Room.Chars") \
+    X(ROOM_KNOWN, RoomKnown, "room.known", "Room.Known") \
     X(ROOM, Room, "room", "Room") \
     /* MMapper-specific modules; these are never forwarded upstream to MUME. */ \
+    X(MMAPPER_COMBAT, MMapperCombat, "mmapper.combat", "MMapper.Combat") \
     X(MMAPPER_INPUT, MMapperInput, "mmapper.input", "MMapper.Input") \
     X(MMAPPER_MAP, MMapperMap, "mmapper.map", "MMapper.Map") \
     X(MMAPPER_SESSION, MMapperSession, "mmapper.session", "MMapper.Session") \
     X(MMAPPER_TERMINAL, MMapperTerminal, "mmapper.terminal", "MMapper.Terminal") \
+    X(MMAPPER_TIME, MMapperTime, "mmapper.time", "MMapper.Time") \
+    X(MMAPPER_WEATHER, MMapperWeather, "mmapper.weather", "MMapper.Weather") \
+    X(MMAPPER_XML, MMapperXml, "mmapper.xml", "MMapper.Xml") \
     /* define gmcp module types above */
 
 enum class NODISCARD GmcpModuleTypeEnum : uint8_t {
@@ -40,7 +45,7 @@ enum class NODISCARD GmcpModuleTypeEnum : uint8_t {
 #define X_COUNT(...) +1
 static constexpr const size_t NUM_GMCP_MODULES = XFOREACH_GMCP_MODULE_TYPE(X_COUNT);
 #undef X_COUNT
-static_assert(NUM_GMCP_MODULES == 11);
+static_assert(NUM_GMCP_MODULES == 18);
 static_assert(NUM_GMCP_MODULES == enums::to_underlying(GmcpModuleTypeEnum::UNKNOWN));
 DEFINE_ENUM_COUNT(GmcpModuleTypeEnum, NUM_GMCP_MODULES)
 

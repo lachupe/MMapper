@@ -4,8 +4,8 @@
 #include "TestFrontend.h"
 
 #include "../src/frontend/FrontendMessages.h"
+#include "../src/frontend/FrontendReplayCache.h"
 #include "../src/frontend/FrontendSubscriptions.h"
-#include "../src/proxy/GmcpModule.h"
 #include "../src/global/progresscounter.h"
 #include "../src/map/Map.h"
 #include "../src/map/RawRoom.h"
@@ -13,7 +13,12 @@
 #include "../src/map/coordinate.h"
 #include "../src/map/mmapper2room.h"
 #include "../src/map/roomid.h"
+#include "../src/parser/WeatherLines.h"
+#include "../src/parser/XmlElement.h"
+#include "../src/proxy/GmcpMessage.h"
+#include "../src/proxy/GmcpModule.h"
 
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QtTest/QtTest>
@@ -32,6 +37,17 @@ NODISCARD QJsonObject payloadOf(const GmcpMessage &msg)
         return QJsonObject{};
     }
     return QJsonDocument::fromJson(optJson->toQByteArray()).object();
+}
+
+/// The payload `cache` would replay for `type`, or an empty document if it would replay none.
+NODISCARD QJsonDocument replayed(const FrontendReplayCache &cache, const GmcpMessageTypeEnum type)
+{
+    const auto &messages = cache.messages();
+    const auto it = messages.find(type);
+    if (it == messages.end() || !it->second.getJson().has_value()) {
+        return QJsonDocument{};
+    }
+    return QJsonDocument::fromJson(it->second.getJson()->toQByteArray());
 }
 
 /// Builds a one-room map so that room serialization can be tested without a live session.
@@ -122,11 +138,32 @@ void TestFrontend::subscriptionMalformedTest()
     QVERIFY(!subs.wants(parse(R"(Bogus {})")));
 }
 
+void TestFrontend::relayFilterTest()
+{
+    // Any module name is accepted, one MMapper will never relay included...
+    FrontendSubscriptions subs;
+    QVERIFY(subs.applySupports(parse(R"(Core.Supports.Set [ "Core 1", "MUME.Client 1" ])")));
+    QVERIFY(subs.wants(parse(R"(Core.Goodbye {})")));
+
+    // ...so it is the relay that keeps Core and MUME.Client away from a frontend, a
+    // MUME.Client message the proxy does not know by name included.
+    QVERIFY(!FrontendSubscriptions::isRelayable(parse(R"(Core.Goodbye {})")));
+    QVERIFY(!FrontendSubscriptions::isRelayable(parse(R"(core.ping)")));
+    QVERIFY(!FrontendSubscriptions::isRelayable(parse(R"(MUME.Client.Edit {})")));
+    QVERIFY(!FrontendSubscriptions::isRelayable(parse(R"(MUME.Client.Unheard {})")));
+
+    // Everything else MUME sends is relayed.
+    QVERIFY(FrontendSubscriptions::isRelayable(parse(R"(Char.Vitals {})")));
+    QVERIFY(FrontendSubscriptions::isRelayable(parse(R"(Comm.Channel.Text {})")));
+    QVERIFY(FrontendSubscriptions::isRelayable(parse(R"(Room.Chars.Set [])")));
+}
+
 void TestFrontend::terminalOutputTest()
 {
     const QString text = QStringLiteral("\x1b[32mA forest path\x1b[0m\r\n");
-    const GmcpMessage msg
-        = frontend_messages::makeTerminalOutput(SendToUserSourceEnum::FromMud, text, false);
+    const GmcpMessage msg = frontend_messages::makeTerminalOutput(SendToUserSourceEnum::FromMud,
+                                                                  text,
+                                                                  false);
 
     QCOMPARE(msg.getName().toQByteArray(), QByteArray("MMapper.Terminal.Output"));
 
@@ -138,13 +175,15 @@ void TestFrontend::terminalOutputTest()
     QCOMPARE(obj["goAhead"].toBool(), false);
 
     // A prompt is distinguished by goAhead, not by its text.
-    const GmcpMessage prompt
-        = frontend_messages::makeTerminalOutput(SendToUserSourceEnum::FromMud, "HP:Fine> ", true);
+    const GmcpMessage prompt = frontend_messages::makeTerminalOutput(SendToUserSourceEnum::FromMud,
+                                                                     "HP:Fine> ",
+                                                                     true);
     QCOMPARE(payloadOf(prompt)["goAhead"].toBool(), true);
 
     // MMapper's own output is distinguishable from the game's.
-    const GmcpMessage own
-        = frontend_messages::makeTerminalOutput(SendToUserSourceEnum::FromMMapper, "hi", false);
+    const GmcpMessage own = frontend_messages::makeTerminalOutput(SendToUserSourceEnum::FromMMapper,
+                                                                  "hi",
+                                                                  false);
     QCOMPARE(payloadOf(own)["source"].toString(), QStringLiteral("mmapper"));
 }
 
@@ -174,8 +213,8 @@ void TestFrontend::inputSubscriptionTest()
     QVERIFY(mod.isSupported());
     QCOMPARE(mod.getType(), GmcpModuleTypeEnum::MMAPPER_INPUT);
 
-    const GmcpMessage command
-        = GmcpMessage::fromRawBytes(QByteArray(R"(MMapper.Input.Command {"text":"north"})"));
+    const GmcpMessage command = GmcpMessage::fromRawBytes(
+        QByteArray(R"(MMapper.Input.Command {"text":"north"})"));
     QVERIFY(command.isMMapperInputCommand());
     QCOMPARE(command.getJsonDocument()->getObject()->getString("text").value(),
              QStringLiteral("north"));
@@ -226,6 +265,390 @@ void TestFrontend::mapPositionWithoutServerIdTest()
     const QJsonObject obj = payloadOf(frontend_messages::makeMapPosition(room));
     QVERIFY(!obj.contains("serverId"));
     QCOMPARE(obj["externalId"].toInteger(), static_cast<qint64>(1));
+}
+
+void TestFrontend::xmlElementTest()
+{
+    XmlElement character;
+    character.tag = XmlTagEnum::CHARACTER;
+    character.name = "character";
+    character.text = QStringLiteral("A dirty uruk");
+
+    XmlElement hit;
+    hit.tag = XmlTagEnum::HIT;
+    hit.name = "hit";
+    hit.text = QStringLiteral("A dirty uruk barely slashes your body.");
+    hit.attributes.emplace_back("dir", "north");
+    hit.children.emplace_back(character);
+
+    const GmcpMessage msg = frontend_messages::makeXmlElement(hit);
+    QCOMPARE(msg.getName().toQString(), QStringLiteral("MMapper.Xml.Element"));
+
+    const QJsonObject obj = payloadOf(msg);
+    QCOMPARE(obj["tag"].toString(), QStringLiteral("hit"));
+    // The category is what lets a client take an interest in combat without listing tags.
+    QCOMPARE(obj["category"].toString(), QStringLiteral("combat"));
+    QCOMPARE(obj["text"].toString(), QStringLiteral("A dirty uruk barely slashes your body."));
+    QCOMPARE(obj["attributes"].toObject()["dir"].toString(), QStringLiteral("north"));
+
+    const QJsonArray children = obj["children"].toArray();
+    QCOMPARE(children.size(), 1);
+    QCOMPARE(children[0].toObject()["tag"].toString(), QStringLiteral("character"));
+    QCOMPARE(children[0].toObject()["category"].toString(), QStringLiteral("entity"));
+
+    // Quiet on the wire in the ordinary case.
+    QVERIFY(!obj.contains("truncated"));
+    // A blow has no direction, whatever its attributes say.
+    QVERIFY(!obj.contains("direction"));
+
+    // Someone arriving: MMapper's reading of the line travels beside MUME's own attributes,
+    // never inside them.
+    XmlElement scholar;
+    scholar.tag = XmlTagEnum::CHARACTER;
+    scholar.name = "character";
+    scholar.text = QStringLiteral("A scholar");
+    XmlElement arrival;
+    arrival.tag = XmlTagEnum::MOVE_IN;
+    arrival.name = "move_in";
+    arrival.text = QStringLiteral("A scholar has arrived from the south.");
+    arrival.children.emplace_back(scholar);
+    arrival.direction = deriveMovementDirection(arrival);
+    const QJsonObject arrivalObj = payloadOf(frontend_messages::makeXmlElement(arrival));
+    QCOMPARE(arrivalObj["category"].toString(), QStringLiteral("movement"));
+    QCOMPARE(arrivalObj["direction"].toString(), QStringLiteral("south"));
+    QVERIFY(!arrivalObj.contains("attributes"));
+    QVERIFY(!arrivalObj["children"].toArray()[0].toObject().contains("direction"));
+
+    // A tag this build does not know is still identified by the name MUME used.
+    XmlElement unknown;
+    unknown.tag = XmlTagEnum::UNKNOWN;
+    unknown.name = "somethingnew";
+    unknown.truncated = true;
+    const QJsonObject unknownObj = payloadOf(frontend_messages::makeXmlElement(unknown));
+    QCOMPARE(unknownObj["tag"].toString(), QStringLiteral("somethingnew"));
+    QCOMPARE(unknownObj["category"].toString(), QStringLiteral("unknown"));
+    QVERIFY(unknownObj["truncated"].toBool());
+    QVERIFY(!unknownObj.contains("children"));
+}
+
+void TestFrontend::combatEventTest()
+{
+    const std::optional<CombatEvent> blow = parseCombatLine(
+        QStringLiteral("You pound the one-eyed orc's left arm extremely hard and shatter it."));
+    QVERIFY(blow.has_value());
+    const GmcpMessage msg = frontend_messages::makeCombatEvent(*blow);
+    QCOMPARE(msg.getName().toQString(), QStringLiteral("MMapper.Combat.Event"));
+    const QJsonObject obj = payloadOf(msg);
+    QCOMPARE(obj["kind"].toString(), QStringLiteral("blow"));
+    QCOMPARE(obj["outcome"].toString(), QStringLiteral("hit"));
+    QCOMPARE(obj["actor"].toString(), QStringLiteral("you"));
+    QCOMPARE(obj["target"].toString(), QStringLiteral("the one-eyed orc"));
+    QCOMPARE(obj["part"].toString(), QStringLiteral("left arm"));
+    QCOMPARE(obj["severity"].toString(), QStringLiteral("extremely hard"));
+    QCOMPARE(obj["effect"].toString(), QStringLiteral("shatter"));
+    // A field the line said nothing for is left out rather than sent empty.
+    QVERIFY(!obj.contains("quality"));
+    QVERIFY(!obj.contains("phase"));
+
+    const std::optional<CombatEvent> flee = parseCombatLine(
+        QStringLiteral("PANIC! You couldn't escape!"));
+    QVERIFY(flee.has_value());
+    const QJsonObject fled = payloadOf(frontend_messages::makeCombatEvent(*flee));
+    QCOMPARE(fled["kind"].toString(), QStringLiteral("flee"));
+    QCOMPARE(fled["phase"].toString(), QStringLiteral("failed"));
+    QVERIFY(!fled.contains("outcome"));
+}
+
+/// Every module MUME's own "help gmcp" page lists. If MUME adds one, the omission should
+/// show up here rather than as a feed that silently never arrives.
+void TestFrontend::mumeModuleCoverageTest()
+{
+    static const char *const documented[] = {"Char",
+                                             "Client",
+                                             "Comm.Channel",
+                                             "Event",
+                                             "External.Discord",
+                                             "Group",
+                                             "MUME.Client",
+                                             "Room",
+                                             "Room.Chars",
+                                             "Room.Known"};
+
+    for (const char *const name : documented) {
+        const GmcpModule mod{std::string{name}};
+        QVERIFY2(mod.isSupported(), name);
+    }
+
+    // Core is the one documented module a frontend never receives, and that is deliberate
+    // rather than an oversight: MMapper terminates Core itself. It answers a frontend's
+    // Core.Hello and Core.Supports on its own behalf and builds its own upstream supports
+    // set, and it reports the connection through MMapper.Session.State; relayFilterTest
+    // shows that a subscription to it gets nothing. The individual Core message types are
+    // still recognised; see mumeMessageCoverageTest.
+    const GmcpModule core{std::string{"Core"}};
+    QVERIFY(!core.isSupported());
+
+    // A module MUME does not define is not one MMapper knows. A frontend may still subscribe
+    // to it: the subscription is accepted and simply never matches, since MUME only sends
+    // what MMapper asked it for.
+    const GmcpModule nonsense{std::string{"Nonsense"}};
+    QVERIFY(!nonsense.isSupported());
+}
+
+void TestFrontend::timeStateTest()
+{
+    // 3:12pm on the 18th of Halimath, year 3030: summer, and in Halimath dawn is at 5am and
+    // dusk at 9pm (MUME's `help calendars`). MumeMoment counts month and day from zero.
+    const MumeMoment moment{3030, 8, 17, 15, 12};
+    const GmcpMessage msg = frontend_messages::makeTimeState(moment, MumeClockPrecisionEnum::MINUTE);
+    QCOMPARE(msg.getName().toQString(), QStringLiteral("MMapper.Time.State"));
+    QCOMPARE(msg.getType(), GmcpMessageTypeEnum::MMAPPER_TIME_STATE);
+
+    const QJsonObject obj = payloadOf(msg);
+    QCOMPARE(obj["year"].toInt(), 3030);
+    QCOMPARE(obj["month"].toInt(), 9);
+    QCOMPARE(obj["monthName"].toString(), QStringLiteral("Halimath"));
+    QCOMPARE(obj["day"].toInt(), 18);
+    QCOMPARE(obj["hour"].toInt(), 15);
+    QCOMPARE(obj["minute"].toInt(), 12);
+    QCOMPARE(obj["precision"].toString(), QStringLiteral("minute"));
+    QCOMPARE(obj["secondsPerHour"].toInt(), 60);
+    QCOMPARE(obj["season"].toString(), QStringLiteral("summer"));
+    QCOMPARE(obj["dawnHour"].toInt(), 5);
+    QCOMPARE(obj["duskHour"].toInt(), 21);
+    QCOMPARE(obj["phase"].toString(), QStringLiteral("day"));
+    QVERIFY(!obj["weekday"].toString().isEmpty());
+
+    const QJsonObject moon = obj["moon"].toObject();
+    QVERIFY(!moon["phase"].toString().isEmpty());
+    QVERIFY(moon["level"].toInt() >= 0 && moon["level"].toInt() <= 12);
+    QVERIFY(moon["waxing"].isBool());
+    QVERIFY(!moon["position"].toString().isEmpty());
+    QVERIFY(!moon["visibility"].toString().isEmpty());
+    // The moon is highest at a minute of the day, which lets a renderer move it smoothly.
+    QVERIFY(moon["zenithMinute"].isDouble());
+    QVERIFY(moon["zenithMinute"].toInt() >= 0 && moon["zenithMinute"].toInt() < 24 * 60);
+
+    // An unsynchronised clock still publishes its guess, and says that it is one.
+    const QJsonObject guess = payloadOf(
+        frontend_messages::makeTimeState(moment, MumeClockPrecisionEnum::UNSET));
+    QCOMPARE(guess["precision"].toString(), QStringLiteral("unset"));
+
+    // The dawn and dusk hours give the phases their names.
+    const QJsonObject dusk = payloadOf(
+        frontend_messages::makeTimeState(MumeMoment{3030, 8, 17, 21, 30},
+                                         MumeClockPrecisionEnum::HOUR));
+    QCOMPARE(dusk["phase"].toString(), QStringLiteral("dusk"));
+    const QJsonObject winterNight = payloadOf(
+        frontend_messages::makeTimeState(MumeMoment{3030, 0, 0, 3, 0},
+                                         MumeClockPrecisionEnum::HOUR));
+    QCOMPARE(winterNight["phase"].toString(), QStringLiteral("night"));
+    QCOMPARE(winterNight["season"].toString(), QStringLiteral("winter"));
+    QCOMPARE(winterNight["month"].toInt(), 1);
+    QCOMPARE(winterNight["day"].toInt(), 1);
+
+    // It belongs to a module of its own, so a frontend that wants no clock is not sent one.
+    FrontendSubscriptions subs;
+    QVERIFY(subs.applySupports(parse(R"(Core.Supports.Set [ "MMapper.Time 1" ])")));
+    QVERIFY(subs.wants(msg));
+    FrontendSubscriptions other;
+    QVERIFY(other.applySupports(parse(R"(Core.Supports.Set [ "MMapper.Map 1" ])")));
+    QVERIFY(!other.wants(msg));
+}
+
+void TestFrontend::weatherEventTest()
+{
+    const GmcpMessage msg = frontend_messages::makeWeatherEvent(
+        parseWeatherLine(QStringLiteral("You see some fog coming from the north.")));
+    QCOMPARE(msg.getName().toQString(), QStringLiteral("MMapper.Weather.Event"));
+    QCOMPARE(msg.getType(), GmcpMessageTypeEnum::MMAPPER_WEATHER_EVENT);
+    const QJsonObject fog = payloadOf(msg);
+    QCOMPARE(fog["kind"].toString(), QStringLiteral("fog"));
+    QCOMPARE(fog["level"].toString(), QStringLiteral("light"));
+    QCOMPARE(fog["changing"].toBool(), true);
+    QCOMPARE(fog["direction"].toString(), QStringLiteral("north"));
+    QCOMPARE(fog["text"].toString(), QStringLiteral("You see some fog coming from the north."));
+    // Quiet on the wire: only what the line said.
+    QVERIFY(!fog.contains("precipitation"));
+    QVERIFY(!fog.contains("magic"));
+
+    const QJsonObject storm = payloadOf(frontend_messages::makeWeatherEvent(parseWeatherLine(
+        QStringLiteral("The weather suddenly becomes extremely stormy. How very strange!"))));
+    QCOMPARE(storm["kind"].toString(), QStringLiteral("storm"));
+    QCOMPARE(storm["magic"].toBool(), true);
+    QVERIFY(!storm.contains("level"));
+    QVERIFY(!storm.contains("changing"));
+
+    const QJsonObject flash = payloadOf(frontend_messages::makeWeatherEvent(parseWeatherLine(
+        QStringLiteral("A flare of lightning branches out into several small streaks above the "
+                       "mountains."))));
+    QCOMPARE(flash["kind"].toString(), QStringLiteral("lightning"));
+    QVERIFY(!flash.contains("level"));
+    QVERIFY(!flash.contains("direction"));
+
+    FrontendSubscriptions subs;
+    QVERIFY(subs.applySupports(parse(R"(Core.Supports.Set [ "MMapper.Weather 1" ])")));
+    QVERIFY(subs.wants(msg));
+    FrontendSubscriptions other;
+    QVERIFY(other.applySupports(parse(R"(Core.Supports.Set [ "MMapper.Time 1" ])")));
+    QVERIFY(!other.wants(msg));
+}
+
+void TestFrontend::groundStateTest()
+{
+    GroundState ground;
+    ground.snow = "lot";
+    ground.frost = "very";
+    ground.entered = true;
+
+    const Map map = makeOneRoomMap(ServerRoomId{4321});
+    const RoomHandle room = map.findRoomHandle(ExternalRoomId{1});
+    QVERIFY(room.exists());
+
+    const GmcpMessage msg = frontend_messages::makeGroundState(ground, &room);
+    QCOMPARE(msg.getName().toQString(), QStringLiteral("MMapper.Weather.Ground"));
+    QCOMPARE(msg.getType(), GmcpMessageTypeEnum::MMAPPER_WEATHER_GROUND);
+    const QJsonObject obj = payloadOf(msg);
+    QCOMPARE(obj["snow"].toString(), QStringLiteral("lot"));
+    QCOMPARE(obj["frost"].toString(), QStringLiteral("very"));
+    QCOMPARE(obj["ice"].toString(), QStringLiteral("none"));
+    QCOMPARE(obj["entered"].toBool(), true);
+    // The same identities MMapper.Map.Position gives the room, so the two can be matched.
+    const QJsonObject where = obj["room"].toObject();
+    QCOMPARE(where["externalId"].toInt(), 1);
+    QCOMPARE(where["serverId"].toInt(), 4321);
+
+    // Without a current room there is nothing to name.
+    const QJsonObject nowhere = payloadOf(
+        frontend_messages::makeGroundState(GroundState{}, nullptr));
+    QVERIFY(!nowhere.contains("room"));
+    QCOMPARE(nowhere["snow"].toString(), QStringLiteral("none"));
+    QCOMPARE(nowhere["entered"].toBool(), false);
+
+    FrontendSubscriptions subs;
+    QVERIFY(subs.applySupports(parse(R"(Core.Supports.Set [ "MMapper.Weather 1" ])")));
+    QVERIFY(subs.wants(msg));
+}
+
+void TestFrontend::replayChangedFieldsTest()
+{
+    // MUME sends only what changed, so a frontend that connects mid-fight must be given
+    // everything seen so far rather than the last tick: an hp figure with no maximum to draw
+    // it against is no use to anyone.
+    FrontendReplayCache cache;
+    cache.remember(parse(R"(Char.Vitals {"hp":100,"maxhp":120,"mana":40,"maxmana":50})"));
+    cache.remember(parse(R"(Char.Vitals {"hp":87})"));
+    cache.remember(parse(R"(Char.Vitals {"opponent":"orc"})"));
+    cache.remember(parse(R"(Char.Vitals {"opponent":null})"));
+
+    const QJsonObject vitals = replayed(cache, GmcpMessageTypeEnum::CHAR_VITALS).object();
+    QCOMPARE(vitals["hp"].toInt(), 87);
+    QCOMPARE(vitals["maxhp"].toInt(), 120);
+    QCOMPARE(vitals["mana"].toInt(), 40);
+    QCOMPARE(vitals["maxmana"].toInt(), 50);
+    // A field MUME cleared is replayed cleared, as a watching frontend would have it.
+    QVERIFY(vitals.contains("opponent"));
+    QVERIFY(vitals["opponent"].isNull());
+    // Under MUME's own name, so that a frontend takes it exactly as it takes the original.
+    QCOMPARE(cache.messages().at(GmcpMessageTypeEnum::CHAR_VITALS).getName().toQString(),
+             QStringLiteral("Char.Vitals"));
+
+    cache.remember(parse(R"(Char.StatusVars {"level":12,"race":"Hobbit"})"));
+    cache.remember(parse(R"(Char.StatusVars {"level":13})"));
+    const QJsonObject status = replayed(cache, GmcpMessageTypeEnum::CHAR_STATUSVARS).object();
+    QCOMPARE(status["level"].toInt(), 13);
+    QCOMPARE(status["race"].toString(), QStringLiteral("Hobbit"));
+
+    // A package that restates everything is replayed as the last one sent.
+    cache.remember(parse(R"(Event.Sun {"what":"rise"})"));
+    cache.remember(parse(R"(Event.Sun {"what":"light"})"));
+    QCOMPARE(replayed(cache, GmcpMessageTypeEnum::EVENT_SUN).object()["what"].toString(),
+             QStringLiteral("light"));
+
+    // Something that happened is not state.
+    cache.remember(parse(R"(Event.Moved {"dir":"north"})"));
+    QVERIFY(cache.messages().count(GmcpMessageTypeEnum::EVENT_MOVED) == 0);
+
+    cache.clear();
+    QVERIFY(cache.messages().empty());
+}
+
+void TestFrontend::replaySetChangesTest()
+{
+    FrontendReplayCache cache;
+
+    // A change that arrives before any Set has nothing to be a change to.
+    cache.remember(parse(R"(Room.Chars.Add {"id":9,"name":"a cat"})"));
+    QVERIFY(cache.messages().count(GmcpMessageTypeEnum::ROOM_CHARS_SET) == 0);
+
+    // After a Set, every change is applied to it, so that a frontend connecting in the middle
+    // of a fight is shown the room as it is now rather than nobody at all.
+    cache.remember(parse(R"(Room.Chars.Set [{"id":1,"name":"an orc","fighting":null},)"
+                         R"({"id":2,"name":"a troll"}])"));
+    cache.remember(parse(R"(Room.Chars.Add {"id":3,"name":"a wolf"})"));
+    cache.remember(parse(R"(Room.Chars.Update {"id":1,"fighting":"you"})"));
+    // The bare id, followed by a space, as MUME sends it.
+    cache.remember(parse("Room.Chars.Remove 2 "));
+    // Described before its arrival was: taken as an arrival, as a frontend takes it.
+    cache.remember(parse(R"(Room.Chars.Update {"id":4,"name":"a crow"})"));
+    // Someone who is not here leaving changes nothing, and neither does a change to nobody.
+    cache.remember(parse("Room.Chars.Remove 99"));
+    cache.remember(parse(R"(Room.Chars.Update {"fighting":"you"})"));
+
+    QCOMPARE(cache.messages().at(GmcpMessageTypeEnum::ROOM_CHARS_SET).getName().toQString(),
+             QStringLiteral("Room.Chars.Set"));
+    const QJsonArray room = replayed(cache, GmcpMessageTypeEnum::ROOM_CHARS_SET).array();
+    QCOMPARE(room.size(), 3);
+    const QJsonObject orc = room[0].toObject();
+    QCOMPARE(orc["id"].toInt(), 1);
+    // An Update carries only what changed; the rest of what is known about them stays.
+    QCOMPARE(orc["name"].toString(), QStringLiteral("an orc"));
+    QCOMPARE(orc["fighting"].toString(), QStringLiteral("you"));
+    QCOMPARE(room[1].toObject()["id"].toInt(), 3);
+    QCOMPARE(room[2].toObject()["id"].toInt(), 4);
+
+    // A new Set, as on every move, replaces the room outright.
+    cache.remember(parse(R"(Room.Chars.Set [])"));
+    QVERIFY(replayed(cache, GmcpMessageTypeEnum::ROOM_CHARS_SET).array().isEmpty());
+
+    // The group is kept the same way.
+    cache.remember(parse(R"(Group.Set [{"id":5,"name":"Gandalf","hp":100,"maxhp":100}])"));
+    cache.remember(parse(R"(Group.Update {"id":5,"hp":60})"));
+    cache.remember(parse(R"(Group.Add {"id":6,"name":"Frodo"})"));
+    const QJsonObject gandalf = replayed(cache, GmcpMessageTypeEnum::GROUP_SET).array()[0].toObject();
+    QCOMPARE(gandalf["hp"].toInt(), 60);
+    QCOMPARE(gandalf["maxhp"].toInt(), 100);
+    cache.remember(parse("Group.Remove 5"));
+    const QJsonArray group = replayed(cache, GmcpMessageTypeEnum::GROUP_SET).array();
+    QCOMPARE(group.size(), 1);
+    QCOMPARE(group[0].toObject()["name"].toString(), QStringLiteral("Frodo"));
+}
+
+/// Every server-sent message those modules define. A message MMapper does not recognise is
+/// still relayed, because FrontendSubscriptions::wants() resolves the module from the name
+/// rather than from the enum, but MMapper itself cannot then reason about it.
+void TestFrontend::mumeMessageCoverageTest()
+{
+    static const char *const documented[]
+        = {"Char.Name",       "Char.StatusVars",    "Char.Vitals",       "Client.GUI",
+           "Client.Map",      "Comm.Channel.List",  "Comm.Channel.Text", "Core.Goodbye",
+           "Core.Ping",       "Event.Achieved",     "Event.Darkness",    "Event.Moon",
+           "Event.Moved",     "Event.Sun",          "Group.Add",         "Group.Remove",
+           "Group.Set",       "Group.Update",       "Room.Chars.Add",    "Room.Chars.Remove",
+           "Room.Chars.Set",  "Room.Chars.Update",  "Room.Info",         "Room.Known.Add",
+           "Room.Known.List", "Room.Known.Updated", "Room.UpdateExits"};
+
+    for (const char *const name : documented) {
+        const GmcpMessage msg = GmcpMessage::fromRawBytes(QByteArray{name});
+        QVERIFY2(msg.getType() != GmcpMessageTypeEnum::UNKNOWN, name);
+    }
+
+    // MUME's help spells it as one word. MMapper once had it as Room.Update.Exits, which
+    // matched nothing MUME sends.
+    QCOMPARE(GmcpMessage::fromRawBytes(QByteArray{"Room.UpdateExits"}).getType(),
+             GmcpMessageTypeEnum::ROOM_UPDATE_EXITS);
+    QCOMPARE(GmcpMessage{GmcpMessageTypeEnum::ROOM_UPDATE_EXITS}.getName().toQString(),
+             QStringLiteral("Room.UpdateExits"));
 }
 
 QTEST_MAIN(TestFrontend)

@@ -6,7 +6,10 @@
 #include "../clock/mumemoment.h"
 #include "../global/Signal2.h"
 #include "../map/PromptFlags.h"
+#include "../parser/CombatLines.h"
 #include "../parser/SendToUserSourceEnum.h"
+#include "../parser/WeatherLines.h"
+#include "../parser/XmlElement.h"
 #include "../proxy/GmcpMessage.h"
 
 #include <QString>
@@ -39,6 +42,29 @@ public:
     Signal2<TerminalOutput> sig2_sentToUserTerminal;
 
     Signal2<GmcpMessage> sig2_sentToUserGmcp;
+
+    /// One complete element from MUME's XML mode, once its closing tag arrived.
+    ///
+    /// The parser strips these tags before anything downstream sees the text, so this is
+    /// the only place the markup survives. It carries what GMCP has no package for: which
+    /// blow landed on whom, what is lying in the room, and who spoke. Emitted after the
+    /// terminal output of the line that closed the element.
+    Signal2<XmlElement> sig2_sentToUserXml;
+
+    /// One event in a fight -- a blow, a flee, a bash, a cast starting or breaking -- read off
+    /// a line of MUME's output. GMCP carries the state of a fight but none of its events, so
+    /// these are recognised once, here, instead of by every frontend. Emitted after the line's
+    /// own terminal output.
+    Signal2<CombatEvent> sig2_sentToUserCombat;
+
+    /// One of MUME's weather or terrain lines, as WeatherLines reads it: lightning seen, thunder
+    /// heard, fog drifting in, frost, ice or snow on the ground, a storm, weather magic, the
+    /// Necromancer's Darkness. Only the prompt's symbols carry the sky's state in GMCP; the rest
+    /// is prose, recognised here once. Emitted after the XML element it came in.
+    Signal2<WeatherLine> sig2_weatherLine;
+    /// The ground where the body stands -- snow lying, frost, ice on water -- complete at each
+    /// prompt that ends a room display or a change of the ground. See GroundTracker.
+    Signal2<GroundState> sig2_groundChanged;
     Signal2<bool> sig2_toggledEchoMode;
 
     Signal2<MumeTimeEnum> sig2_timeOfDayChanged;
@@ -66,6 +92,10 @@ public:
     void observeSentToUser(const QString &ba);
     void observeSentToUserTerminal(SendToUserSourceEnum source, const QString &text, bool goAhead);
     void observeSentToUserGmcp(const GmcpMessage &m);
+    void observeSentToUserXml(const XmlElement &element);
+    void observeSentToUserCombat(const CombatEvent &event);
+    void observeWeatherLine(const WeatherLine &line);
+    void observeGround(const GroundState &state);
     void observeToggledEchoMode(bool echo);
 
     void observeTimeOfDay(MumeTimeEnum timeOfDay);

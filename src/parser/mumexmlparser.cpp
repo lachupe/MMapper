@@ -20,6 +20,7 @@
 #include "../mapdata/mapdata.h"
 #include "../proxy/GmcpMessage.h"
 #include "../proxy/telnetfilter.h"
+#include "CombatLines.h"
 #include "abstractparser.h"
 
 #include <cctype>
@@ -97,6 +98,7 @@ void MumeXmlParser::parse(const TelnetData &data, const bool isGoAhead)
             if (c == char_consts::C_GREATER_THAN) {
                 // send tag
                 if (!m_tempTag.isEmpty()) {
+                    m_xmlTracker.receiveTag(m_tempTag);
                     std::ignore = element(m_tempTag);
                 }
 
@@ -109,7 +111,11 @@ void MumeXmlParser::parse(const TelnetData &data, const bool isGoAhead)
 
         } else {
             if (c == char_consts::C_LESS_THAN) {
+                // characters() decodes entities in place, so the tracker is fed afterwards
+                // and sees the same text the user does -- including the parts characters()
+                // routes elsewhere rather than returning, such as the exits block.
                 m_lineToUser.append(characters(m_tempCharacters));
+                m_xmlTracker.receiveText(m_tempCharacters);
                 m_tempCharacters.clear();
 
                 m_readingTag = true;
@@ -121,6 +127,7 @@ void MumeXmlParser::parse(const TelnetData &data, const bool isGoAhead)
 
     if (!m_readingTag) {
         m_lineToUser.append(characters(m_tempCharacters));
+        m_xmlTracker.receiveText(m_tempCharacters);
         m_tempCharacters.clear();
     }
     if (!m_lineToUser.isEmpty()) {
@@ -130,6 +137,37 @@ void MumeXmlParser::parse(const TelnetData &data, const bool isGoAhead)
         QString tempStr = m_lineToUser;
         tempStr = normalizeStringCopy(tempStr.trimmed());
         parseMudCommands(tempStr);
+
+        // A fight's events are read off the text as well, and published as
+        // MMapper.Combat.Event, which is what a client animates from: only the prose says
+        // where a blow landed and how hard, and it carries the flights, bashes and deaths. The
+        // <hit> and <miss> elements MUME brackets each blow with are still relayed below, and
+        // feed a client's combat log and the participants they name. Read from the line as
+        // the user sees it, colour removed but not otherwise normalised, so that a name keeps
+        // the accents Room.Chars gives it and the two can be matched.
+        QString plain = m_lineToUser;
+        ParserUtils::removeAnsiMarksInPlace(plain);
+        if (const auto combat = parseCombatLine(plain)) {
+            m_observer.observeSentToUserCombat(*combat);
+        }
+    }
+
+    // Published after the terminal output of the line that closed them, so a client can
+    // line each element up against text it has already been given. An element opened on an
+    // earlier line arrives with the line that finally closes it, not the one that began it.
+    for (const XmlElement &xml : m_xmlTracker.take()) {
+        m_observer.observeSentToUserXml(xml);
+        // The weather's prose, read once here: lightning seen, fog, frost, ice, snow lying,
+        // storms and magic. The ground's state is complete at the prompt that ends a room
+        // display, which comes after MMapper has moved the player, so it describes the room
+        // MMapper.Map.Position has just named.
+        const std::optional<WeatherLine> weather = parseWeatherElement(xml);
+        if (weather.has_value()) {
+            m_observer.observeWeatherLine(*weather);
+        }
+        if (const auto ground = m_groundTracker.receive(xml, weather)) {
+            m_observer.observeGround(*ground);
+        }
     }
 }
 
@@ -138,89 +176,9 @@ bool MumeXmlParser::element(const QString &line)
     using namespace char_consts;
     const auto length = line.length();
 
-    using Attributes = std::list<std::pair<std::string, std::string>>;
-    // REVISIT: Merge this logic with the state machine in parse()
-    const auto attrs = std::invoke([&line]() -> Attributes {
-        Attributes attributes;
-
-        std::ostringstream os;
-        std::optional<std::string> key;
-
-        XmlAttributeStateEnum state = XmlAttributeStateEnum::ELEMENT;
-        const auto makeAttribute = [&key, &os, &attributes, &state]() {
-            assert(key.has_value());
-            // REVISIT: Translate XML entities into text
-            attributes.emplace_back(key.value(), os.str());
-            key.reset();
-            os.str(std::string());
-            state = XmlAttributeStateEnum::ATTRIBUTE;
-        };
-        for (const QChar qc : line) {
-            if (qc.unicode() >= 256) {
-                continue;
-            }
-            const char c = mmqt::toLatin1(qc);
-
-            switch (state) {
-            case XmlAttributeStateEnum::ELEMENT:
-                if (ascii::isSpace(c)) {
-                    state = XmlAttributeStateEnum::ATTRIBUTE;
-                } else {
-                    continue;
-                }
-                break;
-            case XmlAttributeStateEnum::ATTRIBUTE:
-                if (ascii::isSpace(c)) {
-                    continue;
-                } else if (c == C_EQUALS) {
-                    key = os.str();
-                    os.str(std::string());
-                    state = XmlAttributeStateEnum::EQUALS;
-                } else {
-                    os << c;
-                }
-                break;
-            case XmlAttributeStateEnum::EQUALS:
-                if (ascii::isSpace(c)) {
-                    continue;
-                } else if (c == C_SQUOTE) {
-                    state = XmlAttributeStateEnum::SINGLE_QUOTED_VALUE;
-                } else if (c == C_DQUOTE) {
-                    state = XmlAttributeStateEnum::DOUBLE_QUOTED_VALUE;
-                } else {
-                    os << c;
-                    state = XmlAttributeStateEnum::UNQUOTED_VALUE;
-                }
-                break;
-            case XmlAttributeStateEnum::UNQUOTED_VALUE:
-                // Note: This format is not valid according to the W3C XML standard
-                if (ascii::isSpace(c) || c == C_SLASH) {
-                    makeAttribute();
-                } else {
-                    os << c;
-                }
-                break;
-            case XmlAttributeStateEnum::SINGLE_QUOTED_VALUE:
-                if (c == C_SQUOTE) {
-                    makeAttribute();
-                } else {
-                    os << c;
-                }
-                break;
-            case XmlAttributeStateEnum::DOUBLE_QUOTED_VALUE:
-                if (c == C_DQUOTE) {
-                    makeAttribute();
-                } else {
-                    os << c;
-                }
-                break;
-            }
-        }
-        if (key.has_value()) {
-            makeAttribute();
-        }
-        return attributes;
-    });
+    // The attributes of this tag are parsed by parseXmlAttributes(), which
+    // XmlElementTracker feeds to the frontend. The room state machine below has never
+    // needed them, so nothing is parsed here.
 
     switch (m_xmlMode) {
     case XmlModeEnum::NONE:
@@ -242,6 +200,8 @@ bool MumeXmlParser::element(const QString &line)
                                "[MMapper] Mapper cannot function without XML mode\n");
                     getQueue().clear();
                     m_lineFlags.clear();
+                    m_xmlTracker.reset();
+                    m_groundTracker.reset();
                 }
                 break;
             case 'p':

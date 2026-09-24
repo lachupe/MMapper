@@ -509,12 +509,20 @@ set(mmapper_SRCS
     parser/AbstractParser-Utils.h
     parser/Action.cpp
     parser/Action.h
+    parser/CombatLines.cpp
+    parser/CombatLines.h
     parser/CommandQueue.cpp
     parser/CommandQueue.h
     parser/DoorAction.cpp
     parser/DoorAction.h
     parser/LineFlags.h
     parser/SendToUserSourceEnum.h
+    parser/WeatherLines.cpp
+    parser/WeatherLines.h
+    parser/XmlElement.cpp
+    parser/XmlElement.h
+    parser/XmlElementTracker.cpp
+    parser/XmlElementTracker.h
     parser/abstractparser.cpp
     parser/abstractparser.h
     parser/mumexmlparser-gmcp.cpp
@@ -657,6 +665,8 @@ if(WITH_FRONTEND)
     list(APPEND mmapper_SRCS
         frontend/FrontendMessages.cpp
         frontend/FrontendMessages.h
+        frontend/FrontendReplayCache.cpp
+        frontend/FrontendReplayCache.h
         frontend/FrontendServer.cpp
         frontend/FrontendServer.h
         frontend/FrontendSession.cpp

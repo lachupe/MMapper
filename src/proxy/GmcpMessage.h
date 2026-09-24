@@ -22,11 +22,19 @@ class ParseEvent;
     X(CHAR_STATUSVARS, CharStatusVars, "char.statusvars", "Char.StatusVars") \
     X(CHAR_VITALS, CharVitals, "char.vitals", "Char.Vitals") \
     X(CHAR_LOGIN, CharLogin, "char.login", "Char.Login") \
+    X(CLIENT_GUI, ClientGui, "client.gui", "Client.GUI") \
+    X(CLIENT_MAP, ClientMap, "client.map", "Client.Map") \
+    X(COMM_CHANNEL_ENABLE, CommChannelEnable, "comm.channel.enable", "Comm.Channel.Enable") \
+    X(COMM_CHANNEL_LIST, CommChannelList, "comm.channel.list", "Comm.Channel.List") \
+    X(COMM_CHANNEL_TEXT, CommChannelText, "comm.channel.text", "Comm.Channel.Text") \
     X(CORE_GOODBYE, CoreGoodbye, "core.goodbye", "Core.Goodbye") \
     X(CORE_HELLO, CoreHello, "core.hello", "Core.Hello") \
+    X(CORE_KEEPALIVE, CoreKeepAlive, "core.keepalive", "Core.KeepAlive") \
+    X(CORE_PING, CorePing, "core.ping", "Core.Ping") \
     X(CORE_SUPPORTS_ADD, CoreSupportsAdd, "core.supports.add", "Core.Supports.Add") \
     X(CORE_SUPPORTS_REMOVE, CoreSupportsRemove, "core.supports.remove", "Core.Supports.Remove") \
     X(CORE_SUPPORTS_SET, CoreSupportsSet, "core.supports.set", "Core.Supports.Set") \
+    X(EVENT_ACHIEVED, EventAchieved, "event.achieved", "Event.Achieved") \
     X(EVENT_DARKNESS, EventDarkness, "event.darkness", "Event.Darkness") \
     X(EVENT_MOVED, EventMoved, "event.moved", "Event.Moved") \
     X(EVENT_MOON, EventMoon, "event.moon", "Event.Moon") \
@@ -52,9 +60,14 @@ class ParseEvent;
     X(ROOM_CHARS_REMOVE, RoomCharsRemove, "room.chars.remove", "Room.Chars.Remove") \
     X(ROOM_CHARS_SET, RoomCharsSet, "room.chars.set", "Room.Chars.Set") \
     X(ROOM_CHARS_UPDATE, RoomCharsUpdate, "room.chars.update", "Room.Chars.Update") \
+    X(ROOM_KNOWN_ADD, RoomKnownAdd, "room.known.add", "Room.Known.Add") \
+    X(ROOM_KNOWN_LIST, RoomKnownList, "room.known.list", "Room.Known.List") \
+    X(ROOM_KNOWN_UPDATED, RoomKnownUpdated, "room.known.updated", "Room.Known.Updated") \
     X(ROOM_INFO, RoomInfo, "room.info", "Room.Info") \
-    X(ROOM_UPDATE_EXITS, RoomUpdateExits, "room.update.exits", "Room.Update.Exits") \
+    /* One word, as MUME's help page gmcp_room spells it; not Room.Update.Exits. */ \
+    X(ROOM_UPDATE_EXITS, RoomUpdateExits, "room.updateexits", "Room.UpdateExits") \
     /* MMapper-specific messages; these are never forwarded upstream to MUME. */ \
+    X(MMAPPER_COMBAT_EVENT, MMapperCombatEvent, "mmapper.combat.event", "MMapper.Combat.Event") \
     X(MMAPPER_INPUT_COMMAND, MMapperInputCommand, "mmapper.input.command", "MMapper.Input.Command") \
     X(MMAPPER_MAP_POSITION, MMapperMapPosition, "mmapper.map.position", "MMapper.Map.Position") \
     X(MMAPPER_SESSION_ERROR, MMapperSessionError, "mmapper.session.error", "MMapper.Session.Error") \
@@ -63,6 +76,13 @@ class ParseEvent;
       MMapperTerminalOutput, \
       "mmapper.terminal.output", \
       "MMapper.Terminal.Output") \
+    X(MMAPPER_TIME_STATE, MMapperTimeState, "mmapper.time.state", "MMapper.Time.State") \
+    X(MMAPPER_WEATHER_EVENT, MMapperWeatherEvent, "mmapper.weather.event", "MMapper.Weather.Event") \
+    X(MMAPPER_WEATHER_GROUND, \
+      MMapperWeatherGround, \
+      "mmapper.weather.ground", \
+      "MMapper.Weather.Ground") \
+    X(MMAPPER_XML_ELEMENT, MMapperXmlElement, "mmapper.xml.element", "MMapper.Xml.Element") \
     /* define gmcp message types above */
 
 enum class NODISCARD GmcpMessageTypeEnum {
@@ -75,7 +95,7 @@ enum class NODISCARD GmcpMessageTypeEnum {
 #define X_COUNT(...) +1
 static constexpr const size_t NUM_GMCP_MESSAGES = XFOREACH_GMCP_MESSAGE_TYPE(X_COUNT);
 #undef X_COUNT
-static_assert(NUM_GMCP_MESSAGES == 35);
+static_assert(NUM_GMCP_MESSAGES == 51);
 DEFINE_ENUM_COUNT(GmcpMessageTypeEnum, NUM_GMCP_MESSAGES)
 
 namespace tags {
