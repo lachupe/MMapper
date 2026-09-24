@@ -3,6 +3,7 @@
 
 #include "FrontendSubscriptions.h"
 
+#include "../global/CaseUtils.h"
 #include "../global/Consts.h"
 #include "../global/TextUtils.h"
 
@@ -41,8 +42,8 @@ bool FrontendSubscriptions::applySupports(const GmcpMessage &msg)
         try {
             set(GmcpModule{mmqt::toStdStringUtf8(optString.value())}, enabled);
         } catch (const std::exception &ex) {
-            qWarning() << "[frontend] ignoring module" << optString.value() << "because:"
-                       << ex.what();
+            qWarning() << "[frontend] ignoring module" << optString.value()
+                       << "because:" << ex.what();
         }
     }
     return true;
@@ -55,6 +56,13 @@ void FrontendSubscriptions::set(const GmcpModule &mod, const bool enabled)
     } else {
         m_modules.erase(mod);
     }
+}
+
+bool FrontendSubscriptions::isRelayable(const GmcpMessage &msg)
+{
+    // Package names are case insensitive, as module names are.
+    const std::string name = ::toLowerUtf8(msg.getName().getStdStringUtf8());
+    return !name.starts_with("core.") && !name.starts_with("mume.client.");
 }
 
 bool FrontendSubscriptions::wants(const GmcpMessage &msg) const

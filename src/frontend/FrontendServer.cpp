@@ -3,6 +3,7 @@
 
 #include "FrontendServer.h"
 
+#include "../clock/mumeclock.h"
 #include "../global/TextUtils.h"
 #include "../global/utils.h"
 #include "../map/RoomHandle.h"
@@ -12,9 +13,11 @@
 #include "FrontendMessages.h"
 
 #include <algorithm>
+#include <cstdlib>
 #include <optional>
 #include <tuple>
 
+#include <QDateTime>
 #include <QDebug>
 #include <QHostAddress>
 #include <QWebSocket>
@@ -25,50 +28,6 @@ namespace {
 /// Largest frame we will parse. A frontend only ever sends short control messages, so
 /// anything larger is either a bug or an attempt to exhaust memory.
 constexpr const qint64 MAX_FRAME_BYTES = 64 * 1024;
-
-/// Packages whose latest value fully describes current state, and which can therefore be
-/// replayed to a frontend that connects mid-session.
-///
-/// Deliberately conservative. Packages that arrive as deltas are only replayable while no
-/// delta has been seen since the last full snapshot; see invalidatesSnapshot().
-NODISCARD bool isReplayable(const GmcpMessageTypeEnum type)
-{
-    switch (type) {
-    case GmcpMessageTypeEnum::CHAR_NAME:
-    case GmcpMessageTypeEnum::CHAR_STATUSVARS:
-    case GmcpMessageTypeEnum::CHAR_VITALS:
-    case GmcpMessageTypeEnum::EVENT_DARKNESS:
-    case GmcpMessageTypeEnum::EVENT_MOON:
-    case GmcpMessageTypeEnum::EVENT_SUN:
-    case GmcpMessageTypeEnum::GROUP_SET:
-    case GmcpMessageTypeEnum::ROOM_CHARS_SET:
-    case GmcpMessageTypeEnum::ROOM_INFO:
-        return true;
-    default:
-        return false;
-    }
-}
-
-/// Maps a delta package onto the snapshot package it invalidates.
-///
-/// Group.Set and Room.Chars.Set describe a complete set, but Add/Remove/Update mutate it.
-/// Once a delta has been seen, the cached snapshot is stale and must not be replayed --
-/// a frontend would otherwise be told about characters that have already left the room.
-NODISCARD std::optional<GmcpMessageTypeEnum> invalidatesSnapshot(const GmcpMessageTypeEnum type)
-{
-    switch (type) {
-    case GmcpMessageTypeEnum::GROUP_ADD:
-    case GmcpMessageTypeEnum::GROUP_REMOVE:
-    case GmcpMessageTypeEnum::GROUP_UPDATE:
-        return GmcpMessageTypeEnum::GROUP_SET;
-    case GmcpMessageTypeEnum::ROOM_CHARS_ADD:
-    case GmcpMessageTypeEnum::ROOM_CHARS_REMOVE:
-    case GmcpMessageTypeEnum::ROOM_CHARS_UPDATE:
-        return GmcpMessageTypeEnum::ROOM_CHARS_SET;
-    default:
-        return std::nullopt;
-    }
-}
 
 } // namespace
 
@@ -85,6 +44,7 @@ FrontendServer::FrontendServer(GameObserver &observer,
         m_upstreamConnected = true;
         // A new game session invalidates everything we cached from the previous one.
         m_replayCache.clear();
+        m_groundState.reset();
         publishSessionState();
     });
 
@@ -110,10 +70,42 @@ FrontendServer::FrontendServer(GameObserver &observer,
             &FrontendServer::offerSession,
             Qt::QueuedConnection);
 
+    m_observer.sig2_sentToUserCombat.connect(m_lifetime, [this](const CombatEvent &event) {
+        // An event, like the XML elements: something that happened, not state to replay.
+        publish(frontend_messages::makeCombatEvent(event));
+    });
+
+    m_observer.sig2_sentToUserXml.connect(m_lifetime, [this](const XmlElement &element) {
+        // Not cached for replay: these are events, and an element that closed before a
+        // frontend connected describes something that has already happened.
+        publish(frontend_messages::makeXmlElement(element));
+    });
+
+    m_observer.sig2_weatherLine.connect(m_lifetime, [this](const WeatherLine &line) {
+        // An event: a line MUME said, not state to replay. What it says about the ground
+        // where the player stands is replayed as MMapper.Weather.Ground instead.
+        publish(frontend_messages::makeWeatherEvent(line));
+    });
+
+    m_observer.sig2_groundChanged.connect(m_lifetime, [this](const GroundState &ground) {
+        onGroundChanged(ground);
+    });
+
+    // Every second, from MumeClock::slot_tick. Most ticks change nothing a frontend's own clock
+    // does not already know; onClockTick() decides.
+    m_observer.sig2_tick.connect(m_lifetime, [this](const MumeMoment &moment) {
+        onClockTick(moment, QDateTime::currentSecsSinceEpoch());
+    });
+
     m_observer.sig2_sentToUserGmcp.connect(m_lifetime, [this](const GmcpMessage &msg) {
-        // Relayed verbatim: same package name, same payload the game sent. MUME.Client is
-        // never seen here; the proxy filters it out before the observer is notified.
-        rememberIfStateful(msg);
+        // Relayed verbatim: same package name, same payload the game sent. Core and
+        // MUME.Client are not: the proxy only filters out the MUME.Client messages it knows,
+        // and MUME's Core ones come through, so both are dropped here before anything a
+        // frontend subscribed to by name could match them.
+        if (!FrontendSubscriptions::isRelayable(msg)) {
+            return;
+        }
+        m_replayCache.remember(msg);
         publish(msg);
     });
 }
@@ -139,9 +131,7 @@ bool FrontendServer::listen(const quint16 port)
                                     this);
 
     if (!m_server->listen(QHostAddress::LocalHost, port)) {
-        log(QString("Failed to listen on 127.0.0.1:%1 (%2)")
-                .arg(port)
-                .arg(m_server->errorString()));
+        log(QString("Failed to listen on 127.0.0.1:%1 (%2)").arg(port).arg(m_server->errorString()));
         delete m_server;
         m_server = nullptr;
         return false;
@@ -265,7 +255,7 @@ void FrontendServer::onTextMessage(QWebSocket *const socket, const QString &fram
     if (msg.isCoreSupportsSet() || msg.isCoreSupportsAdd() || msg.isCoreSupportsRemove()) {
         sendTo(*client,
                frontend_messages::makeError("invalid-supports",
-                                            "Core.Supports payload must be an array of strings"));
+                                            "Core.Supports payload must be an array"));
         return;
     }
 
@@ -286,7 +276,7 @@ bool FrontendServer::tryTakeSession(const Client &client)
         return m_driver == client.socket;
     }
     if (!m_session.attach(m_listener)) {
-        return false;  // A telnet or built-in client owns the session.
+        return false; // A telnet or built-in client owns the session.
     }
     m_driver = client.socket;
     log(QString("Frontend '%1' is driving the session").arg(client.name));
@@ -342,23 +332,6 @@ void FrontendServer::handleInput(Client &client, const GmcpMessage &msg)
     m_session.sendLine(optText.value());
 }
 
-void FrontendServer::rememberIfStateful(const GmcpMessage &msg)
-{
-    const GmcpMessageTypeEnum type = msg.getType();
-
-    if (const auto stale = invalidatesSnapshot(type)) {
-        m_replayCache.erase(*stale);
-        return;
-    }
-
-    if (isReplayable(type)) {
-        // GmcpMessage is copy constructible but not copy assignable, so replace rather
-        // than assign.
-        m_replayCache.erase(type);
-        m_replayCache.emplace(type, msg);
-    }
-}
-
 bool FrontendServer::isMapLoaded() const
 {
     return m_mapData.getCurrentMap().getRoomsCount() != 0;
@@ -383,8 +356,16 @@ void FrontendServer::replayTo(Client &client)
 {
     sendTo(client, sessionStateFor(client));
 
-    for (const auto &[type, msg] : m_replayCache) {
+    for (const auto &[type, msg] : m_replayCache.messages()) {
         sendTo(client, msg);
+    }
+
+    if (m_timeState.has_value()) {
+        sendTo(client, *m_timeState);
+    }
+
+    if (m_groundState.has_value()) {
+        sendTo(client, *m_groundState);
     }
 
     if (const auto optId = m_mapData.getCurrentRoomId()) {
@@ -407,4 +388,53 @@ void FrontendServer::onPlayerMoved(const RoomId id)
     if (const auto room = m_mapData.findRoomHandle(id)) {
         publish(frontend_messages::makeMapPosition(room));
     }
+}
+
+void FrontendServer::onGroundChanged(const GroundState &ground)
+{
+    // GroundTracker reports at the prompt that ends a room display, and the path machine has
+    // moved the player by then (MumeXmlParser moves at the prompt before emitting its
+    // elements), so the current room is the one this ground was seen in.
+    std::optional<RoomHandle> room;
+    if (const auto optId = m_mapData.getCurrentRoomId()) {
+        if (RoomHandle handle = m_mapData.findRoomHandle(*optId)) {
+            room.emplace(std::move(handle));
+        }
+    }
+    // GmcpMessage is copy constructible but not copy assignable, so replace rather than assign.
+    m_groundState.reset();
+    m_groundState.emplace(
+        frontend_messages::makeGroundState(ground, room.has_value() ? &*room : nullptr));
+    publish(*m_groundState);
+}
+
+void FrontendServer::setClock(MumeClock &clock)
+{
+    m_clock = &clock;
+}
+
+void FrontendServer::onClockTick(const MumeMoment &moment, const int64_t nowSecs)
+{
+    const MumeClockPrecisionEnum precision = (m_clock != nullptr) ? m_clock->getPrecision(nowSecs)
+                                                                  : MumeClockPrecisionEnum::UNSET;
+
+    // MUME minutes since its epoch; one passes every real second, so a frontend that was told
+    // the time `nowSecs - m_timeStateSentAt` seconds ago believes it is `expected` now.
+    const int64_t minutes = moment.toSeconds();
+    const int64_t expected = m_timeStateMinutes + (nowSecs - m_timeStateSentAt);
+    const bool setAgain = std::llabs(minutes - expected) > 1;
+    const bool changed = moment.hour != m_timeStateHour
+                         || static_cast<int>(precision) != m_timeStatePrecision;
+    if (m_timeState.has_value() && !setAgain && !changed) {
+        return;
+    }
+
+    // GmcpMessage is copy constructible but not copy assignable, so replace rather than assign.
+    m_timeState.reset();
+    m_timeState.emplace(frontend_messages::makeTimeState(moment, precision));
+    m_timeStateMinutes = minutes;
+    m_timeStateSentAt = nowSecs;
+    m_timeStateHour = moment.hour;
+    m_timeStatePrecision = static_cast<int>(precision);
+    publish(*m_timeState);
 }

@@ -42,6 +42,26 @@ void GameObserver::observeSentToUserGmcp(const GmcpMessage &m)
     sig2_sentToUserGmcp.invoke(m);
 }
 
+void GameObserver::observeSentToUserXml(const XmlElement &element)
+{
+    sig2_sentToUserXml.invoke(element);
+}
+
+void GameObserver::observeSentToUserCombat(const CombatEvent &event)
+{
+    sig2_sentToUserCombat.invoke(event);
+}
+
+void GameObserver::observeWeatherLine(const WeatherLine &line)
+{
+    sig2_weatherLine.invoke(line);
+}
+
+void GameObserver::observeGround(const GroundState &state)
+{
+    sig2_groundChanged.invoke(state);
+}
+
 void GameObserver::observeToggledEchoMode(const bool echo)
 {
     sig2_toggledEchoMode.invoke(echo);

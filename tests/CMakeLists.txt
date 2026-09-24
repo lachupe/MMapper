@@ -169,11 +169,91 @@ set_target_properties(
 )
 add_test(NAME TestProxy COMMAND TestProxy)
 
+# Combat lines
+set(TestCombatLines_SRCS TestCombatLines.cpp ../src/parser/CombatLines.cpp ../src/parser/CombatLines.h)
+add_executable(TestCombatLines ${TestCombatLines_SRCS})
+add_dependencies(TestCombatLines mm_test mm_global)
+target_link_libraries(TestCombatLines
+        mm_test
+        mm_global
+        Qt6::Test
+        coverage_config)
+set_target_properties(
+  TestCombatLines PROPERTIES
+  CXX_STANDARD 20
+  CXX_STANDARD_REQUIRED ON
+  CXX_EXTENSIONS OFF
+  COMPILE_FLAGS "${WARNING_FLAGS}"
+)
+add_test(NAME TestCombatLines COMMAND TestCombatLines)
+
+# Weather lines, and the ground they describe
+set(TestWeatherLines_SRCS
+    TestWeatherLines.cpp
+    ../src/parser/WeatherLines.cpp
+    ../src/parser/WeatherLines.h
+    ../src/parser/XmlElement.cpp
+    ../src/parser/XmlElement.h
+    ../src/parser/XmlElementTracker.cpp
+    ../src/parser/XmlElementTracker.h
+    )
+add_executable(TestWeatherLines ${TestWeatherLines_SRCS})
+add_dependencies(TestWeatherLines mm_test mm_global)
+target_link_libraries(TestWeatherLines
+        mm_test
+        mm_global
+        Qt6::Gui
+        Qt6::Test
+        Qt6::Widgets
+        coverage_config)
+set_target_properties(
+  TestWeatherLines PROPERTIES
+  CXX_STANDARD 20
+  CXX_STANDARD_REQUIRED ON
+  CXX_EXTENSIONS OFF
+  COMPILE_FLAGS "${WARNING_FLAGS}"
+)
+add_test(NAME TestWeatherLines COMMAND TestWeatherLines)
+
+# MUME's XML vocabulary
+set(xml_SRCS
+    ../src/parser/XmlElement.cpp
+    ../src/parser/XmlElement.h
+    ../src/parser/XmlElementTracker.cpp
+    ../src/parser/XmlElementTracker.h
+    )
+set(TestXmlElements_SRCS TestXmlElements.cpp)
+add_executable(TestXmlElements ${TestXmlElements_SRCS} ${xml_SRCS})
+add_dependencies(TestXmlElements mm_test mm_global)
+target_link_libraries(TestXmlElements
+        mm_test
+        mm_global
+        Qt6::Gui
+        Qt6::Test
+        Qt6::Widgets
+        coverage_config)
+set_target_properties(
+  TestXmlElements PROPERTIES
+  CXX_STANDARD 20
+  CXX_STANDARD_REQUIRED ON
+  CXX_EXTENSIONS OFF
+  COMPILE_FLAGS "${WARNING_FLAGS}"
+)
+add_test(NAME TestXmlElements COMMAND TestXmlElements)
+
 # Frontend protocol
 if(WITH_FRONTEND)
     set(frontend_SRCS
         ../src/frontend/FrontendMessages.cpp
         ../src/frontend/FrontendMessages.h
+        ../src/frontend/FrontendReplayCache.cpp
+        ../src/frontend/FrontendReplayCache.h
+        ../src/parser/CombatLines.cpp
+        ../src/parser/CombatLines.h
+        ../src/parser/WeatherLines.cpp
+        ../src/parser/WeatherLines.h
+        ../src/parser/XmlElement.cpp
+        ../src/parser/XmlElement.h
         ../src/frontend/FrontendSubscriptions.cpp
         ../src/frontend/FrontendSubscriptions.h
         ../src/proxy/GmcpModule.cpp
@@ -182,7 +262,8 @@ if(WITH_FRONTEND)
         ../src/proxy/GmcpUtils.h
         )
     set(TestFrontend_SRCS TestFrontend.cpp)
-    add_executable(TestFrontend ${TestFrontend_SRCS} ${frontend_SRCS})
+    # The clock is there for MMapper.Time.State, which FrontendMessages builds from a MumeMoment.
+    add_executable(TestFrontend ${TestFrontend_SRCS} ${frontend_SRCS} ${clock_SRCS})
     add_dependencies(TestFrontend mm_test mm_global mm_map)
     target_link_libraries(TestFrontend
             mm_map

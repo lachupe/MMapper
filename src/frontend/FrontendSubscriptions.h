@@ -32,6 +32,15 @@ public:
     /// belongs to "MMapper.Map", and "Char.Vitals" to "Char".
     NODISCARD bool wants(const GmcpMessage &msg) const;
 
+    /// False for GMCP from MUME that no frontend receives, whatever it subscribed to.
+    ///
+    /// A subscription is accepted for any module name, so this is what keeps two modules
+    /// out. Core belongs to each connection: MMapper answers a frontend's Core.Hello and
+    /// Core.Supports on its own behalf, and a Core.Goodbye or Core.Ping from MUME is about
+    /// MMapper's own connection. MUME.Client is MMapper's private channel with MUME; the
+    /// proxy already stops the messages of it that MMapper knows, and this stops the rest.
+    NODISCARD static bool isRelayable(const GmcpMessage &msg);
+
     NODISCARD bool empty() const { return m_modules.empty(); }
     NODISCARD size_t size() const { return m_modules.size(); }
     void clear() { m_modules.clear(); }
