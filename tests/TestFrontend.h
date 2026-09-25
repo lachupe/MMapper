@@ -31,6 +31,12 @@ private Q_SLOTS:
     static void timeStateTest();
     static void weatherEventTest();
     static void groundStateTest();
+    static void roomContentsTest();
+    static void containerEventTest();
+    static void charEquipmentTest();
+    static void charInventoryTest();
+    static void charContainerTest();
+    static void charItemTest();
     static void replayChangedFieldsTest();
     static void replaySetChangesTest();
     static void mumeModuleCoverageTest();

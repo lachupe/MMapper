@@ -13,6 +13,9 @@
 #include "../src/map/coordinate.h"
 #include "../src/map/mmapper2room.h"
 #include "../src/map/roomid.h"
+#include "../src/parser/ContainerLines.h"
+#include "../src/parser/ItemLines.h"
+#include "../src/parser/RoomContents.h"
 #include "../src/parser/WeatherLines.h"
 #include "../src/parser/XmlElement.h"
 #include "../src/proxy/GmcpMessage.h"
@@ -40,6 +43,25 @@ NODISCARD QJsonObject payloadOf(const GmcpMessage &msg)
 }
 
 /// The payload `cache` would replay for `type`, or an empty document if it would replay none.
+/// The listings ItemBlockTracker makes of `lines` and the prompt after them.
+NODISCARD std::vector<ItemBlock> listed(const QStringList &lines, const QString &command = {})
+{
+    ItemBlockTracker tracker;
+    if (!command.isEmpty()) {
+        tracker.receiveCommand(command);
+    }
+    std::vector<ItemBlock> blocks;
+    for (const QString &line : lines) {
+        for (ItemBlock &block : tracker.receiveLine(line)) {
+            blocks.push_back(std::move(block));
+        }
+    }
+    for (ItemBlock &block : tracker.receivePrompt()) {
+        blocks.push_back(std::move(block));
+    }
+    return blocks;
+}
+
 NODISCARD QJsonDocument replayed(const FrontendReplayCache &cache, const GmcpMessageTypeEnum type)
 {
     const auto &messages = cache.messages();
@@ -357,6 +379,40 @@ void TestFrontend::combatEventTest()
     QCOMPARE(fled["kind"].toString(), QStringLiteral("flee"));
     QCOMPARE(fled["phase"].toString(), QStringLiteral("failed"));
     QVERIFY(!fled.contains("outcome"));
+
+    // A refused move says why, and names what was in the way when there was something.
+    const std::optional<CombatEvent> door = parseCombatLine(
+        QStringLiteral("The door seems to be closed."));
+    QVERIFY(door.has_value());
+    QCOMPARE(frontend_messages::makeCombatEvent(*door).toRawBytes(),
+             QByteArray(R"(MMapper.Combat.Event {"actor":"you","detail":"door-closed",)"
+                        R"("kind":"refused","target":"door",)"
+                        R"("text":"The door seems to be closed."})"));
+    const std::optional<CombatEvent> engaged = parseCombatLine(
+        QStringLiteral("No way! You are fighting for your life!"));
+    QVERIFY(engaged.has_value());
+    const QJsonObject engagedObj = payloadOf(frontend_messages::makeCombatEvent(*engaged));
+    QCOMPARE(engagedObj["detail"].toString(), QStringLiteral("fighting"));
+    QVERIFY(!engagedObj.contains("target"));
+
+    // New phases go out as words, like the old ones.
+    const std::optional<CombatEvent> dodged = parseCombatLine(
+        QStringLiteral("You dodge a bash from an ugly forest troll who loses his balance."));
+    QVERIFY(dodged.has_value());
+    const QJsonObject dodgedObj = payloadOf(frontend_messages::makeCombatEvent(*dodged));
+    QCOMPARE(dodgedObj["kind"].toString(), QStringLiteral("bash"));
+    QCOMPARE(dodgedObj["phase"].toString(), QStringLiteral("dodged"));
+    QCOMPARE(dodgedObj["actor"].toString(), QStringLiteral("an ugly forest troll"));
+    QCOMPARE(dodgedObj["target"].toString(), QStringLiteral("you"));
+
+    // The player's own spell going off has no line of its own: an empty text, no actor words.
+    OwnCastTracker tracker;
+    tracker.receiveEvent(*parseCombatLine(QStringLiteral("You start to concentrate...")));
+    const std::optional<CombatEvent> done = tracker.receivePrompt();
+    QVERIFY(done.has_value());
+    QCOMPARE(frontend_messages::makeCombatEvent(*done).toRawBytes(),
+             QByteArray(
+                 R"(MMapper.Combat.Event {"actor":"you","kind":"cast","phase":"done","text":""})"));
 }
 
 /// Every module MUME's own "help gmcp" page lists. If MUME adds one, the omission should
@@ -527,6 +583,299 @@ void TestFrontend::groundStateTest()
 
     FrontendSubscriptions subs;
     QVERIFY(subs.applySupports(parse(R"(Core.Supports.Set [ "MMapper.Weather 1" ])")));
+    QVERIFY(subs.wants(msg));
+}
+
+void TestFrontend::roomContentsTest()
+{
+    RoomContentsSnapshot contents;
+    contents.roomKey = QStringLiteral("4321");
+    RoomObject chest;
+    chest.index = 0;
+    chest.line = QStringLiteral("A wooden chest stands in the corner.");
+    chest.keyword = QStringLiteral("chest");
+    chest.target = QStringLiteral("chest");
+    chest.container = true;
+    chest.state.locked = true;
+    chest.state.open = false;
+    chest.state.known = 1790000000;
+    contents.objects.push_back(chest);
+    RoomObject torch;
+    torch.index = 1;
+    torch.line = QStringLiteral("A large torch lies here among the dust.");
+    contents.objects.push_back(torch);
+
+    const Map map = makeOneRoomMap(ServerRoomId{4321});
+    const RoomHandle room = map.findRoomHandle(ExternalRoomId{1});
+    QVERIFY(room.exists());
+
+    const GmcpMessage msg = frontend_messages::makeRoomContents(contents, &room);
+    // The whole frame, as the spec shows it and mume3d's tests/room_contents_smoke.gd feeds it.
+    QCOMPARE(msg.toRawBytes(),
+             QByteArray(
+                 R"(MMapper.Room.Contents {"entered":true,"externalId":1,"objects":[)"
+                 R"({"container":true,"count":1,"index":0,"keyword":"chest",)"
+                 R"("line":"A wooden chest stands in the corner.","name":null,)"
+                 R"("state":{"empty":null,"known":1790000000,"locked":true,"open":false,)"
+                 R"("pickproof":null},"target":"chest"},)"
+                 R"({"container":false,"count":1,"index":1,"keyword":null,)"
+                 R"("line":"A large torch lies here among the dust.","name":null,)"
+                 R"("state":{"empty":null,"known":0,"locked":null,"open":null,"pickproof":null},)"
+                 R"("target":null}],"seen":true,"serverId":4321})"));
+    QCOMPARE(msg.getName().toQString(), QStringLiteral("MMapper.Room.Contents"));
+    QCOMPARE(msg.getType(), GmcpMessageTypeEnum::MMAPPER_ROOM_CONTENTS);
+    const QJsonObject obj = payloadOf(msg);
+    // The same identities MMapper.Map.Position gives the room, at the top level.
+    QCOMPARE(obj["serverId"].toInt(), 4321);
+    QCOMPARE(obj["externalId"].toInt(), 1);
+    QCOMPARE(obj["seen"].toBool(), true);
+    QCOMPARE(obj["entered"].toBool(), true);
+    const QJsonArray objects = obj["objects"].toArray();
+    QCOMPARE(objects.size(), 2);
+
+    const QJsonObject first = objects.at(0).toObject();
+    QCOMPARE(first["index"].toInt(), 0);
+    QCOMPARE(first["line"].toString(), QStringLiteral("A wooden chest stands in the corner."));
+    QVERIFY(first["name"].isNull());
+    QCOMPARE(first["count"].toInt(), 1);
+    QCOMPARE(first["container"].toBool(), true);
+    QCOMPARE(first["keyword"].toString(), QStringLiteral("chest"));
+    QCOMPARE(first["target"].toString(), QStringLiteral("chest"));
+    const QJsonObject state = first["state"].toObject();
+    QCOMPARE(state["open"].toBool(true), false);
+    QCOMPARE(state["locked"].toBool(), true);
+    // Unknown is null, not false.
+    QVERIFY(state["pickproof"].isNull());
+    QVERIFY(state["empty"].isNull());
+    QCOMPARE(state["known"].toInteger(), static_cast<qint64>(1790000000));
+
+    const QJsonObject second = objects.at(1).toObject();
+    QCOMPARE(second["container"].toBool(), false);
+    QVERIFY(second["keyword"].isNull());
+    QVERIFY(second["target"].isNull());
+    QCOMPARE(second["state"].toObject()["known"].toInteger(), static_cast<qint64>(0));
+
+    // Without a current room there is nothing to name.
+    const QJsonObject nowhere = payloadOf(frontend_messages::makeRoomContents(contents, nullptr));
+    QVERIFY(!nowhere.contains("serverId"));
+    QVERIFY(!nowhere.contains("externalId"));
+
+    // Its own module, not MUME's Room.
+    FrontendSubscriptions subs;
+    QVERIFY(subs.applySupports(parse(R"(Core.Supports.Set [ "Room 1" ])")));
+    QVERIFY(!subs.wants(msg));
+    QVERIFY(subs.applySupports(parse(R"(Core.Supports.Set [ "MMapper.Room 1" ])")));
+    QVERIFY(subs.wants(msg));
+}
+
+void TestFrontend::containerEventTest()
+{
+    // A room with a chest, the command, and MUME's replies as the logs have them.
+    RoomContentsSnapshot contents;
+    contents.roomKey = QStringLiteral("4321");
+    RoomObject chest;
+    chest.line = QStringLiteral("A wooden chest stands in the corner.");
+    chest.keyword = QStringLiteral("chest");
+    chest.target = QStringLiteral("chest");
+    chest.container = true;
+    contents.objects.push_back(chest);
+    ContainerTracker tracker;
+    tracker.decorate(contents);
+
+    tracker.receiveCommand(QStringLiteral("exami chest"));
+    std::ignore = tracker.receiveLine(QStringLiteral("chest (here) : "), 1790000000);
+    std::ignore = tracker.receiveLine(QStringLiteral("a gold ring"), 1790000000);
+    std::ignore = tracker.receiveLine(QStringLiteral("three azure scrolls"), 1790000000);
+    const std::vector<ContainerEvent> events = tracker.receivePrompt(1790000000);
+    QCOMPARE(events.size(), size_t{1});
+
+    const GmcpMessage msg = frontend_messages::makeContainerEvent(events.front());
+    QCOMPARE(msg.toRawBytes(),
+             QByteArray(R"(MMapper.Room.Container {"action":"look","index":0,"items":[)"
+                        R"({"count":1,"name":"a gold ring","text":"a gold ring"},)"
+                        R"({"count":3,"name":"azure scrolls","text":"three azure scrolls"}],)"
+                        R"("result":"contents","target":"chest",)"
+                        R"("text":"chest (here) :\na gold ring\nthree azure scrolls"})"));
+    QCOMPARE(msg.getName().toQString(), QStringLiteral("MMapper.Room.Container"));
+    QCOMPARE(msg.getType(), GmcpMessageTypeEnum::MMAPPER_ROOM_CONTAINER);
+    const QJsonObject obj = payloadOf(msg);
+    QCOMPARE(obj["target"].toString(), QStringLiteral("chest"));
+    QCOMPARE(obj["action"].toString(), QStringLiteral("look"));
+    QCOMPARE(obj["result"].toString(), QStringLiteral("contents"));
+    QCOMPARE(obj["index"].toInt(), 0);
+    QCOMPARE(obj["text"].toString(),
+             QStringLiteral("chest (here) :\na gold ring\nthree azure scrolls"));
+    const QJsonArray items = obj["items"].toArray();
+    QCOMPARE(items.size(), 2);
+    QCOMPARE(items.at(1).toObject()["name"].toString(), QStringLiteral("azure scrolls"));
+    QCOMPARE(items.at(1).toObject()["count"].toInt(), 3);
+    QCOMPARE(items.at(1).toObject()["text"].toString(), QStringLiteral("three azure scrolls"));
+
+    // A reply with nothing inside says so without an empty list, and one that did not reach an
+    // object in the room has no index.
+    tracker.receiveCommand(QStringLiteral("open cabinet"));
+    const std::vector<ContainerEvent> missing
+        = tracker.receiveLine(QStringLiteral("You don't see any cabinet here."), 1790000000);
+    QCOMPARE(missing.size(), size_t{1});
+    const QJsonObject notFound = payloadOf(frontend_messages::makeContainerEvent(missing.front()));
+    QCOMPARE(notFound["result"].toString(), QStringLiteral("not-found"));
+    QVERIFY(!notFound.contains("items"));
+    QVERIFY(!notFound.contains("index"));
+
+    FrontendSubscriptions subs;
+    QVERIFY(subs.applySupports(parse(R"(Core.Supports.Set [ "MMapper.Room 1" ])")));
+    QVERIFY(subs.wants(msg));
+}
+
+void TestFrontend::charEquipmentTest()
+{
+    // The player's own "equipment", lines as the logs have them (azazello.txt).
+    const auto blocks = listed(
+        {QStringLiteral("You are using:"),
+         QStringLiteral("<wielded>            an engraved broadsword (flawless); it glows blue"),
+         QStringLiteral(
+             "<worn around neck>   a red ruby; it glows blue; it has a soft glowing aura"),
+         QStringLiteral("<worn on belt>       a sable pouch"),
+         QStringLiteral("")});
+    QCOMPARE(blocks.size(), size_t{1});
+    const GmcpMessage msg = frontend_messages::makeCharEquipment(blocks.front());
+    // The whole frame, as the spec shows it and mume3d's tests/char_items_smoke.gd feeds it.
+    QCOMPARE(msg.toRawBytes(),
+             QByteArray(
+                 R"(MMapper.Char.Equipment {"items":[)"
+                 R"({"condition":"flawless","count":1,"flags":["it glows blue"],)"
+                 R"("label":"wielded","name":"an engraved broadsword","slot":"wielded",)"
+                 R"("text":"<wielded> an engraved broadsword (flawless); it glows blue"},)"
+                 R"({"condition":null,"count":1,)"
+                 R"("flags":["it glows blue","it has a soft glowing aura"],)"
+                 R"("label":"worn around neck","name":"a red ruby","slot":"neck",)"
+                 R"("text":"<worn around neck> a red ruby; it glows blue; it has a soft glowing aura"},)"
+                 R"({"condition":null,"count":1,"flags":[],"label":"worn on belt",)"
+                 R"("name":"a sable pouch","slot":"belt","text":"<worn on belt> a sable pouch"}],)"
+                 R"("owner":"you"})"));
+    QCOMPARE(msg.getName().toQString(), QStringLiteral("MMapper.Char.Equipment"));
+    QCOMPARE(msg.getType(), GmcpMessageTypeEnum::MMAPPER_CHAR_EQUIPMENT);
+
+    // Someone looked at (stolb.balrog.txt), with a weapon in both hands.
+    const auto other = listed(
+        {QStringLiteral("Uldor the Damned is using: "),
+         QStringLiteral("<wielded two-handed> a great warsword (flawless); it glows blue"),
+         QStringLiteral("<worn on forearm>    a metal buckler (flawless)")});
+    QCOMPARE(other.size(), size_t{1});
+    const QJsonObject obj = payloadOf(frontend_messages::makeCharEquipment(other.front()));
+    QCOMPARE(obj["owner"].toString(), QStringLiteral("Uldor the Damned"));
+    const QJsonArray items = obj["items"].toArray();
+    QCOMPARE(items.size(), 2);
+    QCOMPARE(items.at(0).toObject()["slot"].toString(), QStringLiteral("wielded"));
+    QCOMPARE(items.at(0).toObject()["label"].toString(), QStringLiteral("wielded two-handed"));
+    QCOMPARE(items.at(0).toObject()["twoHanded"].toBool(), true);
+    QCOMPARE(items.at(1).toObject()["slot"].toString(), QStringLiteral("shield"));
+    QVERIFY(!items.at(1).toObject().contains("twoHanded"));
+
+    // Its own module, not MUME's Char.
+    FrontendSubscriptions subs;
+    QVERIFY(subs.applySupports(parse(R"(Core.Supports.Set [ "Char 1" ])")));
+    QVERIFY(!subs.wants(msg));
+    QVERIFY(subs.applySupports(parse(R"(Core.Supports.Set [ "MMapper.Char 1" ])")));
+    QVERIFY(subs.wants(msg));
+}
+
+void TestFrontend::charInventoryTest()
+{
+    const auto blocks = listed({QStringLiteral("You are carrying:"),
+                                QStringLiteral("a sturdy chain mail hauberk (flawless)"),
+                                QStringLiteral("a lembas wafer")});
+    QCOMPARE(blocks.size(), size_t{1});
+    const GmcpMessage msg = frontend_messages::makeCharInventory(blocks.front());
+    QCOMPARE(msg.toRawBytes(),
+             QByteArray(R"(MMapper.Char.Inventory {"items":[)"
+                        R"({"condition":"flawless","count":1,"flags":[],)"
+                        R"("name":"a sturdy chain mail hauberk",)"
+                        R"j("text":"a sturdy chain mail hauberk (flawless)"},)j"
+                        R"({"condition":null,"count":1,"flags":[],"name":"a lembas wafer",)"
+                        R"("text":"a lembas wafer"}],"owner":"you","peek":false})"));
+    QCOMPARE(msg.getType(), GmcpMessageTypeEnum::MMAPPER_CHAR_INVENTORY);
+
+    // A peek at someone whose name the reply did not give (stonedoor.txt:302).
+    const auto peek = listed({QStringLiteral("You attempt to peek at the inventory:"),
+                              QStringLiteral("a wooden pipe"),
+                              QStringLiteral("")});
+    QCOMPARE(peek.size(), size_t{1});
+    const QJsonObject obj = payloadOf(frontend_messages::makeCharInventory(peek.front()));
+    QCOMPARE(obj["peek"].toBool(), true);
+    QVERIFY(obj.contains("owner"));
+    QVERIFY(obj["owner"].isNull());
+    QCOMPARE(obj["items"].toArray().size(), 1);
+
+    FrontendSubscriptions subs;
+    QVERIFY(subs.applySupports(parse(R"(Core.Supports.Set [ "MMapper.Char 1" ])")));
+    QVERIFY(subs.wants(msg));
+}
+
+void TestFrontend::charContainerTest()
+{
+    // azazello.txt:1133, "l in backpack".
+    const auto blocks = listed({QStringLiteral("backpack (used) : "),
+                                QStringLiteral("two azure scrolls"),
+                                QStringLiteral("a black pair of padded boots (satisfactory)"),
+                                QStringLiteral("")});
+    QCOMPARE(blocks.size(), size_t{1});
+    const GmcpMessage msg = frontend_messages::makeCharContainer(blocks.front());
+    QCOMPARE(msg.toRawBytes(),
+             QByteArray(R"(MMapper.Char.Container {"closed":false,"items":[)"
+                        R"({"condition":null,"count":2,"flags":[],"name":"azure scrolls",)"
+                        R"("text":"two azure scrolls"},)"
+                        R"({"condition":"satisfactory","count":1,"flags":[],)"
+                        R"("name":"a black pair of padded boots",)"
+                        R"j("text":"a black pair of padded boots (satisfactory)"}],)j"
+                        R"("keyword":"backpack","where":"used"})"));
+    QCOMPARE(msg.getType(), GmcpMessageTypeEnum::MMAPPER_CHAR_CONTAINER);
+
+    // A closed one, never listed: no items, and no place.
+    const auto closed = listed({QStringLiteral("A large cabinet is closed.")},
+                               QStringLiteral("look in cabinet"));
+    QCOMPARE(closed.size(), size_t{1});
+    QCOMPARE(
+        frontend_messages::makeCharContainer(closed.front()).toRawBytes(),
+        QByteArray(
+            R"(MMapper.Char.Container {"closed":true,"items":[],"keyword":"cabinet","where":null})"));
+}
+
+void TestFrontend::charItemTest()
+{
+    const auto frame = [](const char *const line) {
+        const auto event = parseItemEvent(QString::fromUtf8(line));
+        return event.has_value() ? frontend_messages::makeCharItem(*event).toRawBytes()
+                                 : QByteArray{};
+    };
+    QCOMPARE(frame("You fasten a sable pouch on your belt."),
+             QByteArray(R"(MMapper.Char.Item {"action":"wear","item":"a sable pouch",)"
+                        R"("place":"belt","slot":"belt",)"
+                        R"("text":"You fasten a sable pouch on your belt."})"));
+    QCOMPARE(frame("You get a flask of orkish draught from a leather backpack."),
+             QByteArray(R"(MMapper.Char.Item {"action":"get","container":"a leather backpack",)"
+                        R"("item":"a flask of orkish draught",)"
+                        R"("text":"You get a flask of orkish draught from a leather backpack."})"));
+    QCOMPARE(frame("Stolb (S) gives you a red ruby."),
+             QByteArray(R"(MMapper.Char.Item {"action":"receive","item":"a red ruby",)"
+                        R"("other":"Stolb","text":"Stolb (S) gives you a red ruby."})"));
+    QCOMPARE(frame("You are already wearing something on your legs."),
+             QByteArray(R"(MMapper.Char.Item {"action":"refused","place":"legs",)"
+                        R"("reason":"slot-taken","slot":"legs",)"
+                        R"("text":"You are already wearing something on your legs."})"));
+
+    const auto event = parseItemEvent(QStringLiteral("You drop the key."));
+    QVERIFY(event.has_value());
+    const GmcpMessage msg = frontend_messages::makeCharItem(*event);
+    QCOMPARE(msg.getName().toQString(), QStringLiteral("MMapper.Char.Item"));
+    QCOMPARE(msg.getType(), GmcpMessageTypeEnum::MMAPPER_CHAR_ITEM);
+    const QJsonObject obj = payloadOf(msg);
+    // Only what the line says is sent.
+    QCOMPARE(obj.keys(),
+             (QStringList{QStringLiteral("action"), QStringLiteral("item"), QStringLiteral("text")}));
+
+    FrontendSubscriptions subs;
+    QVERIFY(subs.applySupports(parse(R"(Core.Supports.Set [ "MMapper.Char 1" ])")));
     QVERIFY(subs.wants(msg));
 }
 

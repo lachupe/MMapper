@@ -64,6 +64,8 @@ void MumeXmlParserBase::initActionMap()
     addStartsWith("You are dead!", dead);
 
     /// Path Machine: Prespam
+    // CombatLines (parseCombatLine) reads each of these as well and publishes it as an
+    // MMapper.Combat.Event "refused" with the reason; a line added here belongs there too.
     auto failedMovement = [this](StringView /*view*/) {
         maybePop(getQueue());
         pathChanged();

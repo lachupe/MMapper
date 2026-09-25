@@ -67,9 +67,27 @@ class ParseEvent;
     /* One word, as MUME's help page gmcp_room spells it; not Room.Update.Exits. */ \
     X(ROOM_UPDATE_EXITS, RoomUpdateExits, "room.updateexits", "Room.UpdateExits") \
     /* MMapper-specific messages; these are never forwarded upstream to MUME. */ \
+    X(MMAPPER_CHAR_CONTAINER, \
+      MMapperCharContainer, \
+      "mmapper.char.container", \
+      "MMapper.Char.Container") \
+    X(MMAPPER_CHAR_EQUIPMENT, \
+      MMapperCharEquipment, \
+      "mmapper.char.equipment", \
+      "MMapper.Char.Equipment") \
+    X(MMAPPER_CHAR_INVENTORY, \
+      MMapperCharInventory, \
+      "mmapper.char.inventory", \
+      "MMapper.Char.Inventory") \
+    X(MMAPPER_CHAR_ITEM, MMapperCharItem, "mmapper.char.item", "MMapper.Char.Item") \
     X(MMAPPER_COMBAT_EVENT, MMapperCombatEvent, "mmapper.combat.event", "MMapper.Combat.Event") \
     X(MMAPPER_INPUT_COMMAND, MMapperInputCommand, "mmapper.input.command", "MMapper.Input.Command") \
     X(MMAPPER_MAP_POSITION, MMapperMapPosition, "mmapper.map.position", "MMapper.Map.Position") \
+    X(MMAPPER_ROOM_CONTAINER, \
+      MMapperRoomContainer, \
+      "mmapper.room.container", \
+      "MMapper.Room.Container") \
+    X(MMAPPER_ROOM_CONTENTS, MMapperRoomContents, "mmapper.room.contents", "MMapper.Room.Contents") \
     X(MMAPPER_SESSION_ERROR, MMapperSessionError, "mmapper.session.error", "MMapper.Session.Error") \
     X(MMAPPER_SESSION_STATE, MMapperSessionState, "mmapper.session.state", "MMapper.Session.State") \
     X(MMAPPER_TERMINAL_OUTPUT, \
@@ -95,7 +113,7 @@ enum class NODISCARD GmcpMessageTypeEnum {
 #define X_COUNT(...) +1
 static constexpr const size_t NUM_GMCP_MESSAGES = XFOREACH_GMCP_MESSAGE_TYPE(X_COUNT);
 #undef X_COUNT
-static_assert(NUM_GMCP_MESSAGES == 51);
+static_assert(NUM_GMCP_MESSAGES == 57);
 DEFINE_ENUM_COUNT(GmcpMessageTypeEnum, NUM_GMCP_MESSAGES)
 
 namespace tags {

@@ -215,6 +215,64 @@ set_target_properties(
 )
 add_test(NAME TestWeatherLines COMMAND TestWeatherLines)
 
+# The objects in the room, and the replies to container commands
+set(TestRoomContents_SRCS
+    TestRoomContents.cpp
+    ../src/parser/ContainerLines.cpp
+    ../src/parser/ContainerLines.h
+    ../src/parser/RoomContents.cpp
+    ../src/parser/RoomContents.h
+    ../src/parser/XmlElement.cpp
+    ../src/parser/XmlElement.h
+    )
+add_executable(TestRoomContents ${TestRoomContents_SRCS})
+add_dependencies(TestRoomContents mm_test mm_global)
+target_link_libraries(TestRoomContents
+        mm_test
+        mm_global
+        Qt6::Gui
+        Qt6::Test
+        Qt6::Widgets
+        coverage_config)
+set_target_properties(
+  TestRoomContents PROPERTIES
+  CXX_STANDARD 20
+  CXX_STANDARD_REQUIRED ON
+  CXX_EXTENSIONS OFF
+  COMPILE_FLAGS "${WARNING_FLAGS}"
+)
+add_test(NAME TestRoomContents COMMAND TestRoomContents)
+
+# What the player wears and carries, and the replies that change it
+set(TestItemLines_SRCS
+    TestItemLines.cpp
+    ../src/parser/ContainerLines.cpp
+    ../src/parser/ContainerLines.h
+    ../src/parser/ItemLines.cpp
+    ../src/parser/ItemLines.h
+    ../src/parser/RoomContents.cpp
+    ../src/parser/RoomContents.h
+    ../src/parser/XmlElement.cpp
+    ../src/parser/XmlElement.h
+    )
+add_executable(TestItemLines ${TestItemLines_SRCS})
+add_dependencies(TestItemLines mm_test mm_global)
+target_link_libraries(TestItemLines
+        mm_test
+        mm_global
+        Qt6::Gui
+        Qt6::Test
+        Qt6::Widgets
+        coverage_config)
+set_target_properties(
+  TestItemLines PROPERTIES
+  CXX_STANDARD 20
+  CXX_STANDARD_REQUIRED ON
+  CXX_EXTENSIONS OFF
+  COMPILE_FLAGS "${WARNING_FLAGS}"
+)
+add_test(NAME TestItemLines COMMAND TestItemLines)
+
 # MUME's XML vocabulary
 set(xml_SRCS
     ../src/parser/XmlElement.cpp
@@ -250,6 +308,12 @@ if(WITH_FRONTEND)
         ../src/frontend/FrontendReplayCache.h
         ../src/parser/CombatLines.cpp
         ../src/parser/CombatLines.h
+        ../src/parser/ContainerLines.cpp
+        ../src/parser/ContainerLines.h
+        ../src/parser/ItemLines.cpp
+        ../src/parser/ItemLines.h
+        ../src/parser/RoomContents.cpp
+        ../src/parser/RoomContents.h
         ../src/parser/WeatherLines.cpp
         ../src/parser/WeatherLines.h
         ../src/parser/XmlElement.cpp

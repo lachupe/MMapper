@@ -370,4 +370,143 @@ GmcpMessage makeGroundState(const GroundState &state, const RoomHandle *const ro
     return GmcpMessage{GmcpMessageTypeEnum::MMAPPER_WEATHER_GROUND, toGmcpJson(obj)};
 }
 
+GmcpMessage makeRoomContents(const RoomContentsSnapshot &contents, const RoomHandle *const room)
+{
+    const auto maybe = [](const std::optional<bool> &value) -> QJsonValue {
+        return value.has_value() ? QJsonValue{*value} : QJsonValue{QJsonValue::Null};
+    };
+    const auto orNull = [](const QString &text) -> QJsonValue {
+        return text.isEmpty() ? QJsonValue{QJsonValue::Null} : QJsonValue{text};
+    };
+
+    QJsonObject obj;
+    if (room != nullptr && *room) {
+        obj["externalId"] = static_cast<qint64>(room->getIdExternal().asUint32());
+        if (const ServerRoomId serverId = room->getServerId(); serverId != INVALID_SERVER_ROOMID) {
+            obj["serverId"] = static_cast<qint64>(serverId.asUint32());
+        }
+    }
+    obj["seen"] = contents.seen;
+    obj["entered"] = contents.entered;
+
+    QJsonArray objects;
+    for (const RoomObject &object : contents.objects) {
+        QJsonObject entry;
+        entry["index"] = object.index;
+        entry["line"] = object.line;
+        entry["name"] = orNull(object.name);
+        entry["count"] = object.count;
+        entry["container"] = object.container;
+        entry["keyword"] = orNull(object.keyword);
+        entry["target"] = orNull(object.target);
+        QJsonObject state;
+        state["open"] = maybe(object.state.open);
+        state["locked"] = maybe(object.state.locked);
+        state["pickproof"] = maybe(object.state.pickproof);
+        state["empty"] = maybe(object.state.empty);
+        state["known"] = static_cast<qint64>(object.state.known);
+        entry["state"] = state;
+        objects.append(entry);
+    }
+    obj["objects"] = objects;
+    return GmcpMessage{GmcpMessageTypeEnum::MMAPPER_ROOM_CONTENTS, toGmcpJson(obj)};
+}
+
+GmcpMessage makeContainerEvent(const ContainerEvent &event)
+{
+    QJsonObject obj;
+    obj["target"] = event.command.target;
+    obj["action"] = mmqt::toQStringUtf8(to_string_view(event.command.action));
+    obj["result"] = mmqt::toQStringUtf8(to_string_view(event.result));
+    if (!event.items.empty()) {
+        QJsonArray items;
+        for (const ContainerItem &item : event.items) {
+            QJsonObject entry;
+            entry["name"] = item.name;
+            entry["count"] = item.count;
+            entry["text"] = item.text;
+            items.append(entry);
+        }
+        obj["items"] = items;
+    }
+    if (event.index >= 0) {
+        obj["index"] = event.index;
+    }
+    obj["text"] = event.text;
+    return GmcpMessage{GmcpMessageTypeEnum::MMAPPER_ROOM_CONTAINER, toGmcpJson(obj)};
+}
+
+namespace {
+
+NODISCARD QJsonArray listedItems(const std::vector<ListedItem> &items, const bool equipment)
+{
+    QJsonArray result;
+    for (const ListedItem &item : items) {
+        QJsonObject entry;
+        if (equipment) {
+            entry["slot"] = item.slot;
+            entry["label"] = item.label;
+            if (item.twoHanded) {
+                entry["twoHanded"] = true;
+            }
+        }
+        entry["name"] = item.name;
+        entry["count"] = item.count;
+        entry["condition"] = item.condition.isEmpty() ? QJsonValue{QJsonValue::Null}
+                                                      : QJsonValue{item.condition};
+        entry["flags"] = QJsonArray::fromStringList(item.flags);
+        entry["text"] = item.text;
+        result.append(entry);
+    }
+    return result;
+}
+
+} // namespace
+
+GmcpMessage makeCharEquipment(const ItemBlock &block)
+{
+    QJsonObject obj;
+    obj["owner"] = block.owner;
+    obj["items"] = listedItems(block.items, true);
+    return GmcpMessage{GmcpMessageTypeEnum::MMAPPER_CHAR_EQUIPMENT, toGmcpJson(obj)};
+}
+
+GmcpMessage makeCharInventory(const ItemBlock &block)
+{
+    QJsonObject obj;
+    obj["owner"] = block.owner.isEmpty() ? QJsonValue{QJsonValue::Null} : QJsonValue{block.owner};
+    obj["peek"] = block.peek;
+    obj["items"] = listedItems(block.items, false);
+    return GmcpMessage{GmcpMessageTypeEnum::MMAPPER_CHAR_INVENTORY, toGmcpJson(obj)};
+}
+
+GmcpMessage makeCharContainer(const ItemBlock &block)
+{
+    QJsonObject obj;
+    obj["keyword"] = block.keyword;
+    obj["where"] = block.where.isEmpty() ? QJsonValue{QJsonValue::Null} : QJsonValue{block.where};
+    obj["closed"] = block.closed;
+    obj["items"] = listedItems(block.items, false);
+    return GmcpMessage{GmcpMessageTypeEnum::MMAPPER_CHAR_CONTAINER, toGmcpJson(obj)};
+}
+
+GmcpMessage makeCharItem(const ItemEvent &event)
+{
+    QJsonObject obj;
+    obj["action"] = mmqt::toQStringUtf8(to_string_view(event.action));
+    const auto optional = [&obj](const char *const key, const QString &value) {
+        if (!value.isEmpty()) {
+            obj[key] = value;
+        }
+    };
+    optional("item", event.item);
+    optional("container", event.container);
+    optional("place", event.place);
+    optional("slot", event.slot);
+    optional("other", event.other);
+    optional("reason", event.reason);
+    obj["text"] = event.text;
+    return GmcpMessage{GmcpMessageTypeEnum::MMAPPER_CHAR_ITEM, toGmcpJson(obj)};
+}
+
 } // namespace frontend_messages

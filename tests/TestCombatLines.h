@@ -32,4 +32,9 @@ private Q_SLOTS:
     static void twiddlersTest();
     static void selfTest();
     static void notCombatTest();
+    static void ownCastTest();
+    static void ownCastTrackerTest();
+    static void bashVariantsTest();
+    static void ownDeathAndConditionTest();
+    static void refusedMovesTest();
 };
