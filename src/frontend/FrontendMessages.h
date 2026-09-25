@@ -7,6 +7,9 @@
 #include "../global/macros.h"
 #include "../map/RoomHandle.h"
 #include "../parser/CombatLines.h"
+#include "../parser/ContainerLines.h"
+#include "../parser/ItemLines.h"
+#include "../parser/RoomContents.h"
 #include "../parser/SendToUserSourceEnum.h"
 #include "../parser/WeatherLines.h"
 #include "../parser/XmlElement.h"
@@ -132,5 +135,71 @@ NODISCARD GmcpMessage makeWeatherEvent(const WeatherLine &line);
 /// and false for a change of the ground where the character stands. State, so the latest is
 /// replayed to a frontend that subscribes later.
 NODISCARD GmcpMessage makeGroundState(const GroundState &state, const RoomHandle *room);
+
+/// MMapper.Room.Contents -- the objects lying in the room where the body stands.
+///
+/// MUME has no GMCP package for what lies in a room; its room display lists it after the
+/// description, mixed with the people there. MMapper takes those lines and leaves out the ones
+/// Room.Chars names as people. Complete at the prompt that ends each room display, which
+/// follows MMapper moving the player, so `serverId` and `externalId` name the room the latest
+/// MMapper.Map.Position did; both are omitted when there is no current room, and `serverId`
+/// when MUME gave none. Each object has its `index` in MUME's list (the order "2.chest" counts
+/// in), the `line`, the `name` of an <object> element in it or null, `count`, whether MMapper
+/// takes it for a `container`, and for a container its `keyword` and `target`, the word a
+/// command should use for it now. `state` says what replies have shown of it: `open`,
+/// `locked`, `pickproof` and `empty` are true or false, or null while unknown, and `known` is
+/// when the latest evidence arrived, in Unix seconds, 0 for none. `seen` is false when the
+/// display could not show the room; `entered` is false when this was sent again because a
+/// container's state changed. State, so the latest is replayed to a frontend that subscribes.
+NODISCARD GmcpMessage makeRoomContents(const RoomContentsSnapshot &contents, const RoomHandle *room);
+
+/// MMapper.Room.Container -- one reply to a container command, paired with the command.
+///
+/// `target` is what the player named ("chest", "2.chest"), `action` one of open, close,
+/// unlock, lock, pick, look, get or put, and `result` what the reply said: opened, closed,
+/// already-open, already-closed, locked, unlocked, no-key, key-broke, picking, picked,
+/// pick-failed, pick-stopped, pickproof, empty, contents, not-found or cannot. `items` lists
+/// what a look showed inside, or what was taken out or put in, each with a `name`, a `count`
+/// and MUME's own `text`; it is omitted when there are none. `index` is the object in
+/// MMapper.Room.Contents the command reached, omitted when that could not be told. `text` is
+/// the reply itself. An event, so it is not replayed.
+NODISCARD GmcpMessage makeContainerEvent(const ContainerEvent &event);
+
+/// MMapper.Char.Equipment -- what someone wears and wields, from "You are using:" or
+/// "<someone> is using:".
+///
+/// MUME has no GMCP package for items; its listings are text, read by ItemBlockTracker. `owner`
+/// is "you" for the player's own, which is state and replayed, and otherwise the person as MUME
+/// named them, group label taken off, which is an event (a look at someone). Each of `items` has
+/// the `slot` id its label maps to (see equipmentSlot), the `label` in MUME's words, the `name`,
+/// `count`, `condition` (null when none is given) and `flags` of the item, `twoHanded` when it is
+/// wielded in both hands, and the line as `text`. Repeated slots keep MUME's order.
+NODISCARD GmcpMessage makeCharEquipment(const ItemBlock &block);
+
+/// MMapper.Char.Inventory -- what someone carries, from "You are carrying:".
+///
+/// Items as in MMapper.Char.Equipment, without slot and label. `owner` is "you", and `peek` is
+/// false, for the player's own inventory, which is state and replayed. A thief's "You attempt to
+/// peek at the inventory:" gives `peek` true and the owner of the equipment shown just before it
+/// in the same reply, or null; that is an event.
+NODISCARD GmcpMessage makeCharInventory(const ItemBlock &block);
+
+/// MMapper.Char.Container -- what is in one container, from "<keyword> (used|carried|here) :".
+///
+/// `keyword` is MUME's own first keyword for it, `where` is used (worn), carried or here (in the
+/// room), or null when the reply did not say, and `closed` is true for a look answered "It is
+/// closed.", which has no items. State per container; the server keeps the last few.
+NODISCARD GmcpMessage makeCharContainer(const ItemBlock &block);
+
+/// MMapper.Char.Item -- one line that changed, or refused to change, what the player wears or
+/// carries.
+///
+/// `action` is wear, remove, wield, hold, light, get, put, drop, give, receive or refused, and
+/// `text` the line. The rest is sent only when the line says it: `item` as MUME named it,
+/// `container` it came out of or went into, `place` on the body in MUME's words and its `slot`
+/// id, the `other` person given to or received from, and for refused the `reason`: slot-taken,
+/// hands-full, two-hands, too-many, too-heavy, cursed, wont-fit, not-carried, not-worn or
+/// cannot. An event, so it is not replayed.
+NODISCARD GmcpMessage makeCharItem(const ItemEvent &event);
 
 } // namespace frontend_messages

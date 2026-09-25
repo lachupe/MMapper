@@ -7,6 +7,9 @@
 #include "../global/Signal2.h"
 #include "../map/PromptFlags.h"
 #include "../parser/CombatLines.h"
+#include "../parser/ContainerLines.h"
+#include "../parser/ItemLines.h"
+#include "../parser/RoomContents.h"
 #include "../parser/SendToUserSourceEnum.h"
 #include "../parser/WeatherLines.h"
 #include "../parser/XmlElement.h"
@@ -65,6 +68,21 @@ public:
     /// The ground where the body stands -- snow lying, frost, ice on water -- complete at each
     /// prompt that ends a room display or a change of the ground. See GroundTracker.
     Signal2<GroundState> sig2_groundChanged;
+    /// The objects lying in the room where the body stands, from the room display's lines less
+    /// the people Room.Chars names, with what is known of each container. Complete at the
+    /// prompt that ends a room display, and again at the prompt after a reply that changed what
+    /// is known of a container there. See RoomContentsTracker.
+    Signal2<RoomContentsSnapshot> sig2_roomContents;
+    /// One reply to a container command, paired with the command that caused it: a chest
+    /// opened, found locked, picked, looked into. See ContainerTracker.
+    Signal2<ContainerEvent> sig2_containerEvent;
+    /// A listing of what someone wears or carries, or of a container, complete: "You are
+    /// using:", "You are carrying:", "backpack (used) :", "Miltar is using:". See
+    /// ItemBlockTracker.
+    Signal2<ItemBlock> sig2_itemBlock;
+    /// One line that changed, or refused to change, what the player wears or carries: "You
+    /// fasten a sable pouch on your belt." See parseItemEvent.
+    Signal2<ItemEvent> sig2_itemEvent;
     Signal2<bool> sig2_toggledEchoMode;
 
     Signal2<MumeTimeEnum> sig2_timeOfDayChanged;
@@ -96,6 +114,10 @@ public:
     void observeSentToUserCombat(const CombatEvent &event);
     void observeWeatherLine(const WeatherLine &line);
     void observeGround(const GroundState &state);
+    void observeRoomContents(const RoomContentsSnapshot &contents);
+    void observeContainerEvent(const ContainerEvent &event);
+    void observeItemBlock(const ItemBlock &block);
+    void observeItemEvent(const ItemEvent &event);
     void observeToggledEchoMode(bool echo);
 
     void observeTimeOfDay(MumeTimeEnum timeOfDay);

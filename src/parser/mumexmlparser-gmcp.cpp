@@ -25,6 +25,11 @@ static volatile bool verbose_debugging = IS_DEBUG_BUILD;
 
 void MumeXmlParser::slot_parseGmcpInput(const GmcpMessage &msg)
 {
+    // Who is in the room, so that their lines in a room display are not taken for objects.
+    // Room.Chars.Set is an array and .Remove a bare number, so this comes before the check
+    // for an object below.
+    m_roomContentsTracker.receiveChars(msg);
+
     if (!msg.getJsonDocument().has_value()) {
         return;
     }

@@ -6,10 +6,15 @@
 // Author: Nils Schimmelmann <nschimme@gmail.com> (Jahara)
 
 #include "../global/Charset.h"
+#include "../global/Signal2.h"
 #include "../map/CommandId.h"
 #include "../map/PromptFlags.h"
 #include "../observer/gameobserver.h"
+#include "CombatLines.h"
+#include "ContainerLines.h"
+#include "ItemLines.h"
 #include "LineFlags.h"
+#include "RoomContents.h"
 #include "WeatherLines.h"
 #include "XmlElementTracker.h"
 #include "abstractparser.h"
@@ -60,6 +65,19 @@ private:
     /// The ground where the body stands, followed through the room displays and the weather
     /// lines after them. See GroundTracker.
     GroundTracker m_groundTracker;
+    /// The objects lying in the room, from each room display's dynamic lines less the people
+    /// Room.Chars names. See RoomContentsTracker.
+    RoomContentsTracker m_roomContentsTracker;
+    /// The player's container commands paired with MUME's replies, and what those said about
+    /// each container. See ContainerTracker.
+    ContainerTracker m_containerTracker;
+    /// The listings of what the player wears and carries, of their containers, and of what
+    /// someone looked at wears. See ItemBlockTracker.
+    ItemBlockTracker m_itemTracker;
+    /// When the player's own spell goes off, which MUME marks only by sending the prompt
+    /// again. See OwnCastTracker.
+    OwnCastTracker m_ownCastTracker;
+    Signal2Lifetime m_lifetime;
     CommandEnum m_move = CommandEnum::NONE;
     ServerRoomId m_serverId = INVALID_SERVER_ROOMID;
     bool m_readingTag = false;
@@ -99,4 +117,8 @@ private:
     void parseGmcpCharVitals(const JsonObj &obj);
     void parseGmcpEventMoved(const JsonObj &obj);
     void parseGmcpRoomInfo(const JsonObj &obj);
+    /// Which room the room display is of, for keeping container state per room.
+    NODISCARD QString roomKey() const;
+    void publishContainerEvents(const std::vector<ContainerEvent> &events);
+    void publishItemBlocks(const std::vector<ItemBlock> &blocks);
 };

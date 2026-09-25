@@ -513,9 +513,15 @@ set(mmapper_SRCS
     parser/CombatLines.h
     parser/CommandQueue.cpp
     parser/CommandQueue.h
+    parser/ContainerLines.cpp
+    parser/ContainerLines.h
     parser/DoorAction.cpp
     parser/DoorAction.h
+    parser/ItemLines.cpp
+    parser/ItemLines.h
     parser/LineFlags.h
+    parser/RoomContents.cpp
+    parser/RoomContents.h
     parser/SendToUserSourceEnum.h
     parser/WeatherLines.cpp
     parser/WeatherLines.h

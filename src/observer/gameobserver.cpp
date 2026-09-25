@@ -62,6 +62,26 @@ void GameObserver::observeGround(const GroundState &state)
     sig2_groundChanged.invoke(state);
 }
 
+void GameObserver::observeRoomContents(const RoomContentsSnapshot &contents)
+{
+    sig2_roomContents.invoke(contents);
+}
+
+void GameObserver::observeContainerEvent(const ContainerEvent &event)
+{
+    sig2_containerEvent.invoke(event);
+}
+
+void GameObserver::observeItemBlock(const ItemBlock &block)
+{
+    sig2_itemBlock.invoke(block);
+}
+
+void GameObserver::observeItemEvent(const ItemEvent &event)
+{
+    sig2_itemEvent.invoke(event);
+}
+
 void GameObserver::observeToggledEchoMode(const bool echo)
 {
     sig2_toggledEchoMode.invoke(echo);

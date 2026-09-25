@@ -29,6 +29,10 @@ namespace {
 /// anything larger is either a bug or an attempt to exhaust memory.
 constexpr const qint64 MAX_FRAME_BYTES = 64 * 1024;
 
+/// How many containers' MMapper.Char.Container are kept for replay: a backpack, a pouch or two,
+/// a keyring, and the corpse or chest last looked into.
+constexpr const size_t CONTAINERS_KEPT = 8;
+
 } // namespace
 
 FrontendServer::FrontendServer(GameObserver &observer,
@@ -45,6 +49,10 @@ FrontendServer::FrontendServer(GameObserver &observer,
         // A new game session invalidates everything we cached from the previous one.
         m_replayCache.clear();
         m_groundState.reset();
+        m_roomContents.reset();
+        m_charEquipment.reset();
+        m_charInventory.reset();
+        m_charContainers.clear();
         publishSessionState();
     });
 
@@ -89,6 +97,24 @@ FrontendServer::FrontendServer(GameObserver &observer,
 
     m_observer.sig2_groundChanged.connect(m_lifetime, [this](const GroundState &ground) {
         onGroundChanged(ground);
+    });
+
+    m_observer.sig2_roomContents.connect(m_lifetime, [this](const RoomContentsSnapshot &contents) {
+        onRoomContents(contents);
+    });
+
+    m_observer.sig2_containerEvent.connect(m_lifetime, [this](const ContainerEvent &event) {
+        // An event: one reply to one command. What it says about the container rides along in
+        // the next MMapper.Room.Contents, which is replayed.
+        publish(frontend_messages::makeContainerEvent(event));
+    });
+
+    m_observer.sig2_itemBlock.connect(m_lifetime,
+                                      [this](const ItemBlock &block) { onItemBlock(block); });
+
+    m_observer.sig2_itemEvent.connect(m_lifetime, [this](const ItemEvent &event) {
+        // An event: one reply that moved one thing. The next listing is the state.
+        publish(frontend_messages::makeCharItem(event));
     });
 
     // Every second, from MumeClock::slot_tick. Most ticks change nothing a frontend's own clock
@@ -373,6 +399,21 @@ void FrontendServer::replayTo(Client &client)
             sendTo(client, frontend_messages::makeMapPosition(room));
         }
     }
+
+    // After the position, as it is published live: the objects belong to the room it names.
+    if (m_roomContents.has_value()) {
+        sendTo(client, *m_roomContents);
+    }
+
+    if (m_charEquipment.has_value()) {
+        sendTo(client, *m_charEquipment);
+    }
+    if (m_charInventory.has_value()) {
+        sendTo(client, *m_charInventory);
+    }
+    for (const auto &[key, msg] : m_charContainers) {
+        sendTo(client, msg);
+    }
 }
 
 void FrontendServer::publishSessionState()
@@ -406,6 +447,65 @@ void FrontendServer::onGroundChanged(const GroundState &ground)
     m_groundState.emplace(
         frontend_messages::makeGroundState(ground, room.has_value() ? &*room : nullptr));
     publish(*m_groundState);
+}
+
+void FrontendServer::onRoomContents(const RoomContentsSnapshot &contents)
+{
+    // Reported at the prompt that ends a room display, after the path machine has moved the
+    // player (see onGroundChanged), so the current room is the one these objects lie in.
+    std::optional<RoomHandle> room;
+    if (const auto optId = m_mapData.getCurrentRoomId()) {
+        if (RoomHandle handle = m_mapData.findRoomHandle(*optId)) {
+            room.emplace(std::move(handle));
+        }
+    }
+    // GmcpMessage is copy constructible but not copy assignable, so replace rather than assign.
+    m_roomContents.reset();
+    m_roomContents.emplace(
+        frontend_messages::makeRoomContents(contents, room.has_value() ? &*room : nullptr));
+    publish(*m_roomContents);
+}
+
+void FrontendServer::onItemBlock(const ItemBlock &block)
+{
+    // GmcpMessage is copy constructible but not copy assignable, so replace rather than assign.
+    switch (block.kind) {
+    case ItemBlockKindEnum::EQUIPMENT: {
+        GmcpMessage msg = frontend_messages::makeCharEquipment(block);
+        if (block.owner == QStringLiteral("you")) {
+            m_charEquipment.reset();
+            m_charEquipment.emplace(msg);
+        }
+        publish(msg);
+        break;
+    }
+    case ItemBlockKindEnum::INVENTORY: {
+        GmcpMessage msg = frontend_messages::makeCharInventory(block);
+        if (!block.peek) {
+            m_charInventory.reset();
+            m_charInventory.emplace(msg);
+        }
+        publish(msg);
+        break;
+    }
+    case ItemBlockKindEnum::CONTAINER: {
+        GmcpMessage msg = frontend_messages::makeCharContainer(block);
+        // One per container: "backpack" worn and "backpack" carried are two.
+        const QString key = block.keyword + QLatin1Char('|') + block.where;
+        const auto it = std::find_if(m_charContainers.begin(),
+                                     m_charContainers.end(),
+                                     [&key](const auto &entry) { return entry.first == key; });
+        if (it != m_charContainers.end()) {
+            m_charContainers.erase(it);
+        }
+        m_charContainers.emplace_back(key, msg);
+        while (m_charContainers.size() > CONTAINERS_KEPT) {
+            m_charContainers.pop_front();
+        }
+        publish(msg);
+        break;
+    }
+    }
 }
 
 void FrontendServer::setClock(MumeClock &clock)

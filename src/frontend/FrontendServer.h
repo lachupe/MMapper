@@ -12,8 +12,10 @@
 #include "FrontendSubscriptions.h"
 
 #include <cstdint>
+#include <list>
 #include <memory>
 #include <optional>
+#include <utility>
 #include <vector>
 
 #include <QObject>
@@ -23,7 +25,9 @@ class ConnectionListener;
 class GameObserver;
 class MapData;
 struct GroundState;
+struct ItemBlock;
 class MumeClock;
+struct RoomContentsSnapshot;
 class QWebSocket;
 class QWebSocketServer;
 
@@ -42,9 +46,10 @@ class QWebSocketServer;
 ///
 /// Everything MUME sends is relayed verbatim under its own package name, except Core and
 /// MUME.Client, which are never relayed (FrontendSubscriptions::isRelayable). MMapper's own
-/// additions live under MMapper.Combat, MMapper.Map, MMapper.Session, MMapper.Terminal,
-/// MMapper.Time and MMapper.Xml. The one package a frontend sends besides Core.Hello and
-/// Core.Supports is MMapper.Input.Command, and only the driving frontend may send it.
+/// additions live under MMapper.Combat, MMapper.Char, MMapper.Map, MMapper.Room, MMapper.Session,
+/// MMapper.Terminal, MMapper.Time, MMapper.Weather and MMapper.Xml. The one package a frontend
+/// sends besides Core.Hello and Core.Supports is MMapper.Input.Command, and only the driving
+/// frontend may send it.
 ///
 /// Subscribing brings a frontend up to date: its MMapper.Session.State, then the state MUME
 /// has described so far (see FrontendReplayCache), the game clock and the mapped position.
@@ -105,6 +110,16 @@ private:
     /// The last MMapper.Weather.Ground sent: the snow, frost and ice where the player stands,
     /// which a frontend that subscribes later needs before the next room display.
     std::optional<GmcpMessage> m_groundState;
+    /// The last MMapper.Room.Contents sent: what lies in the room where the player stands,
+    /// which a frontend that subscribes later needs before the next room display.
+    std::optional<GmcpMessage> m_roomContents;
+    /// The last MMapper.Char.Equipment and MMapper.Char.Inventory of the player's own, and the
+    /// last MMapper.Char.Container of each of the few containers most recently listed, oldest
+    /// first: a frontend that subscribes later can show them before the player lists them again.
+    std::optional<GmcpMessage> m_charEquipment;
+    std::optional<GmcpMessage> m_charInventory;
+    /// A list, since GmcpMessage cannot be assigned, which a deque needs to erase from the middle.
+    std::list<std::pair<QString, GmcpMessage>> m_charContainers;
 
     Signal2Lifetime m_lifetime;
 
@@ -134,6 +149,15 @@ public:
     /// for replay. Driven by GameObserver::sig2_groundChanged; public so tests can drive it.
     void onGroundChanged(const GroundState &ground);
 
+    /// Publishes MMapper.Room.Contents for `contents`, naming the current room, and keeps it
+    /// for replay. Driven by GameObserver::sig2_roomContents; public so tests can drive it.
+    void onRoomContents(const RoomContentsSnapshot &contents);
+
+    /// Publishes the MMapper.Char package for one listing: Equipment, Inventory or Container.
+    /// The player's own equipment and inventory, and each container, are kept for replay; a look
+    /// at someone else is not. Driven by GameObserver::sig2_itemBlock; public so tests can drive
+    /// it.
+    void onItemBlock(const ItemBlock &block);
     /// Gives MMapper.Time.State its source of confidence. Without a clock the moments on
     /// GameObserver::sig2_tick are still published, as precision "unset".
     void setClock(MumeClock &clock);

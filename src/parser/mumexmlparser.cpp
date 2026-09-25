@@ -32,6 +32,7 @@
 #include <vector>
 
 #include <QByteArray>
+#include <QDateTime>
 #include <QString>
 
 using namespace char_consts;
@@ -73,7 +74,16 @@ MumeXmlParser::MumeXmlParser(MapData &md,
                              ParserCommonData &parserCommonData)
     : MumeXmlParserBase{parent, mc, md, group, hm, proxyGmcp, outputs, parserCommonData}
     , m_observer{observer}
-{}
+{
+    // Every line on its way to MUME, from MMapper's own client and from a frontend's
+    // MMapper.Input.Command alike, so that MUME's replies to container commands can be paired
+    // with the command that caused them. Lines typed while MUME has echo off, such as a
+    // password, are not reported here.
+    m_observer.sig2_sentToMudString.connect(m_lifetime, [this](const QString &line) {
+        m_containerTracker.receiveCommand(line);
+        m_itemTracker.receiveCommand(line);
+    });
+}
 
 MumeXmlParser::~MumeXmlParser() = default;
 
@@ -148,8 +158,26 @@ void MumeXmlParser::parse(const TelnetData &data, const bool isGoAhead)
         QString plain = m_lineToUser;
         ParserUtils::removeAnsiMarksInPlace(plain);
         if (const auto combat = parseCombatLine(plain)) {
+            m_ownCastTracker.receiveEvent(*combat);
             m_observer.observeSentToUserCombat(*combat);
         }
+        // Replies to the player's container commands: "Ok.", "*click*", a listing. A prompt
+        // is not one, and ends the reply being gathered instead (below).
+        if (!isGoAhead) {
+            publishContainerEvents(
+                m_containerTracker.receiveLine(plain, QDateTime::currentSecsSinceEpoch()));
+            // What the player wears and carries: listings that name themselves in their first
+            // line and end at a blank line or the prompt, and the one-line replies to wear,
+            // remove, get, put, drop and give.
+            publishItemBlocks(m_itemTracker.receiveLine(plain));
+            if (const auto item = parseItemEvent(plain)) {
+                m_observer.observeItemEvent(*item);
+            }
+        }
+    }
+    if (isGoAhead) {
+        // Every prompt ends a listing, in XML mode and out of it.
+        publishItemBlocks(m_itemTracker.receivePrompt());
     }
 
     // Published after the terminal output of the line that closed them, so a client can
@@ -168,6 +196,64 @@ void MumeXmlParser::parse(const TelnetData &data, const bool isGoAhead)
         if (const auto ground = m_groundTracker.receive(xml, weather)) {
             m_observer.observeGround(*ground);
         }
+
+        // The objects in the room, complete at the prompt that ends its display, like the
+        // ground above. A prompt also ends any container reply being gathered, which goes
+        // first, so that what it said is in the room's objects.
+        if (xml.tag == XmlTagEnum::PROMPT) {
+            publishContainerEvents(
+                m_containerTracker.receivePrompt(QDateTime::currentSecsSinceEpoch()));
+            // The prompt coming back is the only sign the player's own spell went off.
+            if (const auto done = m_ownCastTracker.receivePrompt()) {
+                m_observer.observeSentToUserCombat(*done);
+            }
+        }
+        const QString roomLines = (xml.tag == XmlTagEnum::ROOM
+                                   && m_commonData.roomContents.has_value())
+                                      ? m_commonData.roomContents->toQString()
+                                      : QString{};
+        if (auto contents = m_roomContentsTracker.receive(xml, roomLines, roomKey())) {
+            m_containerTracker.decorate(*contents);
+            std::ignore = m_containerTracker.takeChanged();
+            m_observer.observeRoomContents(*contents);
+        } else if (xml.tag == XmlTagEnum::PROMPT && m_containerTracker.takeChanged()) {
+            // A reply changed what is known about a container here: the room's objects are
+            // published again, so that a frontend that subscribes later is told.
+            RoomContentsSnapshot changed = m_containerTracker.current();
+            changed.entered = false;
+            m_observer.observeRoomContents(changed);
+        }
+    }
+}
+
+QString MumeXmlParser::roomKey() const
+{
+    if (m_serverId != INVALID_SERVER_ROOMID) {
+        return QString::number(m_serverId.asUint32());
+    }
+    // Without MUME's id, the room's name and description are the next best thing: they are
+    // what MMapper matches rooms by as well.
+    QString key;
+    if (m_commonData.roomName.has_value()) {
+        key = m_commonData.roomName->toQString();
+    }
+    if (m_commonData.roomDesc.has_value()) {
+        key += QLatin1Char('\n') + m_commonData.roomDesc->toQString();
+    }
+    return key;
+}
+
+void MumeXmlParser::publishContainerEvents(const std::vector<ContainerEvent> &events)
+{
+    for (const ContainerEvent &event : events) {
+        m_observer.observeContainerEvent(event);
+    }
+}
+
+void MumeXmlParser::publishItemBlocks(const std::vector<ItemBlock> &blocks)
+{
+    for (const ItemBlock &block : blocks) {
+        m_observer.observeItemBlock(block);
     }
 }
 
@@ -202,6 +288,10 @@ bool MumeXmlParser::element(const QString &line)
                     m_lineFlags.clear();
                     m_xmlTracker.reset();
                     m_groundTracker.reset();
+                    m_roomContentsTracker.reset();
+                    m_containerTracker.reset();
+                    m_itemTracker.reset();
+                    m_ownCastTracker.reset();
                 }
                 break;
             case 'p':

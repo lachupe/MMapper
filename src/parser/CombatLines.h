@@ -31,17 +31,19 @@ enum class NODISCARD CombatKindEnum : uint8_t {
     BLOW,
     /// somebody trying to leave the fight, and whether they managed it
     FLEE,
-    /// a move MUME refused because the character is engaged
+    /// a move MUME refused, with the reason in detail: engaged in a fight, too tired, not on
+    /// one's feet, a mount that will not go, a closed door, no exit
     REFUSED,
-    /// knocked down by a bash, or bashing someone
+    /// knocked down by a bash, or bashing someone; a bash dodged, which puts the one who
+    /// tried it on the ground instead; and the player getting over being bashed
     BASH,
     /// stabbed in the back by somebody who was not visible until then
     BACKSTAB,
     /// a condition line: incapacitated, mortally wounded, stunned
     CONDITION,
-    /// "is dead! R.I.P."
+    /// "is dead! R.I.P.", and the player's own "You are dead! Sorry..."
     DEATH,
-    /// a delayed action starting, going off, or being broken
+    /// a delayed action starting, going off, being broken, or refused before it began
     CAST,
     /// the player's own state changing in a way the prompt may not show: stunned, sleepy,
     /// standing up again
@@ -51,7 +53,9 @@ enum class NODISCARD CombatKindEnum : uint8_t {
 enum class NODISCARD BlowOutcomeEnum : uint8_t { HIT, PARRY, DODGE, MISS };
 
 /// For FLEE: an attempt seen from outside, a failure, or getting away.
-/// For CAST: started, went off, broken.
+/// For CAST: started, went off, broken, or refused before it started.
+/// For BASH: none for a bash that landed, dodged for one that missed and floored the one who
+/// tried it, recovered for the player getting over one.
 /// For SELF: stunned, sleepy, stood.
 enum class NODISCARD CombatPhaseEnum : uint8_t {
     NONE,
@@ -63,7 +67,10 @@ enum class NODISCARD CombatPhaseEnum : uint8_t {
     BROKEN,
     STUNNED,
     SLEEPY,
-    STOOD
+    STOOD,
+    REFUSED,
+    DODGED,
+    RECOVERED
 };
 
 struct NODISCARD CombatEvent final
@@ -85,14 +92,46 @@ struct NODISCARD CombatEvent final
     QString severity;
     /// Base form: "shatter", "tickle".
     QString effect;
-    /// FLEE: the direction fled in. CONDITION: the condition. CAST: the words uttered.
+    /// FLEE: the direction fled in. CONDITION: the condition. CAST: the words uttered, the
+    /// spell named, or why it was refused. REFUSED: why the move was refused, one of the
+    /// words listed at parseCombatLine().
     QString detail;
     /// The line as it was recognised, twiddlers removed.
     QString text;
 };
 
 /// The event this line describes, or nothing when it is not a fight line.
+///
+/// A refused move's detail is one of: fighting, exhausted, mount-exhausted, mount-refuses,
+/// thrown, resting, sitting, sleeping, door-closed, no-exit, climb, climb-failed, swim,
+/// swim-failed, deep-water, cannot-ride, ice, boat. They are the refusals MMapper's path
+/// machine already recognises (MumeXmlParserBase::initActionMap), so that what drops a move
+/// from the path is what a client is told about.
 NODISCARD std::optional<CombatEvent> parseCombatLine(const QString &line);
+
+/// When the player's own spell goes off.
+///
+/// MUME says when the player starts to concentrate and when the concentration breaks, but
+/// not when the spell goes off: there is no "You utter the words" for the player, only
+/// whatever the spell does, which is a different line for every spell ("Ok.", "You feel
+/// better.", nothing at all). What does mark the end is the prompt. While a delayed action
+/// runs MUME sends no prompt, only the spinner the twiddlers option draws, and the prompt
+/// comes back once the action is over. So the first prompt after the player started to
+/// concentrate, with no broken or refused line in between, is the spell going off, and this
+/// turns it into a CAST DONE event with actor "you" and empty text.
+class NODISCARD OwnCastTracker final
+{
+private:
+    bool m_casting = false;
+
+public:
+    /// Every event parseCombatLine() found, in order.
+    void receiveEvent(const CombatEvent &event);
+    /// A prompt arrived (MUME's <prompt> element, not a twiddler).
+    NODISCARD std::optional<CombatEvent> receivePrompt();
+    NODISCARD bool casting() const { return m_casting; }
+    void reset() { m_casting = false; }
+};
 
 NODISCARD std::string_view to_string_view(CombatKindEnum kind);
 NODISCARD std::string_view to_string_view(BlowOutcomeEnum outcome);
