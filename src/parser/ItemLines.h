@@ -5,7 +5,6 @@
 #include "../global/macros.h"
 
 #include <cstdint>
-#include <map>
 #include <optional>
 #include <string_view>
 #include <vector>
@@ -69,6 +68,12 @@ struct NODISCARD ItemBlock final
     /// "carried" or "here" (in the room); empty when the reply did not say.
     QString keyword;
     QString where;
+    /// Exact selector from an isolated look command; empty if association is uncertain.
+    QString target;
+    /// Assigned by the frontend bridge, scoped to this complete observation only.
+    QString snapshotId;
+    /// Container presentation: separate (examine), grouped (look in), or unknown.
+    QString listingMode = QStringLiteral("unknown");
     /// CONTAINER: the reply was "It is closed." rather than a listing.
     bool closed = false;
     std::vector<ListedItem> items;
@@ -135,7 +140,7 @@ NODISCARD std::string_view to_string_view(ItemActionEnum action);
 /// Gathers the listings of equipment, inventory and containers, line by line.
 ///
 /// A header line opens a listing, the lines after it are its items, and a blank line, a line
-/// that cannot be an item, or the prompt closes it. A listing that runs past a few hundred lines
+/// that cannot be an item, or the prompt closes it. A listing that runs past 4096 lines
 /// without closing is dropped, not published.
 class NODISCARD ItemBlockTracker final
 {
@@ -152,15 +157,15 @@ private:
     struct NODISCARD Look final
     {
         QString word;
-        int prompts = 0;
+        QString target;
+        QString listingMode;
     };
 
     std::optional<Open> m_open;
     std::optional<Look> m_look;
+    int m_commands = 0;
     /// Whose equipment the reply being read showed, for the peek at their inventory after it.
     QString m_lastOwner;
-    /// Where each container was last listed, so that "It is closed." can say it again.
-    std::map<QString, QString> m_whereOf;
 
 public:
     /// Notes a command on its way to MUME: only a look into a container matters here.
@@ -176,4 +181,36 @@ private:
     NODISCARD std::vector<ItemBlock> close();
     NODISCARD bool accept(const QString &text);
     void open(ItemBlock block, const QString &header);
+};
+
+/// Conservative observations of outbound item commands. IDs are bridge observations, not
+/// MUME transaction IDs. Only a single command between prompts can be associated with replies.
+struct NODISCARD ItemCommandObservation final
+{
+    QString id;
+    QString command;
+    QString action;
+    QString status = QStringLiteral("pending");
+    int successes = 0;
+    int refusals = 0;
+    std::vector<ItemEvent> replies;
+    QStringList text;
+};
+
+class NODISCARD ItemCommandTracker final
+{
+    std::vector<ItemCommandObservation> m_pending;
+    int m_commands = 0;
+    int64_t m_started = 0;
+
+public:
+    NODISCARD std::optional<ItemCommandObservation> receiveCommand(const QString &line,
+                                                                   int64_t nowMs = 0);
+    void receiveLine(const QString &line);
+    void receiveBlock(const ItemBlock &block);
+    void receiveRoom(bool seen);
+    NODISCARD std::vector<ItemCommandObservation> expire(int64_t nowMs);
+    void receiveEvent(const ItemEvent &event);
+    /// No prompt or timeout can itself prove success. Interrupted sessions use finish(false).
+    NODISCARD std::vector<ItemCommandObservation> finish(bool prompt);
 };

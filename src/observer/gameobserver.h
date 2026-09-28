@@ -83,6 +83,7 @@ public:
     /// One line that changed, or refused to change, what the player wears or carries: "You
     /// fasten a sable pouch on your belt." See parseItemEvent.
     Signal2<ItemEvent> sig2_itemEvent;
+    Signal2<ItemCommandObservation> sig2_itemCommand;
     Signal2<bool> sig2_toggledEchoMode;
 
     Signal2<MumeTimeEnum> sig2_timeOfDayChanged;

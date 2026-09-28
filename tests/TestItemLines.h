@@ -26,6 +26,11 @@ private Q_SLOTS:
     static void closedContainerTest();
     static void interruptedTest();
     static void runawayTest();
+    static void largeContainerTest();
+    static void duplicateContainerTest();
+    static void commandObservationTest();
+    static void queryAndTimeoutTest();
+    void examineStacksTest();
     static void itemEventTest();
     static void refusedTest();
     static void notItemEventTest();

@@ -215,6 +215,7 @@ void TestFrontend::sessionStateTest()
     QCOMPARE(connected.getName().toQByteArray(), QByteArray("MMapper.Session.State"));
     QCOMPARE(payloadOf(connected)["upstream"].toString(), QStringLiteral("connected"));
     QCOMPARE(payloadOf(connected)["mapLoaded"].toBool(), true);
+    QCOMPARE(payloadOf(connected)["itemCommands"].toInt(), 3);
 
     const GmcpMessage offline = frontend_messages::makeSessionState(false, false, false, false);
     QCOMPARE(payloadOf(offline)["upstream"].toString(), QStringLiteral("disconnected"));
@@ -822,13 +823,13 @@ void TestFrontend::charContainerTest()
     QCOMPARE(blocks.size(), size_t{1});
     const GmcpMessage msg = frontend_messages::makeCharContainer(blocks.front());
     QCOMPARE(msg.toRawBytes(),
-             QByteArray(R"(MMapper.Char.Container {"closed":false,"items":[)"
+             QByteArray(R"(MMapper.Char.Container {"closed":false,"contentsKnown":true,"items":[)"
                         R"({"condition":null,"count":2,"flags":[],"name":"azure scrolls",)"
                         R"("text":"two azure scrolls"},)"
                         R"({"condition":"satisfactory","count":1,"flags":[],)"
                         R"("name":"a black pair of padded boots",)"
                         R"j("text":"a black pair of padded boots (satisfactory)"}],)j"
-                        R"("keyword":"backpack","where":"used"})"));
+                        R"("keyword":"backpack","listingMode":"unknown","where":"used"})"));
     QCOMPARE(msg.getType(), GmcpMessageTypeEnum::MMAPPER_CHAR_CONTAINER);
 
     // A closed one, never listed: no items, and no place.
@@ -838,7 +839,7 @@ void TestFrontend::charContainerTest()
     QCOMPARE(
         frontend_messages::makeCharContainer(closed.front()).toRawBytes(),
         QByteArray(
-            R"(MMapper.Char.Container {"closed":true,"items":[],"keyword":"cabinet","where":null})"));
+            R"(MMapper.Char.Container {"closed":true,"contentsKnown":false,"items":[],"keyword":"cabinet","listingMode":"grouped","target":"cabinet","where":null})"));
 }
 
 void TestFrontend::charItemTest()
@@ -1001,3 +1002,38 @@ void TestFrontend::mumeMessageCoverageTest()
 }
 
 QTEST_MAIN(TestFrontend)
+
+void TestFrontend::itemObservationMetadataTest()
+{
+    ItemBlock block;
+    block.snapshotId = QStringLiteral("snapshot-a");
+    block.items.push_back(parseListedItem(QStringLiteral("a sable pouch")));
+    block.items.push_back(parseListedItem(QStringLiteral("a sable pouch")));
+    const auto inventory = payloadOf(frontend_messages::makeCharInventory(block));
+    const auto items = inventory["items"].toArray();
+    QCOMPARE(inventory["snapshotId"].toString(), block.snapshotId);
+    QCOMPARE(items[0].toObject()["handle"].toString(), QStringLiteral("snapshot-a:0"));
+    QCOMPARE(items[1].toObject()["handle"].toString(), QStringLiteral("snapshot-a:1"));
+    QVERIFY(items[0].toObject()["selector"].isNull());
+    block.closed = true;
+    block.target = QStringLiteral("2.pouch");
+    const auto container = payloadOf(frontend_messages::makeCharContainer(block));
+    QVERIFY(!container["contentsKnown"].toBool());
+    QCOMPARE(container["target"].toString(), block.target);
+    QCOMPARE(container["listingMode"].toString(), block.listingMode);
+    RoomContentsSnapshot room;
+    room.snapshotId = QStringLiteral("room-a");
+    room.objects.emplace_back();
+    const auto ground = payloadOf(frontend_messages::makeRoomContents(room, nullptr));
+    const auto object = ground["objects"].toArray()[0].toObject();
+    QVERIFY(object["selector"].isNull());
+    QCOMPARE(object["targetEvidence"].toString(), QStringLiteral("display-order-unverified"));
+    ItemCommandTracker tracker;
+    const auto pending = tracker.receiveCommand(QStringLiteral("get helmet"));
+    QVERIFY(pending.has_value());
+    const auto start = payloadOf(frontend_messages::makeCharCommand(*pending));
+    QCOMPARE(start["status"].toString(), QStringLiteral("pending"));
+    const auto end = payloadOf(frontend_messages::makeCharCommand(tracker.finish(true).front()));
+    QCOMPARE(end["id"], start["id"]);
+    QCOMPARE(end["status"].toString(), QStringLiteral("unknown"));
+}

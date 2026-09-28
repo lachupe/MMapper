@@ -20,6 +20,7 @@
 #include <QDateTime>
 #include <QDebug>
 #include <QHostAddress>
+#include <QUuid>
 #include <QWebSocket>
 #include <QWebSocketServer>
 
@@ -58,6 +59,10 @@ FrontendServer::FrontendServer(GameObserver &observer,
 
     m_observer.sig2_disconnected.connect(m_lifetime, [this]() {
         m_upstreamConnected = false;
+        m_charEquipment.reset();
+        m_charInventory.reset();
+        m_charContainers.clear();
+        m_roomContents.reset();
         publishSessionState();
     });
 
@@ -113,8 +118,29 @@ FrontendServer::FrontendServer(GameObserver &observer,
                                       [this](const ItemBlock &block) { onItemBlock(block); });
 
     m_observer.sig2_itemEvent.connect(m_lifetime, [this](const ItemEvent &event) {
+        // No stable object IDs exist in text replies; stale snapshots must not be replayed.
+        if (event.action != ItemActionEnum::REFUSED) {
+            m_charEquipment.reset();
+            m_charInventory.reset();
+            m_charContainers.clear();
+            m_roomContents.reset();
+        }
         // An event: one reply that moved one thing. The next listing is the state.
         publish(frontend_messages::makeCharItem(event));
+    });
+
+    m_observer.sig2_itemCommand.connect(m_lifetime, [this](const ItemCommandObservation &command) {
+        if (command.status == QStringLiteral("pending")
+            && command.action != QStringLiteral("equipment")
+            && command.action != QStringLiteral("inventory")
+            && command.action != QStringLiteral("look")
+            && command.action != QStringLiteral("examine")) {
+            m_charEquipment.reset();
+            m_charInventory.reset();
+            m_charContainers.clear();
+            m_roomContents.reset();
+        }
+        publish(frontend_messages::makeCharCommand(command));
     });
 
     // Every second, from MumeClock::slot_tick. Most ticks change nothing a frontend's own clock
@@ -449,8 +475,13 @@ void FrontendServer::onGroundChanged(const GroundState &ground)
     publish(*m_groundState);
 }
 
-void FrontendServer::onRoomContents(const RoomContentsSnapshot &contents)
+void FrontendServer::onRoomContents(const RoomContentsSnapshot &observed)
 {
+    RoomContentsSnapshot contents = observed;
+    contents.snapshotId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    if (contents.entered) {
+        m_charContainers.clear();
+    }
     // Reported at the prompt that ends a room display, after the path machine has moved the
     // player (see onGroundChanged), so the current room is the one these objects lie in.
     std::optional<RoomHandle> room;
@@ -466,8 +497,10 @@ void FrontendServer::onRoomContents(const RoomContentsSnapshot &contents)
     publish(*m_roomContents);
 }
 
-void FrontendServer::onItemBlock(const ItemBlock &block)
+void FrontendServer::onItemBlock(const ItemBlock &observed)
 {
+    ItemBlock block = observed;
+    block.snapshotId = QUuid::createUuid().toString(QUuid::WithoutBraces);
     // GmcpMessage is copy constructible but not copy assignable, so replace rather than assign.
     switch (block.kind) {
     case ItemBlockKindEnum::EQUIPMENT: {
@@ -490,8 +523,15 @@ void FrontendServer::onItemBlock(const ItemBlock &block)
     }
     case ItemBlockKindEnum::CONTAINER: {
         GmcpMessage msg = frontend_messages::makeCharContainer(block);
-        // One per container: "backpack" worn and "backpack" carried are two.
-        const QString key = block.keyword + QLatin1Char('|') + block.where;
+        // Without an isolated query selector the header cannot distinguish identical pouches.
+        if (block.target.isEmpty()) {
+            m_charContainers.clear();
+            publish(msg);
+            break;
+        }
+        // A closed reply has no location: it must replace the previous open observation
+        // for this selector rather than leave both in the replay cache.
+        const QString key = block.target;
         const auto it = std::find_if(m_charContainers.begin(),
                                      m_charContainers.end(),
                                      [&key](const auto &entry) { return entry.first == key; });

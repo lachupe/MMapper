@@ -574,3 +574,19 @@ void TestRoomContents::expiryTest()
 }
 
 QTEST_MAIN(TestRoomContents)
+
+void TestRoomContents::refreshReplacesItemsTest()
+{
+    RoomContentsTracker tracker;
+    const auto display = room(QStringLiteral("The Guard Room"));
+    const QString torch = QStringLiteral("A torch lies here.");
+    // No movement or local item command: another player adds or removes objects.
+    auto snapshot = shown(tracker, display, torch + QLatin1Char('\n') + torch);
+    QCOMPARE(snapshot.objects.size(), size_t{2});
+    QCOMPARE(snapshot.objects.front().count, 1);
+    snapshot = shown(tracker, display, torch);
+    QCOMPARE(snapshot.objects.size(), size_t{1});
+    snapshot = shown(tracker, display, QString{});
+    QVERIFY(snapshot.seen);
+    QVERIFY(snapshot.objects.empty());
+}

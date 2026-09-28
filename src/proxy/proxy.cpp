@@ -665,8 +665,8 @@ void Proxy::allocParser()
                 getUserTelnet().onSendToUser(string_consts::S_NEWLINE, false);
                 // Mirror it so that observers see the same stream the user telnet saw.
                 getGameObserver().observeSentToUserTerminal(SendToUserSourceEnum::FromMMapper,
-                                                           string_consts::S_NEWLINE,
-                                                           false);
+                                                            string_consts::S_NEWLINE,
+                                                            false);
             }
             getUserTelnet().onSendToUser(s, goAhead);
             getGameObserver().observeSentToUserTerminal(source, s, goAhead);

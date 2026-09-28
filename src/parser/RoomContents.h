@@ -34,8 +34,8 @@ struct NODISCARD ContainerState final
 /// One line of the room's object list.
 struct NODISCARD RoomObject final
 {
-    /// The position in MUME's own list of the room's objects, from 0, characters left out. It
-    /// is the order MUME counts in when a command says "2.chest".
+    /// Display row from 0, characters left out. Grouped look output does NOT prove
+    /// the order used by MUME command selectors.
     int index = 0;
     /// How many identical objects the line stands for, when MUME folds them into one line.
     int count = 1;
@@ -58,6 +58,7 @@ struct NODISCARD RoomContentsSnapshot final
     /// Which room this is, for keeping container state per room: MUME's room id when Room.Info
     /// gave one, and otherwise the room's name and description.
     QString roomKey;
+    QString snapshotId;
     std::vector<RoomObject> objects;
     /// False when the display could not show the room (darkness, dense fog, blindness), so
     /// that an empty list says nothing about what lies there.

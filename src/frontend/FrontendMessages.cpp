@@ -212,6 +212,7 @@ GmcpMessage makeSessionState(const bool upstreamConnected,
                              const bool driving)
 {
     QJsonObject obj;
+    obj["itemCommands"] = 3;
     obj["upstream"] = upstreamConnected ? QStringLiteral("connected")
                                         : QStringLiteral("disconnected");
     obj["mapLoaded"] = mapLoaded;
@@ -386,6 +387,10 @@ GmcpMessage makeRoomContents(const RoomContentsSnapshot &contents, const RoomHan
             obj["serverId"] = static_cast<qint64>(serverId.asUint32());
         }
     }
+    if (!contents.snapshotId.isEmpty()) {
+        obj["snapshotId"] = contents.snapshotId;
+        obj["roomKey"] = contents.roomKey;
+    }
     obj["seen"] = contents.seen;
     obj["entered"] = contents.entered;
 
@@ -393,6 +398,12 @@ GmcpMessage makeRoomContents(const RoomContentsSnapshot &contents, const RoomHan
     for (const RoomObject &object : contents.objects) {
         QJsonObject entry;
         entry["index"] = object.index;
+        if (!contents.snapshotId.isEmpty()) {
+            entry["handle"] = contents.snapshotId + QLatin1Char(':')
+                              + QString::number(object.index);
+            entry["selector"] = QJsonValue::Null;
+            entry["targetEvidence"] = QStringLiteral("display-order-unverified");
+        }
         entry["line"] = object.line;
         entry["name"] = orNull(object.name);
         entry["count"] = object.count;
@@ -438,11 +449,20 @@ GmcpMessage makeContainerEvent(const ContainerEvent &event)
 
 namespace {
 
-NODISCARD QJsonArray listedItems(const std::vector<ListedItem> &items, const bool equipment)
+NODISCARD QJsonArray listedItems(const std::vector<ListedItem> &items,
+                                 const bool equipment,
+                                 const QString &snapshotId)
 {
     QJsonArray result;
+    int index = 0;
     for (const ListedItem &item : items) {
         QJsonObject entry;
+        if (!snapshotId.isEmpty()) {
+            entry["handle"] = snapshotId + QLatin1Char(':') + QString::number(index);
+            entry["index"] = index;
+            entry["selector"] = QJsonValue::Null;
+        }
+        ++index;
         if (equipment) {
             entry["slot"] = item.slot;
             entry["label"] = item.label;
@@ -466,27 +486,44 @@ NODISCARD QJsonArray listedItems(const std::vector<ListedItem> &items, const boo
 GmcpMessage makeCharEquipment(const ItemBlock &block)
 {
     QJsonObject obj;
+    if (!block.snapshotId.isEmpty()) {
+        obj["snapshotId"] = block.snapshotId;
+        obj["text"] = block.text;
+    }
     obj["owner"] = block.owner;
-    obj["items"] = listedItems(block.items, true);
+    obj["items"] = listedItems(block.items, true, block.snapshotId);
     return GmcpMessage{GmcpMessageTypeEnum::MMAPPER_CHAR_EQUIPMENT, toGmcpJson(obj)};
 }
 
 GmcpMessage makeCharInventory(const ItemBlock &block)
 {
     QJsonObject obj;
+    if (!block.snapshotId.isEmpty()) {
+        obj["snapshotId"] = block.snapshotId;
+        obj["text"] = block.text;
+    }
     obj["owner"] = block.owner.isEmpty() ? QJsonValue{QJsonValue::Null} : QJsonValue{block.owner};
     obj["peek"] = block.peek;
-    obj["items"] = listedItems(block.items, false);
+    obj["items"] = listedItems(block.items, false, block.snapshotId);
     return GmcpMessage{GmcpMessageTypeEnum::MMAPPER_CHAR_INVENTORY, toGmcpJson(obj)};
 }
 
 GmcpMessage makeCharContainer(const ItemBlock &block)
 {
     QJsonObject obj;
+    if (!block.snapshotId.isEmpty()) {
+        obj["snapshotId"] = block.snapshotId;
+        obj["text"] = block.text;
+    }
+    if (!block.target.isEmpty()) {
+        obj["target"] = block.target;
+    }
+    obj["listingMode"] = block.listingMode;
+    obj["contentsKnown"] = !block.closed;
     obj["keyword"] = block.keyword;
     obj["where"] = block.where.isEmpty() ? QJsonValue{QJsonValue::Null} : QJsonValue{block.where};
     obj["closed"] = block.closed;
-    obj["items"] = listedItems(block.items, false);
+    obj["items"] = listedItems(block.items, false, block.snapshotId);
     return GmcpMessage{GmcpMessageTypeEnum::MMAPPER_CHAR_CONTAINER, toGmcpJson(obj)};
 }
 
@@ -507,6 +544,32 @@ GmcpMessage makeCharItem(const ItemEvent &event)
     optional("reason", event.reason);
     obj["text"] = event.text;
     return GmcpMessage{GmcpMessageTypeEnum::MMAPPER_CHAR_ITEM, toGmcpJson(obj)};
+}
+
+GmcpMessage makeCharCommand(const ItemCommandObservation &command)
+{
+    QJsonObject obj;
+    obj["id"] = command.id;
+    obj["command"] = command.command;
+    obj["action"] = command.action;
+    obj["status"] = command.status;
+    obj["successes"] = command.successes;
+    obj["refusals"] = command.refusals;
+    QJsonArray replies;
+    for (const auto &reply : command.replies) {
+        QJsonObject evidence;
+        evidence["action"] = mmqt::toQStringUtf8(to_string_view(reply.action));
+        evidence["item"] = reply.item;
+        evidence["container"] = reply.container;
+        evidence["other"] = reply.other;
+        evidence["slot"] = reply.slot;
+        evidence["reason"] = reply.reason;
+        evidence["text"] = reply.text;
+        replies.append(evidence);
+    }
+    obj["replies"] = replies;
+    obj["text"] = QJsonArray::fromStringList(command.text);
+    return GmcpMessage{GmcpMessageTypeEnum::MMAPPER_CHAR_COMMAND, toGmcpJson(obj)};
 }
 
 } // namespace frontend_messages

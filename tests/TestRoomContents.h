@@ -15,6 +15,7 @@ public:
     ~TestRoomContents() override = default;
 
 private Q_SLOTS:
+    static void refreshReplacesItemsTest();
     static void keywordTest();
     static void namesContainerTest();
     static void objectsTest();

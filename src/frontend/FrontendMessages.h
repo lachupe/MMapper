@@ -26,6 +26,8 @@
 /// protocol design rule: describe the fact, not the implementation.
 namespace frontend_messages {
 
+NODISCARD GmcpMessage makeCharCommand(const ItemCommandObservation &command);
+
 /// Stable protocol-level name for the producer of a chunk of terminal text, so that a
 /// client can distinguish game output from MMapper's own injected messages.
 NODISCARD std::string_view toProtocolString(SendToUserSourceEnum source);

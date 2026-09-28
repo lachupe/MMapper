@@ -3,6 +3,7 @@
 
 #include "ItemLines.h"
 
+#include "../global/TextUtils.h"
 #include "../global/parserutils.h"
 #include "ContainerLines.h"
 
@@ -11,20 +12,15 @@
 #include <utility>
 
 #include <QRegularExpression>
+#include <QUuid>
 
 namespace {
 
 using A = ItemActionEnum;
 using K = ItemBlockKindEnum;
 
-/// A listing longer than this is taken for one whose end went by unseen, and dropped. The
-/// longest in the logs is a container of a few dozen lines; MUME caps what one can carry well
-/// below this.
-constexpr int MAX_BLOCK_LINES = 200;
-/// How long a look into a container waits for "It is closed.", in prompts.
-constexpr int PROMPTS_TO_WAIT = 2;
-/// Containers whose place is remembered.
-constexpr size_t PLACES_REMEMBERED = 32;
+/// Bound malformed input while allowing backpacks containing hundreds of distinct rows.
+constexpr int MAX_BLOCK_LINES = 4096;
 
 struct NODISCARD SlotName final
 {
@@ -60,22 +56,36 @@ constexpr std::array SLOTS{SlotName{"used as light", "light"},
                            SlotName{"wielded two-handed", "wielded"},
                            SlotName{"as two-handed weapon", "wielded"},
                            SlotName{"as right weapon", "wielded"},
+                           SlotName{"worn across shoulder", "across_back"},
                            SlotName{"worn across back", "across_back"}};
 
 // Where a wear, remove or refusal puts it, as "on your X" and friends say it, and the slot.
-constexpr std::array
-    PLACES{SlotName{"feet", "feet"},          SlotName{"hands", "hands"},
-           SlotName{"body", "body"},          SlotName{"legs", "legs"},
-           SlotName{"head", "head"},          SlotName{"arms", "arms"},
-           SlotName{"back", "back"},          SlotName{"belt", "belt"},
-           SlotName{"girdle", "belt"},        SlotName{"arm", "shield"},
-           SlotName{"neck", "neck"},          SlotName{"around neck", "neck"},
-           SlotName{"about body", "about"},   SlotName{"around body", "about"},
-           SlotName{"about waist", "waist"},  SlotName{"around waist", "waist"},
-           SlotName{"waist", "waist"},        SlotName{"wrist", "wrist"},
-           SlotName{"right wrist", "wrist"},  SlotName{"left wrist", "wrist"},
-           SlotName{"finger", "finger"},      SlotName{"right finger", "finger"},
-           SlotName{"left finger", "finger"}, SlotName{"across back", "across_back"}};
+constexpr std::array PLACES{SlotName{"feet", "feet"},
+                            SlotName{"hands", "hands"},
+                            SlotName{"body", "body"},
+                            SlotName{"legs", "legs"},
+                            SlotName{"head", "head"},
+                            SlotName{"arms", "arms"},
+                            SlotName{"back", "back"},
+                            SlotName{"belt", "belt"},
+                            SlotName{"girdle", "belt"},
+                            SlotName{"arm", "shield"},
+                            SlotName{"neck", "neck"},
+                            SlotName{"around neck", "neck"},
+                            SlotName{"about body", "about"},
+                            SlotName{"around body", "about"},
+                            SlotName{"about waist", "waist"},
+                            SlotName{"around waist", "waist"},
+                            SlotName{"waist", "waist"},
+                            SlotName{"wrist", "wrist"},
+                            SlotName{"right wrist", "wrist"},
+                            SlotName{"left wrist", "wrist"},
+                            SlotName{"finger", "finger"},
+                            SlotName{"right finger", "finger"},
+                            SlotName{"left finger", "finger"},
+                            SlotName{"shoulder", "across_back"},
+                            SlotName{"across shoulder", "across_back"},
+                            SlotName{"across back", "across_back"}};
 
 // The "twiddlers" prompt option draws \|/- while a delayed action runs, and they end up on the
 // front of the next line. Backspaces come with them when the terminal is live.
@@ -90,8 +100,8 @@ const QRegularExpression g_conditionWords{QStringLiteral(R"(^[a-z][a-z ,.-]*$)")
 // "Miltar of the Golden Wood is using:", "*Herby the Dwarf* is using:".
 const QRegularExpression g_using{QStringLiteral(R"(^([A-Z*].*) is using:$)")};
 // "backpack (used) :", "pouch (carried) :", "corpse (here) :", "the corpse of *an Elf* (here):".
-const QRegularExpression g_container{
-    QStringLiteral(R"(^([a-z*][^()]*?) \((used|carried|here|worn)\) ?:$)")};
+const QRegularExpression g_container{QStringLiteral(
+    R"(^(?:In your )?([a-z*][^()]*?) \((used|carried|here|worn(?: [^()]*)?)\) ?:$)")};
 const QRegularExpression g_isClosed{QStringLiteral(R"(^(?:The|An?) (.+) is closed\.$)")};
 
 // Replies of one line.
@@ -99,7 +109,7 @@ const QRegularExpression g_wear{
     QStringLiteral(R"(^You wear (.+?) (on|about|around|across|over) your (.+)\.$)")};
 const QRegularExpression g_fasten{
     QStringLiteral(R"(^You fasten (.+?) on your (.+?)(?:, (?:becoming|looking) .+)?\.$)")};
-const QRegularExpression g_putOnYour{QStringLiteral(R"(^You put (.+?) on your (.+)\.$)")};
+const QRegularExpression g_putOnYour{QStringLiteral(R"(^You put (.+?) (?:on|across) your (.+)\.$)")};
 const QRegularExpression g_putOn{QStringLiteral(R"(^You put (.+?) on (.+)\.$)")};
 const QRegularExpression g_putIn{QStringLiteral(R"(^You put (.+) in (.+)\.$)")};
 const QRegularExpression g_wield{QStringLiteral(
@@ -487,9 +497,30 @@ std::string_view to_string_view(const ItemActionEnum action)
 
 void ItemBlockTracker::receiveCommand(const QString &input)
 {
+    m_commands = std::min(m_commands + 1, 2);
+    m_look.reset();
+    if (m_open.has_value()) {
+        m_open->block.target.clear();
+        m_open->block.listingMode = QStringLiteral("unknown");
+    }
     const auto command = parseContainerCommand(input);
-    if (command.has_value() && command->action == ContainerActionEnum::LOOK) {
-        m_look = Look{command->word, 0};
+    if (m_commands == 1 && command.has_value() && command->action == ContainerActionEnum::LOOK) {
+        QString word = command->target;
+        // A location prefix is before the ordinal (equipment.2.pouch).
+        const auto parts = word.split(QLatin1Char('.'));
+        if (!parts.isEmpty()
+            && (QStringLiteral("equipment").startsWith(parts.front())
+                || QStringLiteral("inventory").startsWith(parts.front())
+                || QStringLiteral("room").startsWith(parts.front()))) {
+            word = parts.back();
+        } else {
+            word = command->word;
+        }
+        const QString verb = input.simplified().section(QLatin1Char(' '), 0, 0).toLower();
+        m_look = Look{word,
+                      command->target,
+                      QStringLiteral("examine").startsWith(verb) ? QStringLiteral("separate")
+                                                                 : QStringLiteral("grouped")};
     }
 }
 
@@ -540,11 +571,12 @@ std::vector<ItemBlock> ItemBlockTracker::receiveLine(const QString &line)
         ItemBlock block;
         block.kind = K::CONTAINER;
         block.keyword = header.captured(1);
-        block.where = header.captured(2);
-        if (!m_whereOf.contains(block.keyword) && m_whereOf.size() >= PLACES_REMEMBERED) {
-            m_whereOf.erase(m_whereOf.begin());
+        block.where = header.captured(2).startsWith(QStringLiteral("worn")) ? QStringLiteral("used")
+                                                                            : header.captured(2);
+        if (m_look.has_value() && namesContainer(m_look->word, block.keyword)) {
+            block.target = m_look->target;
+            block.listingMode = m_look->listingMode;
         }
-        m_whereOf[block.keyword] = block.where;
         m_look.reset();
         open(std::move(block), text);
     } else if (m_look.has_value() && isClosedReply(text, m_look->word)) {
@@ -552,9 +584,9 @@ std::vector<ItemBlock> ItemBlockTracker::receiveLine(const QString &line)
         ItemBlock block;
         block.kind = K::CONTAINER;
         block.keyword = m_look->word;
-        if (const auto it = m_whereOf.find(block.keyword); it != m_whereOf.end()) {
-            block.where = it->second;
-        }
+        block.target = m_look->target;
+        block.listingMode = m_look->listingMode;
+        // Location is unknown: a previous listing may refer to another identical pouch.
         block.closed = true;
         block.text = text;
         m_look.reset();
@@ -567,9 +599,8 @@ std::vector<ItemBlock> ItemBlockTracker::receivePrompt()
 {
     std::vector<ItemBlock> blocks = close();
     m_lastOwner.clear();
-    if (m_look.has_value() && ++m_look->prompts > PROMPTS_TO_WAIT) {
-        m_look.reset();
-    }
+    m_look.reset();
+    m_commands = 0;
     return blocks;
 }
 
@@ -578,7 +609,7 @@ void ItemBlockTracker::reset()
     m_open.reset();
     m_look.reset();
     m_lastOwner.clear();
-    m_whereOf.clear();
+    m_commands = 0;
 }
 
 void ItemBlockTracker::open(ItemBlock block, const QString &header)
@@ -626,4 +657,160 @@ std::vector<ItemBlock> ItemBlockTracker::close()
     open.block.text = open.lines.join(QLatin1Char('\n'));
     blocks.push_back(std::move(open.block));
     return blocks;
+}
+
+std::optional<ItemCommandObservation> ItemCommandTracker::receiveCommand(const QString &line,
+                                                                         const int64_t nowMs)
+{
+    // Every command counts, including movement and commands we cannot interpret. Never let
+    // a manual command's generic failure be mistaken for a frontend operation's reply.
+    if (m_commands == 0) {
+        m_started = nowMs;
+    }
+    m_commands = std::min(m_commands + 1, 2);
+    const QString trimmed = line.trimmed();
+    if (trimmed.contains(QLatin1Char('\n')) || trimmed.contains(QLatin1Char('\r'))) {
+        m_commands = 2;
+        return std::nullopt;
+    }
+    const QString command = trimmed.simplified();
+    const QString verb = command.section(QLatin1Char(' '), 0, 0).toLower();
+    const QStringList verbs{QStringLiteral("get"),
+                            QStringLiteral("put"),
+                            QStringLiteral("drop"),
+                            QStringLiteral("give"),
+                            QStringLiteral("wear"),
+                            QStringLiteral("remove"),
+                            QStringLiteral("wield"),
+                            QStringLiteral("hold"),
+                            QStringLiteral("light"),
+                            QStringLiteral("equipment"),
+                            QStringLiteral("inventory"),
+                            QStringLiteral("look"),
+                            QStringLiteral("examine"),
+                            QStringLiteral("open"),
+                            QStringLiteral("close")};
+    if (!verbs.contains(verb) || m_pending.size() >= 64) {
+        return std::nullopt;
+    }
+    ItemCommandObservation observation;
+    observation.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    observation.command = command;
+    observation.action = verb;
+    m_pending.push_back(observation);
+    return observation;
+}
+
+void ItemCommandTracker::receiveEvent(const ItemEvent &event)
+{
+    if (m_commands != 1 || m_pending.size() != 1) {
+        return;
+    }
+    auto &pending = m_pending.front();
+    if (pending.replies.size() >= 4096) {
+        m_commands = 2; // bounded evidence cannot prove the whole result
+        return;
+    }
+    if (event.action == ItemActionEnum::REFUSED) {
+        ++pending.refusals;
+        pending.replies.push_back(event);
+    } else if (pending.action == mmqt::toQStringUtf8(to_string_view(event.action))) {
+        ++pending.successes;
+        pending.replies.push_back(event);
+    }
+}
+
+std::vector<ItemCommandObservation> ItemCommandTracker::finish(const bool prompt)
+{
+    auto result = std::move(m_pending);
+    m_pending.clear();
+    for (auto &observation : result) {
+        observation.status = !prompt           ? QStringLiteral("unknown")
+                             : m_commands != 1 ? QStringLiteral("ambiguous")
+                             : observation.successes > 0 && observation.refusals > 0
+                                 ? QStringLiteral("partial")
+                             : observation.successes > 0 ? QStringLiteral("observed")
+                             : observation.refusals > 0  ? QStringLiteral("refused")
+                                                         : QStringLiteral("unknown");
+    }
+    m_commands = 0;
+    return result;
+}
+
+void ItemCommandTracker::receiveLine(const QString &line)
+{
+    if (m_pending.empty()) {
+        return;
+    }
+    const QString text = cleaned(line);
+    if (text.isEmpty()) {
+        return;
+    }
+    // Keep bounded diagnostic text even for unknown wording; it cannot prove success.
+    for (auto &pending : m_pending) {
+        if (pending.text.size() < 32) {
+            pending.text.push_back(text.left(1024));
+        }
+    }
+    if (m_commands != 1 || m_pending.size() != 1 || parseItemEvent(text).has_value()) {
+        return;
+    }
+    auto &pending = m_pending.front();
+    const bool opening = pending.action == QStringLiteral("open")
+                         || pending.action == QStringLiteral("close");
+    if (opening
+        && (text == QStringLiteral("Ok.") || text == QStringLiteral("It is already open.")
+            || text == QStringLiteral("It is already closed."))) {
+        ++pending.successes;
+        return;
+    }
+    static const QRegularExpression refusal{QStringLiteral(
+        R"(^(?:It is closed\.|It seems to be locked\.|It's locked\.|You (?:don't|do not) see .+ here\.|You can't find .+\.|No[- ]one by that name here\.?|(?:Get|Put|Wear|Remove|Drop|Give|Open|Close) what\?|You don't have the proper key\.)$)")};
+    // A closed look is a state observation, not a failed item mutation.
+    if (refusal.match(text).hasMatch() && pending.action != QStringLiteral("look")
+        && pending.action != QStringLiteral("examine")) {
+        ++pending.refusals;
+    }
+}
+
+void ItemCommandTracker::receiveBlock(const ItemBlock &block)
+{
+    if (m_commands != 1 || m_pending.size() != 1) {
+        return;
+    }
+    auto &pending = m_pending.front();
+    if ((block.kind == K::INVENTORY && !block.peek && pending.action == QStringLiteral("inventory"))
+        || (block.kind == K::EQUIPMENT && block.owner == QStringLiteral("you")
+            && pending.action == QStringLiteral("equipment"))
+        || (block.kind == K::CONTAINER && !block.target.isEmpty()
+            && (pending.action == QStringLiteral("look")
+                || pending.action == QStringLiteral("examine")))) {
+        ++pending.successes;
+    }
+}
+
+void ItemCommandTracker::receiveRoom(const bool)
+{
+    // An unseen room is still a completed observation; its snapshot retains seen=false.
+    if (m_commands == 1 && m_pending.size() == 1
+        && (m_pending.front().command.compare(QStringLiteral("look"), Qt::CaseInsensitive) == 0
+            || m_pending.front().command.compare(QStringLiteral("examine"), Qt::CaseInsensitive)
+                   == 0)) {
+        ++m_pending.front().successes;
+    }
+}
+
+std::vector<ItemCommandObservation> ItemCommandTracker::expire(const int64_t nowMs)
+{
+    if (m_pending.empty() || nowMs - m_started < 15000) {
+        return {};
+    }
+    auto result = finish(false);
+    // Late replies remain unassignable until a real prompt drains the old command window.
+    m_commands = 2;
+    for (auto &entry : result) {
+        entry.text.push_back(
+            QStringLiteral("MMapper: command observation timed out; refresh before retrying."));
+    }
+    return result;
 }

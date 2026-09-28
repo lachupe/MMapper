@@ -74,6 +74,7 @@ private:
     /// The listings of what the player wears and carries, of their containers, and of what
     /// someone looked at wears. See ItemBlockTracker.
     ItemBlockTracker m_itemTracker;
+    ItemCommandTracker m_itemCommands;
     /// When the player's own spell goes off, which MUME marks only by sending the prompt
     /// again. See OwnCastTracker.
     OwnCastTracker m_ownCastTracker;

@@ -74,7 +74,8 @@ const QRegularExpression g_twiddlers{QStringLiteral(R"(^[\\|/\-\x08]+(?=[A-Z*]))
 // "chest (here) : " heads the listing of a container in the room, "backpack (used) :" one the
 // player wears and "pouch (carried) :" one they carry. The word is the container's first
 // keyword, not the one typed: "exami chest" is answered "stonechest (here) :".
-const QRegularExpression g_header{QStringLiteral(R"(^(\S+) \((here|used|carried|worn)\) ?:$)")};
+const QRegularExpression g_header{
+    QStringLiteral(R"(^(?:In your )?([^()]+?) \((here|used|carried|worn(?: [^()]*)?)\) ?:$)")};
 const QRegularExpression g_contains{QStringLiteral(R"(^.+ contains nothing\.$)")};
 const QRegularExpression g_isClosed{QStringLiteral(R"(^(?:The|An?) (.+) is closed\.$)")};
 const QRegularExpression g_nothingIn{QStringLiteral(R"(^You can't find anything in the .+\.$)")};

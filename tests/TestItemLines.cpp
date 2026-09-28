@@ -395,8 +395,9 @@ void TestItemLines::closedContainerTest()
     QCOMPARE(closed.size(), size_t{1});
     QCOMPARE(closed.front().kind, ItemBlockKindEnum::CONTAINER);
     QCOMPARE(closed.front().keyword, QStringLiteral("backpack"));
-    // Where it was last listed.
-    QCOMPARE(closed.front().where, QStringLiteral("used"));
+    // The last backpack listing might have described a different instance.
+    QVERIFY(closed.front().where.isEmpty());
+    QCOMPARE(closed.front().target, QStringLiteral("backpack"));
     QVERIFY(closed.front().closed);
     QVERIFY(closed.front().items.empty());
     QCOMPARE(closed.front().text, QStringLiteral("It is closed."));
@@ -466,7 +467,7 @@ void TestItemLines::runawayTest()
     // A listing whose end went by unseen is dropped rather than published half-read.
     ItemBlockTracker tracker;
     QVERIFY(tracker.receiveLine(QStringLiteral("You are carrying:")).empty());
-    for (int i = 0; i < 300; ++i) {
+    for (int i = 0; i < 4200; ++i) {
         QVERIFY(tracker.receiveLine(QStringLiteral("a large skin")).empty());
     }
     QVERIFY(tracker.receivePrompt().empty());
@@ -663,3 +664,178 @@ void TestItemLines::notItemEventTest()
 }
 
 QTEST_MAIN(TestItemLines)
+
+void TestItemLines::largeContainerTest()
+{
+    ItemBlockTracker tracker;
+    tracker.receiveCommand(QStringLiteral("look in 2.pouch"));
+    std::ignore = tracker.receiveLine(QStringLiteral("pouch (used) :"));
+    for (int i = 0; i < 700; ++i) {
+        QVERIFY(tracker.receiveLine(QStringLiteral("a vellum scroll")).empty());
+    }
+    const auto blocks = tracker.receivePrompt();
+    QCOMPARE(blocks.size(), size_t{1});
+    QCOMPARE(blocks.front().items.size(), size_t{700});
+    QCOMPARE(blocks.front().target, QStringLiteral("2.pouch"));
+}
+
+void TestItemLines::duplicateContainerTest()
+{
+    ItemBlockTracker tracker;
+    for (const auto &target : {QStringLiteral("pouch"), QStringLiteral("2.pouch")}) {
+        tracker.receiveCommand(QStringLiteral("look in ") + target);
+        const auto blocks = feed(tracker,
+                                 {QStringLiteral("pouch (used) :"), QStringLiteral("Nothing.")});
+        QCOMPARE(blocks.size(), size_t{1});
+        QCOMPARE(blocks.front().target, target);
+    }
+    tracker.receiveCommand(QStringLiteral("look in pouch"));
+    tracker.receiveCommand(QStringLiteral("look in 2.pouch"));
+    const auto ambiguous = feed(tracker,
+                                {QStringLiteral("pouch (used) :"), QStringLiteral("a scroll")});
+    QCOMPARE(ambiguous.size(), size_t{1});
+    QVERIFY(ambiguous.front().target.isEmpty());
+    tracker.receiveCommand(QStringLiteral("look in pouch"));
+    std::ignore = tracker.receiveLine(QStringLiteral("pouch (used) :"));
+    tracker.receiveCommand(QStringLiteral("look in 2.pouch"));
+    const auto interrupted = feed(tracker, {QStringLiteral("a scroll")});
+    QCOMPARE(interrupted.size(), size_t{1});
+    QVERIFY(interrupted.front().target.isEmpty());
+    tracker.receiveCommand(QStringLiteral("look in pouch"));
+    tracker.receiveCommand(QStringLiteral("open door"));
+    QVERIFY(feed(tracker, {QStringLiteral("It is closed.")}).empty());
+    tracker.receiveCommand(QStringLiteral("look in pouch"));
+    std::ignore = tracker.receivePrompt();
+    QVERIFY(feed(tracker, {QStringLiteral("It is closed.")}).empty());
+}
+
+void TestItemLines::commandObservationTest()
+{
+    ItemCommandTracker tracker;
+    const auto get = tracker.receiveCommand(QStringLiteral("get helmet\r\n"));
+    QVERIFY(get.has_value());
+    QCOMPARE(get->status, QStringLiteral("pending"));
+    tracker.receiveLine(QStringLiteral("A guard tells you 'get a metal helmet'."));
+    tracker.receiveLine(QStringLiteral("An orc arrives from the north."));
+    tracker.receiveEvent(eventOf(QStringLiteral("You get a metal helmet.")));
+    auto results = tracker.finish(true);
+    QCOMPARE(results.size(), size_t{1});
+    QCOMPARE(results.front().id, get->id);
+    QCOMPARE(results.front().status, QStringLiteral("observed"));
+    QCOMPARE(results.front().successes, 1);
+    // The next step is independently observed, never an atomic ground-to-equipment move.
+    std::ignore = tracker.receiveCommand(QStringLiteral("wear helmet"));
+    tracker.receiveEvent(eventOf(QStringLiteral("You are already wearing something on your head.")));
+    QCOMPARE(tracker.finish(true).front().status, QStringLiteral("refused"));
+    std::ignore = tracker.receiveCommand(QStringLiteral("get scroll pouch"));
+    QCOMPARE(tracker.finish(true).front().status, QStringLiteral("unknown"));
+    std::ignore = tracker.receiveCommand(QStringLiteral("get scroll pouch"));
+    tracker.receiveEvent(eventOf(QStringLiteral("You get a vellum scroll from a sable pouch.")));
+    std::ignore = tracker.receiveCommand(QStringLiteral("north"));
+    QCOMPARE(tracker.finish(true).front().status, QStringLiteral("ambiguous"));
+    std::ignore = tracker.receiveCommand(QStringLiteral("put scroll backpack"));
+    tracker.receiveEvent(eventOf(QStringLiteral("You put a vellum scroll in a leather backpack.")));
+    QCOMPARE(tracker.finish(false).front().status, QStringLiteral("unknown"));
+    QVERIFY(tracker.finish(true).empty());
+    std::ignore = tracker.receiveCommand(QStringLiteral("get all"));
+    tracker.receiveEvent(eventOf(QStringLiteral("You get a metal helmet.")));
+    tracker.receiveEvent(eventOf(QStringLiteral("You can't carry that.")));
+    QCOMPARE(tracker.finish(true).front().status, QStringLiteral("partial"));
+    std::ignore = tracker.receiveCommand(QStringLiteral("get helmet"));
+    tracker.receiveEvent(eventOf(QStringLiteral("A guard gives you a metal helmet.")));
+    QCOMPARE(tracker.finish(true).front().status, QStringLiteral("unknown"));
+}
+
+void TestItemLines::queryAndTimeoutTest()
+{
+    const auto across = eventOf(QStringLiteral("You put a leather baldric across your shoulder."));
+    QCOMPARE(across.action, ItemActionEnum::WEAR);
+    QCOMPARE(across.slot, QStringLiteral("across_back"));
+    ItemCommandTracker commands;
+    ItemBlockTracker listings;
+    std::ignore = commands.receiveCommand(QStringLiteral("look in equipment.2.pouch"), 100);
+    listings.receiveCommand(QStringLiteral("look in equipment.2.pouch"));
+    const auto blocks = feed(listings,
+                             {QStringLiteral("pouch (used) :"), QStringLiteral("Nothing.")});
+    QCOMPARE(blocks.size(), size_t{1});
+    QCOMPARE(blocks.front().target, QStringLiteral("equipment.2.pouch"));
+    commands.receiveBlock(blocks.front());
+    QCOMPARE(commands.finish(true).front().status, QStringLiteral("observed"));
+    std::ignore = commands.receiveCommand(QStringLiteral("get all equipment.backpack"), 200);
+    commands.receiveLine(QStringLiteral("It is closed."));
+    QCOMPARE(commands.finish(true).front().status, QStringLiteral("refused"));
+    std::ignore = commands.receiveCommand(QStringLiteral("get helmet"), 300);
+    commands.receiveLine(QStringLiteral("You don't see that here."));
+    QCOMPARE(commands.finish(true).front().status, QStringLiteral("refused"));
+    std::ignore = commands.receiveCommand(QStringLiteral("inventory"), 1000);
+    QVERIFY(commands.expire(15999).empty());
+    const auto expired = commands.expire(16000);
+    QCOMPARE(expired.size(), size_t{1});
+    QCOMPARE(expired.front().status, QStringLiteral("unknown"));
+    QVERIFY(!expired.front().text.empty());
+    std::ignore = commands.receiveCommand(QStringLiteral("get helmet"), 16001);
+    commands.receiveEvent(eventOf(QStringLiteral("You get a metal helmet.")));
+    QCOMPARE(commands.finish(true).front().status, QStringLiteral("ambiguous"));
+    // The real prompt has now drained the timed-out window.
+    std::ignore = commands.receiveCommand(QStringLiteral("look"));
+    commands.receiveRoom(false);
+    QCOMPARE(commands.finish(true).front().status, QStringLiteral("observed"));
+    std::ignore = commands.receiveCommand(QStringLiteral("look"));
+    commands.receiveRoom(true);
+    QCOMPARE(commands.finish(true).front().status, QStringLiteral("observed"));
+    std::ignore = commands.receiveCommand(QStringLiteral("open equipment.backpack"));
+    commands.receiveLine(QStringLiteral("Ok."));
+    QCOMPARE(commands.finish(true).front().status, QStringLiteral("observed"));
+    std::ignore = commands.receiveCommand(QStringLiteral("get all equipment.backpack"));
+    for (int i = 0; i < 700; ++i) {
+        commands.receiveEvent(eventOf(QStringLiteral("You get a scroll from a backpack.")));
+    }
+    const auto bulk = commands.finish(true);
+    QCOMPARE(bulk.front().successes, 700);
+    QCOMPARE(bulk.front().status, QStringLiteral("observed"));
+}
+
+void TestItemLines::examineStacksTest()
+{
+    ItemBlockTracker tracker;
+    tracker.receiveCommand(QStringLiteral("examine equipment.backpack"));
+    auto blocks = feed(tracker,
+                       {QStringLiteral("In your backpack (worn on back):"),
+                        QStringLiteral("a flask of miruvor"),
+                        QStringLiteral("a small metal flask"),
+                        QStringLiteral("a flask of miruvor")});
+    QCOMPARE(blocks.size(), size_t{1});
+    QCOMPARE(blocks.front().target, QStringLiteral("equipment.backpack"));
+    QCOMPARE(blocks.front().where, QStringLiteral("used"));
+    QCOMPARE(blocks.front().listingMode, QStringLiteral("separate"));
+    QCOMPARE(blocks.front().items.size(), size_t{3});
+    QCOMPARE(blocks.front().items.at(2).count, 1);
+    tracker.receiveCommand(QStringLiteral("look in equipment.backpack"));
+    blocks = feed(tracker,
+                  {QStringLiteral("In your backpack (worn on back):"),
+                   QStringLiteral("two flasks of miruvor"),
+                   QStringLiteral("a small metal flask")});
+    QCOMPARE(blocks.front().listingMode, QStringLiteral("grouped"));
+    QCOMPARE(blocks.front().items.at(0).count, 2);
+    tracker.receiveCommand(QStringLiteral("examine equipment.pouch"));
+    std::ignore = tracker.receiveLine(QStringLiteral("In your pouch (worn on belt):"));
+    tracker.receiveCommand(QStringLiteral("look"));
+    blocks = feed(tracker, {QStringLiteral("a wooden pipe")});
+    QVERIFY(blocks.front().target.isEmpty());
+    QCOMPARE(blocks.front().listingMode, QStringLiteral("unknown"));
+    ItemCommandTracker commands;
+    std::ignore = commands.receiveCommand(QStringLiteral("examine"));
+    commands.receiveRoom(true);
+    QCOMPARE(commands.finish(true).front().status, QStringLiteral("observed"));
+    // Real get all.flask output: matching objects can have several distinct names.
+    std::ignore = commands.receiveCommand(QStringLiteral("get all.flask equipment.backpack"));
+    commands.receiveEvent(
+        eventOf(QStringLiteral("You get a flask of miruvor from a leather backpack.")));
+    commands.receiveEvent(
+        eventOf(QStringLiteral("You get a small metal flask from a leather backpack.")));
+    commands.receiveEvent(eventOf(QStringLiteral("You can't carry that.")));
+    const auto result = commands.finish(true);
+    QCOMPARE(result.front().status, QStringLiteral("partial"));
+    QCOMPARE(result.front().successes, 2);
+    QCOMPARE(result.front().refusals, 1);
+}

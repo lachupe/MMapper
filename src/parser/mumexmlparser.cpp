@@ -34,6 +34,7 @@
 #include <QByteArray>
 #include <QDateTime>
 #include <QString>
+#include <QTimer>
 
 using namespace char_consts;
 
@@ -82,6 +83,32 @@ MumeXmlParser::MumeXmlParser(MapData &md,
     m_observer.sig2_sentToMudString.connect(m_lifetime, [this](const QString &line) {
         m_containerTracker.receiveCommand(line);
         m_itemTracker.receiveCommand(line);
+        if (const auto command = m_itemCommands.receiveCommand(line,
+                                                               QDateTime::currentMSecsSinceEpoch())) {
+            m_observer.sig2_itemCommand.invoke(*command);
+        }
+    });
+    auto *timer = new QTimer(this);
+    timer->setInterval(1000);
+    connect(timer, &QTimer::timeout, this, [this]() {
+        for (const auto &command : m_itemCommands.expire(QDateTime::currentMSecsSinceEpoch())) {
+            m_observer.sig2_itemCommand.invoke(command);
+        }
+    });
+    timer->start();
+    m_observer.sig2_toggledEchoMode.connect(m_lifetime, [this](const bool echo) {
+        if (!echo) {
+            for (const auto &command : m_itemCommands.finish(false)) {
+                m_observer.sig2_itemCommand.invoke(command);
+            }
+            m_itemTracker.reset();
+        }
+    });
+    m_observer.sig2_disconnected.connect(m_lifetime, [this]() {
+        for (const auto &command : m_itemCommands.finish(false)) {
+            m_observer.sig2_itemCommand.invoke(command);
+        }
+        m_itemTracker.reset();
     });
 }
 
@@ -164,6 +191,7 @@ void MumeXmlParser::parse(const TelnetData &data, const bool isGoAhead)
         // Replies to the player's container commands: "Ok.", "*click*", a listing. A prompt
         // is not one, and ends the reply being gathered instead (below).
         if (!isGoAhead) {
+            m_itemCommands.receiveLine(plain);
             publishContainerEvents(
                 m_containerTracker.receiveLine(plain, QDateTime::currentSecsSinceEpoch()));
             // What the player wears and carries: listings that name themselves in their first
@@ -171,11 +199,12 @@ void MumeXmlParser::parse(const TelnetData &data, const bool isGoAhead)
             // remove, get, put, drop and give.
             publishItemBlocks(m_itemTracker.receiveLine(plain));
             if (const auto item = parseItemEvent(plain)) {
+                m_itemCommands.receiveEvent(*item);
                 m_observer.observeItemEvent(*item);
             }
         }
     }
-    if (isGoAhead) {
+    if (data.type == TelnetDataEnum::Prompt) {
         // Every prompt ends a listing, in XML mode and out of it.
         publishItemBlocks(m_itemTracker.receivePrompt());
     }
@@ -215,6 +244,7 @@ void MumeXmlParser::parse(const TelnetData &data, const bool isGoAhead)
         if (auto contents = m_roomContentsTracker.receive(xml, roomLines, roomKey())) {
             m_containerTracker.decorate(*contents);
             std::ignore = m_containerTracker.takeChanged();
+            m_itemCommands.receiveRoom(contents->seen);
             m_observer.observeRoomContents(*contents);
         } else if (xml.tag == XmlTagEnum::PROMPT && m_containerTracker.takeChanged()) {
             // A reply changed what is known about a container here: the room's objects are
@@ -222,6 +252,12 @@ void MumeXmlParser::parse(const TelnetData &data, const bool isGoAhead)
             RoomContentsSnapshot changed = m_containerTracker.current();
             changed.entered = false;
             m_observer.observeRoomContents(changed);
+        }
+    }
+    if (data.type == TelnetDataEnum::Prompt) {
+        // Finish after all listings and room snapshots at this prompt have been published.
+        for (const auto &command : m_itemCommands.finish(true)) {
+            m_observer.sig2_itemCommand.invoke(command);
         }
     }
 }
@@ -253,6 +289,7 @@ void MumeXmlParser::publishContainerEvents(const std::vector<ContainerEvent> &ev
 void MumeXmlParser::publishItemBlocks(const std::vector<ItemBlock> &blocks)
 {
     for (const ItemBlock &block : blocks) {
+        m_itemCommands.receiveBlock(block);
         m_observer.observeItemBlock(block);
     }
 }
@@ -291,6 +328,9 @@ bool MumeXmlParser::element(const QString &line)
                     m_roomContentsTracker.reset();
                     m_containerTracker.reset();
                     m_itemTracker.reset();
+                    for (const auto &command : m_itemCommands.finish(false)) {
+                        m_observer.sig2_itemCommand.invoke(command);
+                    }
                     m_ownCastTracker.reset();
                 }
                 break;
