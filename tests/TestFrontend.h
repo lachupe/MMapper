@@ -26,6 +26,8 @@ private Q_SLOTS:
     static void errorTest();
     static void mapPositionTest();
     static void mapPositionWithoutServerIdTest();
+    static void mapIdentityTest();
+    static void mapIdentityPacingTest();
     static void xmlElementTest();
     static void combatEventTest();
     static void timeStateTest();

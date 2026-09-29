@@ -1924,6 +1924,11 @@ void MainWindow::forceNewFile()
     m_groupWidget->slot_mapLoaded();
     updateDescriptionRoom(RoomHandle{});
     m_audioManager->onAreaChanged(RoomArea{});
+#ifndef MMAPPER_NO_FRONTEND
+    if (m_frontendServer != nullptr) {
+        m_frontendServer->onMapLoaded();
+    }
+#endif
 
     /*
     updateMapModified();
@@ -2449,6 +2454,11 @@ void MainWindow::onSuccessfulLoad(const MapLoadData &mapLoadData)
     mapCanvas.slot_dataLoaded();
     groupWidget.slot_mapLoaded();
     pathMachine.onMapLoaded();
+#ifndef MMAPPER_NO_FRONTEND
+    if (m_frontendServer != nullptr) {
+        m_frontendServer->onMapLoaded();
+    }
+#endif
     if (const auto room = mapData.getCurrentRoom()) {
         updateDescriptionRoom(room);
         deref(m_audioManager).onAreaChanged(room.getArea());
@@ -2492,6 +2502,11 @@ void MainWindow::onSuccessfulSave(const SaveModeEnum mode,
         mapData.setFileName(fileName, !QFileInfo(fileName).isWritable());
         setCurrentFile(fileName);
         mapData.currentHasBeenSaved();
+#ifndef MMAPPER_NO_FRONTEND
+        if (m_frontendServer != nullptr) {
+            m_frontendServer->onMapSaved();
+        }
+#endif
     }
 
     showStatusShort(tr("File saved"));

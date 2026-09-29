@@ -13,6 +13,7 @@
 #include "FrontendMessages.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cstdlib>
 #include <optional>
 #include <tuple>
@@ -34,6 +35,13 @@ constexpr const qint64 MAX_FRAME_BYTES = 64 * 1024;
 /// a keyring, and the corpse or chest last looked into.
 constexpr const size_t CONTAINERS_KEPT = 8;
 
+/// Milliseconds on a clock that only moves forward, for spacing out announcements.
+NODISCARD int64_t steadyNowMs()
+{
+    using namespace std::chrono;
+    return duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count();
+}
+
 } // namespace
 
 FrontendServer::FrontendServer(GameObserver &observer,
@@ -45,6 +53,12 @@ FrontendServer::FrontendServer(GameObserver &observer,
     , m_mapData{mapData}
     , m_listener{listener}
 {
+    // Whatever map MainWindow has by now counts as loaded; a map loaded later calls onMapLoaded().
+    m_mapIdentity.loaded(m_mapData.getCurrentMap(), m_mapData.getFileName());
+    m_sessionStateTimer.setSingleShot(true);
+    connect(&m_sessionStateTimer, &QTimer::timeout, this, &FrontendServer::publishSessionState);
+    connect(&m_mapData, &MapData::sig_onDataChanged, this, &FrontendServer::onMapChanged);
+
     m_observer.sig2_connected.connect(m_lifetime, [this]() {
         m_upstreamConnected = true;
         // A new game session invalidates everything we cached from the previous one.
@@ -349,7 +363,7 @@ void FrontendServer::releaseSession()
 GmcpMessage FrontendServer::sessionStateFor(const Client &client) const
 {
     return frontend_messages::makeSessionState(m_upstreamConnected,
-                                               isMapLoaded(),
+                                               m_mapIdentity.get(),
                                                m_echo,
                                                m_driver != nullptr && m_driver == client.socket);
 }
@@ -382,11 +396,6 @@ void FrontendServer::handleInput(Client &client, const GmcpMessage &msg)
     // logging see it exactly as they see input from the built-in client. The text itself is
     // never logged here: it may be a password.
     m_session.sendLine(optText.value());
-}
-
-bool FrontendServer::isMapLoaded() const
-{
-    return m_mapData.getCurrentMap().getRoomsCount() != 0;
 }
 
 void FrontendServer::publish(const GmcpMessage &msg)
@@ -444,9 +453,45 @@ void FrontendServer::replayTo(Client &client)
 
 void FrontendServer::publishSessionState()
 {
+    // Whatever was waiting to be announced goes out now, in this state.
+    m_sessionStateTimer.stop();
+    m_mapIdentity.announced(steadyNowMs());
+
     // Sent per connection rather than broadcast: `role` differs between clients.
     for (Client &client : m_clients) {
         sendTo(client, sessionStateFor(client));
+    }
+}
+
+void FrontendServer::scheduleSessionState()
+{
+    if (m_sessionStateTimer.isActive()) {
+        return; // Already due, and it will say this too.
+    }
+    // Even with no wait it goes out on the next turn of the event loop, not now, so that what
+    // happens in one go -- a new map clearing the old one, a batch of changes -- is one message.
+    const int64_t delay = m_mapIdentity.announceDelayMs(steadyNowMs());
+    m_sessionStateTimer.start(
+        static_cast<int>(std::min<int64_t>(delay, FrontendMapIdentity::ANNOUNCE_INTERVAL_MS)));
+}
+
+void FrontendServer::onMapLoaded()
+{
+    m_mapIdentity.loaded(m_mapData.getCurrentMap(), m_mapData.getFileName());
+    scheduleSessionState();
+}
+
+void FrontendServer::onMapSaved()
+{
+    if (m_mapIdentity.renamed(m_mapData.getFileName())) {
+        scheduleSessionState();
+    }
+}
+
+void FrontendServer::onMapChanged()
+{
+    if (m_mapIdentity.changed(m_mapData.getCurrentMap())) {
+        scheduleSessionState();
     }
 }
 

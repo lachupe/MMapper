@@ -41,13 +41,28 @@ NODISCARD GmcpMessage makeTerminalOutput(SendToUserSourceEnum source,
                                          const QString &text,
                                          bool goAhead);
 
+/// The map MMapper has loaded, as MMapper.Session.State names it.
+struct NODISCARD MapIdentity final
+{
+    /// The map file's name without its directory, or empty for a map never loaded or saved.
+    QString name;
+    /// How many rooms it has.
+    qint64 rooms = 0;
+    /// 0 when the map was loaded (or a new one started), and one more for each change since.
+    qint64 generation = 0;
+};
+
 /// MMapper.Session.State — MMapper's own connection state, distinct from character state.
 ///
 /// `role` is "driving" for the frontend that owns MMapper's single downstream session and
 /// may therefore send input, and "observing" for one watching a session another client
 /// owns. It is per-connection: two frontends attached at once see different values.
+///
+/// `mapName`, `mapRooms` and `mapGeneration` name the loaded map, so that a frontend reading
+/// its own export of a map can notice when that is not the map MMapper is using, or no longer
+/// matches it; `mapLoaded` is true when the map has any rooms.
 NODISCARD GmcpMessage makeSessionState(bool upstreamConnected,
-                                       bool mapLoaded,
+                                       const MapIdentity &map,
                                        bool echo,
                                        bool driving);
 

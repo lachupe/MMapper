@@ -7,6 +7,7 @@
 #include "../global/macros.h"
 #include "../map/roomid.h"
 #include "../proxy/GmcpMessage.h"
+#include "FrontendMapIdentity.h"
 #include "FrontendReplayCache.h"
 #include "FrontendSession.h"
 #include "FrontendSubscriptions.h"
@@ -20,6 +21,7 @@
 
 #include <QObject>
 #include <QString>
+#include <QTimer>
 
 class ConnectionListener;
 class GameObserver;
@@ -53,7 +55,9 @@ class QWebSocketServer;
 ///
 /// Subscribing brings a frontend up to date: its MMapper.Session.State, then the state MUME
 /// has described so far (see FrontendReplayCache), the game clock and the mapped position.
-/// Events -- terminal output, XML elements, combat events -- are not replayed.
+/// Events -- terminal output, XML elements, combat events -- are not replayed. The session
+/// state is sent again whenever it changes, the loaded map's name, size and generation
+/// included, though the map is announced at most once a second.
 ///
 /// A request that cannot be acted on is answered with MMapper.Session.Error rather than by
 /// closing the connection, so that a misbehaving frontend can be debugged. Its `code` is one
@@ -95,6 +99,11 @@ private:
 
     bool m_upstreamConnected = false;
     bool m_echo = true;
+
+    /// The loaded map as MMapper.Session.State names it, and when it may next announce a change.
+    FrontendMapIdentity m_mapIdentity;
+    /// Runs while an announcement of the map is held back (FrontendMapIdentity::announceDelayMs).
+    QTimer m_sessionStateTimer;
 
     /// The game clock, for MMapper.Time.State. Null until setClock(); the moments themselves
     /// arrive on GameObserver::sig2_tick, but only the clock knows how far to trust them.
@@ -145,6 +154,19 @@ public:
     /// so that it follows MMapper's confirmed position rather than typed movement commands.
     void onPlayerMoved(RoomId id);
 
+    /// A map was loaded, or a new empty one started: `mapGeneration` starts again at 0, and
+    /// MMapper.Session.State announces the map. MapData says nothing when it loads a map (its
+    /// signals are blocked meanwhile), so MainWindow calls this.
+    void onMapLoaded();
+
+    /// The map was saved: announces its new name, if the save gave it one.
+    void onMapSaved();
+
+    /// The map may have changed: counts the change in `mapGeneration` and announces it, at most
+    /// once per FrontendMapIdentity::ANNOUNCE_INTERVAL_MS. Driven by MapData::sig_onDataChanged;
+    /// public for a change made while MapData's signals were blocked.
+    void onMapChanged();
+
     /// Publishes MMapper.Weather.Ground for `ground`, naming the current room, and keeps it
     /// for replay. Driven by GameObserver::sig2_groundChanged; public so tests can drive it.
     void onGroundChanged(const GroundState &ground);
@@ -177,7 +199,6 @@ private:
 
 private:
     NODISCARD Client *findClient(QWebSocket *socket);
-    NODISCARD bool isMapLoaded() const;
     void publish(const GmcpMessage &msg);
     static void sendTo(Client &client, const GmcpMessage &msg);
     void replayTo(Client &client);
@@ -189,5 +210,8 @@ private:
     NODISCARD GmcpMessage sessionStateFor(const Client &client) const;
     void handleInput(Client &client, const GmcpMessage &msg);
     void publishSessionState();
+    /// Publishes MMapper.Session.State once the map's announcement interval allows: on the next
+    /// turn of the event loop, or when the interval is over. Changes made meanwhile ride along.
+    void scheduleSessionState();
     void log(const QString &msg);
 };

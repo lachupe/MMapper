@@ -6,6 +6,9 @@
 #include "../display/MapCanvasData.h"
 #include "../display/MapCanvasWindow.h"
 #include "../display/mapwindow.h"
+#ifndef MMAPPER_NO_FRONTEND
+#include "../frontend/FrontendServer.h"
+#endif
 #include "../global/AnsiOstream.h"
 #include "../global/AnsiTextUtils.h"
 #include "../global/AsyncTasks.h"
@@ -858,6 +861,12 @@ bool MainWindow::slot_generateBaseMap()
             aos << " room(s).\n";
 
             mapData.setCurrentMap(newMap);
+#ifndef MMAPPER_NO_FRONTEND
+            // MapData's signals are still blocked while this task finishes, so it said nothing.
+            if (m_mainWindow.m_frontendServer != nullptr) {
+                m_mainWindow.m_frontendServer->onMapChanged();
+            }
+#endif
 
             if (pNewRoom && pNewRoom != pOldRoom) {
                 mapData.setRoom(*pNewRoom);

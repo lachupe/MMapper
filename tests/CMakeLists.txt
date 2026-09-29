@@ -302,6 +302,8 @@ add_test(NAME TestXmlElements COMMAND TestXmlElements)
 # Frontend protocol
 if(WITH_FRONTEND)
     set(frontend_SRCS
+        ../src/frontend/FrontendMapIdentity.cpp
+        ../src/frontend/FrontendMapIdentity.h
         ../src/frontend/FrontendMessages.cpp
         ../src/frontend/FrontendMessages.h
         ../src/frontend/FrontendReplayCache.cpp

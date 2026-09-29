@@ -3,10 +3,14 @@
 
 #include "TestFrontend.h"
 
+#include "../src/frontend/FrontendMapIdentity.h"
 #include "../src/frontend/FrontendMessages.h"
 #include "../src/frontend/FrontendReplayCache.h"
 #include "../src/frontend/FrontendSubscriptions.h"
+#include "../src/global/HideQDebug.h"
 #include "../src/global/progresscounter.h"
+#include "../src/map/Change.h"
+#include "../src/map/ChangeTypes.h"
 #include "../src/map/Map.h"
 #include "../src/map/RawRoom.h"
 #include "../src/map/RoomFingerprint.h"
@@ -212,15 +216,35 @@ void TestFrontend::terminalOutputTest()
 
 void TestFrontend::sessionStateTest()
 {
-    const GmcpMessage connected = frontend_messages::makeSessionState(true, true, true, true);
+    frontend_messages::MapIdentity arda;
+    arda.name = QStringLiteral("arda.mm2");
+    arda.rooms = 31000;
+    arda.generation = 7;
+    const GmcpMessage connected = frontend_messages::makeSessionState(true, arda, true, true);
     QCOMPARE(connected.getName().toQByteArray(), QByteArray("MMapper.Session.State"));
     QCOMPARE(payloadOf(connected)["upstream"].toString(), QStringLiteral("connected"));
     QCOMPARE(payloadOf(connected)["mapLoaded"].toBool(), true);
     QCOMPARE(payloadOf(connected)["itemCommands"].toInt(), 3);
 
-    const GmcpMessage offline = frontend_messages::makeSessionState(false, false, false, false);
+    // The map is named, so that a frontend reading an export of its own can tell whether that
+    // is of this map, and whether this map has changed since.
+    QCOMPARE(payloadOf(connected)["mapName"].toString(), QStringLiteral("arda.mm2"));
+    QCOMPARE(payloadOf(connected)["mapRooms"].toInteger(), static_cast<qint64>(31000));
+    QCOMPARE(payloadOf(connected)["mapGeneration"].toInteger(), static_cast<qint64>(7));
+
+    const GmcpMessage offline = frontend_messages::makeSessionState(false,
+                                                                    frontend_messages::MapIdentity{},
+                                                                    false,
+                                                                    false);
     QCOMPARE(payloadOf(offline)["upstream"].toString(), QStringLiteral("disconnected"));
     QCOMPARE(payloadOf(offline)["echo"].toBool(), false);
+
+    // Without a map the fields are still there, empty.
+    QCOMPARE(payloadOf(offline)["mapLoaded"].toBool(), false);
+    QVERIFY(payloadOf(offline)["mapName"].isString());
+    QCOMPARE(payloadOf(offline)["mapName"].toString(), QString{});
+    QCOMPARE(payloadOf(offline)["mapRooms"].toInteger(-1), static_cast<qint64>(0));
+    QCOMPARE(payloadOf(offline)["mapGeneration"].toInteger(-1), static_cast<qint64>(0));
 
     // Only one frontend may drive MMapper's single downstream session; the rest observe it,
     // and each is told which it is.
@@ -299,6 +323,65 @@ void TestFrontend::mapPositionWithoutServerIdTest()
 
     // Then the fingerprint is the key to find the room by, and MUME's id is no part of it.
     QCOMPARE(obj["fingerprint"].toString(), QStringLiteral("a7793e150db4"));
+}
+
+void TestFrontend::mapIdentityTest()
+{
+    mmqt::HideQDebug forThisTest; // Map reports each change it applies.
+    const Map map = makeOneRoomMap(ServerRoomId{812345});
+    FrontendMapIdentity identity;
+    identity.loaded(map, QStringLiteral("/home/someone/maps/arda.mm2"));
+    // The file's name, not where it is.
+    QCOMPARE(identity.get().name, QStringLiteral("arda.mm2"));
+    QCOMPARE(identity.get().rooms, static_cast<qint64>(1));
+    QCOMPARE(identity.get().generation, static_cast<qint64>(0));
+
+    // MapData reports changes that changed nothing, and those do not count: neither the same
+    // map again nor a new one with the same rooms in it.
+    QVERIFY(!identity.changed(map));
+    QVERIFY(!identity.changed(makeOneRoomMap(ServerRoomId{812345})));
+    QCOMPARE(identity.get().generation, static_cast<qint64>(0));
+
+    // A room added counts, and so does taking it away again.
+    ProgressCounter pc;
+    const Change addRoom{room_change_types::AddPermanentRoom{Coordinate{13, -34, 2}}};
+    const Map bigger = map.applySingleChange(pc, addRoom).map;
+    QVERIFY(identity.changed(bigger));
+    QCOMPARE(identity.get().rooms, static_cast<qint64>(2));
+    QCOMPARE(identity.get().generation, static_cast<qint64>(1));
+    QVERIFY(identity.changed(map));
+    QCOMPARE(identity.get().rooms, static_cast<qint64>(1));
+    QCOMPARE(identity.get().generation, static_cast<qint64>(2));
+
+    // A save under another name renames the map, and is not a change to it.
+    QVERIFY(!identity.renamed(QStringLiteral("/home/someone/maps/arda.mm2")));
+    QVERIFY(identity.renamed(QStringLiteral("/tmp/arda-copy.mm2")));
+    QCOMPARE(identity.get().name, QStringLiteral("arda-copy.mm2"));
+    QCOMPARE(identity.get().generation, static_cast<qint64>(2));
+
+    // Loading starts the count again; a new map has no file, so no name.
+    identity.loaded(bigger, QString{});
+    QCOMPARE(identity.get().name, QString{});
+    QCOMPARE(identity.get().rooms, static_cast<qint64>(2));
+    QCOMPARE(identity.get().generation, static_cast<qint64>(0));
+}
+
+void TestFrontend::mapIdentityPacingTest()
+{
+    QCOMPARE(FrontendMapIdentity::ANNOUNCE_INTERVAL_MS, static_cast<int64_t>(1000));
+
+    FrontendMapIdentity identity;
+    // Nothing announced yet: at once.
+    QCOMPARE(identity.announceDelayMs(5000), static_cast<int64_t>(0));
+    identity.announced(5000);
+    // A change within the second waits for the rest of it...
+    QCOMPARE(identity.announceDelayMs(5000), static_cast<int64_t>(1000));
+    QCOMPARE(identity.announceDelayMs(5300), static_cast<int64_t>(700));
+    // ...and one after it goes at once.
+    QCOMPARE(identity.announceDelayMs(6000), static_cast<int64_t>(0));
+    QCOMPARE(identity.announceDelayMs(9000), static_cast<int64_t>(0));
+    identity.announced(9000);
+    QCOMPARE(identity.announceDelayMs(9999), static_cast<int64_t>(1));
 }
 
 void TestFrontend::xmlElementTest()

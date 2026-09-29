@@ -208,7 +208,7 @@ GmcpMessage makeTerminalOutput(const SendToUserSourceEnum source,
 }
 
 GmcpMessage makeSessionState(const bool upstreamConnected,
-                             const bool mapLoaded,
+                             const MapIdentity &map,
                              const bool echo,
                              const bool driving)
 {
@@ -216,7 +216,10 @@ GmcpMessage makeSessionState(const bool upstreamConnected,
     obj["itemCommands"] = 3;
     obj["upstream"] = upstreamConnected ? QStringLiteral("connected")
                                         : QStringLiteral("disconnected");
-    obj["mapLoaded"] = mapLoaded;
+    obj["mapLoaded"] = map.rooms != 0;
+    obj["mapName"] = map.name;
+    obj["mapRooms"] = map.rooms;
+    obj["mapGeneration"] = map.generation;
     obj["echo"] = echo;
     obj["role"] = driving ? QStringLiteral("driving") : QStringLiteral("observing");
     return GmcpMessage{GmcpMessageTypeEnum::MMAPPER_SESSION_STATE, toGmcpJson(obj)};
