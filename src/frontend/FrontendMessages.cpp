@@ -4,6 +4,7 @@
 #include "FrontendMessages.h"
 
 #include "../global/TextUtils.h"
+#include "../map/RoomFingerprint.h"
 #include "../map/coordinate.h"
 #include "../map/mmapper2room.h"
 #include "../map/roomid.h"
@@ -246,6 +247,10 @@ GmcpMessage makeMapPosition(const RoomHandle &room)
     obj["name"] = room.getName().toQString();
     obj["area"] = room.getArea().toQString();
     obj["terrain"] = mmqt::toQStringUtf8(to_string_view(room.getTerrainType()));
+
+    // The same as the XML export's, so that a frontend can find the room in its own export
+    // even when it has no serverId and the export numbers its rooms differently.
+    obj["fingerprint"] = room_fingerprint::compute(room);
 
     const Coordinate &pos = room.getPosition();
     QJsonObject layout;

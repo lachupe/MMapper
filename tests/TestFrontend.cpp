@@ -9,6 +9,7 @@
 #include "../src/global/progresscounter.h"
 #include "../src/map/Map.h"
 #include "../src/map/RawRoom.h"
+#include "../src/map/RoomFingerprint.h"
 #include "../src/map/RoomHandle.h"
 #include "../src/map/coordinate.h"
 #include "../src/map/mmapper2room.h"
@@ -268,6 +269,13 @@ void TestFrontend::mapPositionTest()
     QCOMPARE(obj["area"].toString(), QStringLiteral("The Shire"));
     QCOMPARE(obj["terrain"].toString(), QStringLiteral("FOREST"));
 
+    // The room's fingerprint, the one the XML export writes on it. The room has a name, no
+    // description, terrain FOREST and no exits, so, worked out apart from MMapper:
+    //   printf 'A forest path\n\nFOREST\n\n' | sha256sum
+    //   a7793e150db4f403243b1ae80bdf1d9355d3382bc4533bde2e3b133cf363f8c2  -
+    QCOMPARE(obj["fingerprint"].toString(), QStringLiteral("a7793e150db4"));
+    QCOMPARE(obj["fingerprint"].toString(), room_fingerprint::compute(room));
+
     // Coordinates are published as an explicitly named layout, not as bare fields, so that
     // a renderer is not led to treat them as canonical physical geometry.
     const QJsonObject layout = obj["layout"].toObject();
@@ -288,6 +296,9 @@ void TestFrontend::mapPositionWithoutServerIdTest()
     const QJsonObject obj = payloadOf(frontend_messages::makeMapPosition(room));
     QVERIFY(!obj.contains("serverId"));
     QCOMPARE(obj["externalId"].toInteger(), static_cast<qint64>(1));
+
+    // Then the fingerprint is the key to find the room by, and MUME's id is no part of it.
+    QCOMPARE(obj["fingerprint"].toString(), QStringLiteral("a7793e150db4"));
 }
 
 void TestFrontend::xmlElementTest()

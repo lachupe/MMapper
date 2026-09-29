@@ -68,6 +68,10 @@ NODISCARD GmcpMessage makeError(const QString &code, const QString &message);
 ///   id         A session-local handle. Valid only for this connection; it changes when
 ///              the map is reloaded, so clients must never persist it.
 ///
+/// `fingerprint` is a hash of what the room shows (see RoomFingerprint.h), the same as the
+/// `fingerprint` attribute the XML export writes on the room, so that a frontend can find the
+/// room in its own export when serverId is absent and the export's ids differ from MMapper's.
+///
 /// The layout block is MMapper's classic map grid. It is one possible arrangement of the
 /// room graph, not a metric or canonical 3D embedding: a renderer may use it as a hint,
 /// derive its own spatial layout, or ignore it entirely.
