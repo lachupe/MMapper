@@ -55,6 +55,8 @@ add_library(mm_test STATIC
     ../src/configuration/GroupConfig.h
     ../src/observer/gameobserver.cpp
     ../src/observer/gameobserver.h
+    ../src/parser/GameStateLines.cpp
+    ../src/parser/GameStateLines.h
     ../src/proxy/GmcpMessage.cpp
     ../src/proxy/GmcpMessage.h
 )

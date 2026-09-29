@@ -18,7 +18,9 @@
 #include "../src/map/coordinate.h"
 #include "../src/map/mmapper2room.h"
 #include "../src/map/roomid.h"
+#include "../src/observer/gameobserver.h"
 #include "../src/parser/ContainerLines.h"
+#include "../src/parser/GameStateLines.h"
 #include "../src/parser/ItemLines.h"
 #include "../src/parser/RoomContents.h"
 #include "../src/parser/WeatherLines.h"
@@ -250,6 +252,78 @@ void TestFrontend::sessionStateTest()
     // and each is told which it is.
     QCOMPARE(payloadOf(connected)["role"].toString(), QStringLiteral("driving"));
     QCOMPARE(payloadOf(offline)["role"].toString(), QStringLiteral("observing"));
+}
+
+void TestFrontend::gameStateTest()
+{
+    const auto line = [](const char *const text) {
+        return parseGameStateLine(QString::fromUtf8(text));
+    };
+
+    // MUME's own lines, from the powwow logs. The innkeeper is named, and differs.
+    QVERIFY(line("Erienal stores your stuff in the safe, and helps you into your chamber.")
+            == GameStateEnum::RENTED);
+    QVERIFY(line("Takhr the orkish warden stores your stuff in the safe, and helps you into your "
+                 "chamber.")
+            == GameStateEnum::RENTED);
+    QVERIFY(line("You finish building your camp and crawl into your tent to rest.")
+            == GameStateEnum::RENTED);
+    QVERIFY(line("Goodbye, friend.. Come back soon!") == GameStateEnum::QUIT);
+    // The account menu's prompt, alone at a GO-AHEAD or run into the line after it.
+    QVERIFY(line("Account> ") == GameStateEnum::MENU);
+    QVERIFY(line("Account> Characters in account \"dmitry\"") == GameStateEnum::MENU);
+    QVERIFY(line("By what name do you wish to be known? ") == GameStateEnum::MENU);
+
+    // What only looks like them: the cost of renting, the command, someone's speech.
+    QVERIFY(!line("Renting will cost you 20 gold 15 silver 30 copper per day.").has_value());
+    QVERIFY(!line("You will be able to rent for 1 month.").has_value());
+    QVERIFY(!line("You start making your camp here.").has_value());
+    QVERIFY(!line("Erienal tells you 'I am sorry, but you can't rent now...'").has_value());
+    QVERIFY(!line("Gandalf narrates 'Goodbye, friend.. Come back soon!'").has_value());
+    QVERIFY(!line("Characters in account \"dmitry\"").has_value());
+    QVERIFY(!line("").has_value());
+
+    // The menu after a rent or a quit keeps the rent or the quit.
+    QCOMPARE(nextGameState(GameStateEnum::RENTED, GameStateEnum::MENU), GameStateEnum::RENTED);
+    QCOMPARE(nextGameState(GameStateEnum::QUIT, GameStateEnum::MENU), GameStateEnum::QUIT);
+    QCOMPARE(nextGameState(GameStateEnum::PLAYING, GameStateEnum::MENU), GameStateEnum::MENU);
+    QCOMPARE(nextGameState(GameStateEnum::RENTED, GameStateEnum::PLAYING), GameStateEnum::PLAYING);
+
+    // The observer announces changes only, and connecting starts again from nothing.
+    GameObserver observer;
+    std::vector<GameStateEnum> seen;
+    Signal2Lifetime lifetime;
+    observer.sig2_gameStateChanged.connect(lifetime,
+                                           [&seen](const GameStateEnum s) { seen.push_back(s); });
+    observer.observeConnected();
+    observer.observeGameState(GameStateEnum::MENU);
+    observer.observeGameState(GameStateEnum::PLAYING);
+    observer.observeGameState(GameStateEnum::PLAYING);
+    observer.observeGameState(GameStateEnum::RENTED);
+    observer.observeGameState(GameStateEnum::MENU);
+    QCOMPARE(observer.getGameState(), GameStateEnum::RENTED);
+    QCOMPARE(seen,
+             (std::vector<GameStateEnum>{GameStateEnum::MENU,
+                                         GameStateEnum::PLAYING,
+                                         GameStateEnum::RENTED}));
+    observer.observeDisconnected();
+    QCOMPARE(observer.getGameState(), GameStateEnum::UNKNOWN);
+
+    // Published as `game`, and "unknown" whenever MUME is not there.
+    frontend_messages::MapIdentity map;
+    const auto game = [&map](const bool upstream, const GameStateEnum state) {
+        return payloadOf(
+                   frontend_messages::makeSessionState(upstream, map, true, true, state))["game"]
+            .toString();
+    };
+    QCOMPARE(game(true, GameStateEnum::PLAYING), QStringLiteral("playing"));
+    QCOMPARE(game(true, GameStateEnum::RENTED), QStringLiteral("rented"));
+    QCOMPARE(game(true, GameStateEnum::QUIT), QStringLiteral("quit"));
+    QCOMPARE(game(true, GameStateEnum::MENU), QStringLiteral("menu"));
+    QCOMPARE(game(true, GameStateEnum::UNKNOWN), QStringLiteral("unknown"));
+    QCOMPARE(game(false, GameStateEnum::PLAYING), QStringLiteral("unknown"));
+    QCOMPARE(payloadOf(frontend_messages::makeSessionState(true, map, true, true))["game"].toString(),
+             QStringLiteral("unknown"));
 }
 
 void TestFrontend::inputSubscriptionTest()

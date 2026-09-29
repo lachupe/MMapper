@@ -8,6 +8,7 @@
 #include "../map/RoomHandle.h"
 #include "../parser/CombatLines.h"
 #include "../parser/ContainerLines.h"
+#include "../parser/GameStateLines.h"
 #include "../parser/ItemLines.h"
 #include "../parser/RoomContents.h"
 #include "../parser/SendToUserSourceEnum.h"
@@ -61,10 +62,16 @@ struct NODISCARD MapIdentity final
 /// `mapName`, `mapRooms` and `mapGeneration` name the loaded map, so that a frontend reading
 /// its own export of a map can notice when that is not the map MMapper is using, or no longer
 /// matches it; `mapLoaded` is true when the map has any rooms.
+///
+/// `game` says whether a character is in the game: "playing", "rented" (rent or camp rent),
+/// "quit", "menu" (MUME's account menu or login prompt, no rent or quit seen before it) or
+/// "unknown" (nothing seen yet, or MUME not connected). MUME goes back to its menu after a rent
+/// or a quit with the connection open, so `upstream` alone cannot say the character has gone.
 NODISCARD GmcpMessage makeSessionState(bool upstreamConnected,
                                        const MapIdentity &map,
                                        bool echo,
-                                       bool driving);
+                                       bool driving,
+                                       GameStateEnum game = GameStateEnum::UNKNOWN);
 
 /// MMapper.Session.Error — a protocol error reported to one frontend.
 ///

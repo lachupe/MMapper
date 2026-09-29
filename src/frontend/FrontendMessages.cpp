@@ -210,7 +210,8 @@ GmcpMessage makeTerminalOutput(const SendToUserSourceEnum source,
 GmcpMessage makeSessionState(const bool upstreamConnected,
                              const MapIdentity &map,
                              const bool echo,
-                             const bool driving)
+                             const bool driving,
+                             const GameStateEnum game)
 {
     QJsonObject obj;
     obj["itemCommands"] = 6;
@@ -222,6 +223,9 @@ GmcpMessage makeSessionState(const bool upstreamConnected,
     obj["mapGeneration"] = map.generation;
     obj["echo"] = echo;
     obj["role"] = driving ? QStringLiteral("driving") : QStringLiteral("observing");
+    // Only in the game while MUME is there at all.
+    obj["game"] = mmqt::toQStringUtf8(
+        gameStateName(upstreamConnected ? game : GameStateEnum::UNKNOWN));
     return GmcpMessage{GmcpMessageTypeEnum::MMAPPER_SESSION_STATE, toGmcpJson(obj)};
 }
 

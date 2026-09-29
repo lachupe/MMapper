@@ -80,6 +80,21 @@ FrontendServer::FrontendServer(GameObserver &observer,
         publishSessionState();
     });
 
+    m_observer.sig2_gameStateChanged.connect(m_lifetime, [this](const GameStateEnum state) {
+        if (state != GameStateEnum::PLAYING) {
+            // Rented, quit or at the menu: what MUME said of the character, the room and what
+            // was carried is not the state of anything now, and must not be replayed to a
+            // frontend that connects while MUME waits at its menu.
+            m_replayCache.clear();
+            m_groundState.reset();
+            m_roomContents.reset();
+            m_charEquipment.reset();
+            m_charInventory.reset();
+            m_charContainers.clear();
+        }
+        publishSessionState();
+    });
+
     m_observer.sig2_toggledEchoMode.connect(m_lifetime, [this](const bool echo) {
         m_echo = echo;
         publishSessionState();
@@ -365,7 +380,8 @@ GmcpMessage FrontendServer::sessionStateFor(const Client &client) const
     return frontend_messages::makeSessionState(m_upstreamConnected,
                                                m_mapIdentity.get(),
                                                m_echo,
-                                               m_driver != nullptr && m_driver == client.socket);
+                                               m_driver != nullptr && m_driver == client.socket,
+                                               m_observer.getGameState());
 }
 
 void FrontendServer::handleInput(Client &client, const GmcpMessage &msg)

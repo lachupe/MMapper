@@ -8,6 +8,7 @@
 #include "../map/PromptFlags.h"
 #include "../parser/CombatLines.h"
 #include "../parser/ContainerLines.h"
+#include "../parser/GameStateLines.h"
 #include "../parser/ItemLines.h"
 #include "../parser/RoomContents.h"
 #include "../parser/SendToUserSourceEnum.h"
@@ -85,6 +86,10 @@ public:
     Signal2<ItemEvent> sig2_itemEvent;
     Signal2<ItemCommandObservation> sig2_itemCommand;
     Signal2<bool> sig2_toggledEchoMode;
+    /// Whether a character is in the game changed: a rent, camp rent or quit line, MUME's
+    /// account menu or login prompt, or GMCP Char.Name or Room.Info. See GameStateLines. Not
+    /// emitted on connecting or disconnecting, which set it back to UNKNOWN on their own.
+    Signal2<GameStateEnum> sig2_gameStateChanged;
 
     Signal2<MumeTimeEnum> sig2_timeOfDayChanged;
     Signal2<MumeMoonPhaseEnum> sig2_moonPhaseChanged;
@@ -103,6 +108,7 @@ private:
     MumeSeasonEnum m_season = MumeSeasonEnum::UNKNOWN;
     PromptWeatherEnum m_weather = PromptWeatherEnum::NICE;
     PromptFogEnum m_fog = PromptFogEnum::NO_FOG;
+    GameStateEnum m_gameState = GameStateEnum::UNKNOWN;
 
 public:
     void observeConnected();
@@ -120,6 +126,8 @@ public:
     void observeItemBlock(const ItemBlock &block);
     void observeItemEvent(const ItemEvent &event);
     void observeToggledEchoMode(bool echo);
+    /// What a line or a GMCP message said about the game state; see nextGameState().
+    void observeGameState(GameStateEnum seen);
 
     void observeTimeOfDay(MumeTimeEnum timeOfDay);
     void observeMoonPhase(MumeMoonPhaseEnum moonPhase);
@@ -138,4 +146,5 @@ public:
     NODISCARD MumeSeasonEnum getSeason() const { return m_season; }
     NODISCARD PromptWeatherEnum getWeather() const { return m_weather; }
     NODISCARD PromptFogEnum getFog() const { return m_fog; }
+    NODISCARD GameStateEnum getGameState() const { return m_gameState; }
 };

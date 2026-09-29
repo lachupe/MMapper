@@ -22,6 +22,7 @@ private Q_SLOTS:
     static void relayFilterTest();
     static void terminalOutputTest();
     static void sessionStateTest();
+    static void gameStateTest();
     static void inputSubscriptionTest();
     static void errorTest();
     static void mapPositionTest();

@@ -8,12 +8,24 @@
 
 void GameObserver::observeConnected()
 {
+    m_gameState = GameStateEnum::UNKNOWN;
     sig2_connected.invoke();
 }
 
 void GameObserver::observeDisconnected()
 {
+    m_gameState = GameStateEnum::UNKNOWN;
     sig2_disconnected.invoke();
+}
+
+void GameObserver::observeGameState(const GameStateEnum seen)
+{
+    const GameStateEnum next = nextGameState(m_gameState, seen);
+    if (next == m_gameState) {
+        return;
+    }
+    m_gameState = next;
+    sig2_gameStateChanged.invoke(next);
 }
 
 void GameObserver::observeSentToMud(const QString &input)

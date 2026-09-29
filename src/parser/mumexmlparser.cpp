@@ -21,6 +21,7 @@
 #include "../proxy/GmcpMessage.h"
 #include "../proxy/telnetfilter.h"
 #include "CombatLines.h"
+#include "GameStateLines.h"
 #include "abstractparser.h"
 
 #include <cctype>
@@ -187,6 +188,11 @@ void MumeXmlParser::parse(const TelnetData &data, const bool isGoAhead)
         if (const auto combat = parseCombatLine(plain)) {
             m_ownCastTracker.receiveEvent(*combat);
             m_observer.observeSentToUserCombat(*combat);
+        }
+        // A rent, camp rent or quit, or MUME's menu: the character has left the game with the
+        // connection still open, which nothing in GMCP says. Prompts too, for "Account> ".
+        if (const auto gameState = parseGameStateLine(plain)) {
+            m_observer.observeGameState(*gameState);
         }
         // Replies to the player's container commands: "Ok.", "*click*", a listing. A prompt
         // is not one, and ends the reply being gathered instead (below).
