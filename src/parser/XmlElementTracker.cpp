@@ -147,8 +147,8 @@ void XmlElementTracker::popTop(const bool implicit)
     if (implicit) {
         element.truncated = true;
     }
-    // Complete now, children and all, so its line can be read for the way someone went.
-    element.direction = deriveMovementDirection(element);
+    // Complete now, children and all, so its line can be read for who went and which way.
+    completeMovementElement(element);
 
     if (!m_open.empty()) {
         XmlElement &parent = m_open.back();

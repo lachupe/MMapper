@@ -342,4 +342,94 @@ void TestXmlElements::movementDirectionTest()
     QVERIFY(outer[0].direction.empty());
 }
 
+/// Who moved, as MMapper puts it on every move_in and move_out: MUME's own tag where it names
+/// them, and otherwise a character child read from the line, group label off.
+void TestXmlElements::moverNameTest()
+{
+    const auto only = [](const QString &document) -> XmlElement {
+        XmlElementTracker tracker;
+        feed(tracker, document);
+        std::vector<XmlElement> elements = tracker.take();
+        if (elements.size() != 1) {
+            return XmlElement{};
+        }
+        return std::move(elements[0]);
+    };
+    // The first child's text, when it is a character; what a client matches the line by.
+    const auto moverOf = [&only](const QString &document) -> QString {
+        const XmlElement element = only(document);
+        if (element.children.empty() || element.children[0].tag != XmlTagEnum::CHARACTER
+            || element.children[0].name != "character") {
+            return QStringLiteral("<none>");
+        }
+        return element.children[0].text;
+    };
+
+    // No markup at all: the name is read from the line, and the direction still found.
+    const XmlElement willow = only("<move_out>The willow leaves north.</move_out>");
+    QCOMPARE(willow.children.size(), static_cast<size_t>(1));
+    QCOMPARE(willow.children[0].text, QStringLiteral("The willow"));
+    QCOMPARE(QString::fromStdString(willow.direction), QStringLiteral("north"));
+    QCOMPARE(willow.text, QStringLiteral("The willow leaves north."));
+
+    // Shapes from real sessions, group labels off, a player's stars kept.
+    QCOMPARE(moverOf("<move_out>Ugúlukk (lead) leaves east riding a slavering "
+                     "warg.</move_out>"),
+             QStringLiteral("Ugúlukk"));
+    QCOMPARE(moverOf("<move_in>*Lysithea the Half-Elf* (o) has arrived from the west.</move_in>"),
+             QStringLiteral("*Lysithea the Half-Elf*"));
+    QCOMPARE(moverOf("<move_in>*Stolb the Orc* [stolb] has arrived from above.</move_in>"),
+             QStringLiteral("*Stolb the Orc*"));
+    QCOMPARE(moverOf("<move_out>*Rael the Fallohide Hobbit* leaves east sneaking.</move_out>"),
+             QStringLiteral("*Rael the Fallohide Hobbit*"));
+    QCOMPARE(moverOf("<move_out>A mountain troll (a) leaves west.</move_out>"),
+             QStringLiteral("A mountain troll"));
+    QCOMPARE(moverOf("<move_out>A trout swims east.</move_out>"), QStringLiteral("A trout"));
+    QCOMPARE(moverOf("<move_out>An old man leaves with a sigh.</move_out>"),
+             QStringLiteral("An old man"));
+
+    // A direction word in a name read from the line is left out of the direction's search.
+    const XmlElement wind = only("<move_out>The North Wind leaves south.</move_out>");
+    QCOMPARE(wind.children[0].text, QStringLiteral("The North Wind"));
+    QCOMPARE(QString::fromStdString(wind.direction), QStringLiteral("south"));
+    const XmlElement rider = only(
+        "<move_in>Kohrn (koh) has arrived from the east riding a pack horse.</move_in>");
+    QCOMPARE(rider.children[0].text, QStringLiteral("Kohrn"));
+    QCOMPARE(QString::fromStdString(rider.direction), QStringLiteral("east"));
+
+    // MUME's tag is kept as it is and nothing is added.
+    const XmlElement scholar = only(
+        "<move_in><character>A scholar</character> has arrived from the south.</move_in>");
+    QCOMPARE(scholar.children.size(), static_cast<size_t>(1));
+    QCOMPARE(scholar.children[0].text, QStringLiteral("A scholar"));
+    const XmlElement labelled = only(
+        "<move_out><character>Kohrn</character> (koh) leaves west.</move_out>");
+    QCOMPARE(labelled.children.size(), static_cast<size_t>(1));
+    QCOMPARE(labelled.children[0].text, QStringLiteral("Kohrn"));
+    const XmlElement starred = only("<move_out>*<enemy>an Orc</enemy>* leaves north.</move_out>");
+    QCOMPARE(starred.children.size(), static_cast<size_t>(1));
+    QCOMPARE(starred.children[0].tag, XmlTagEnum::ENEMY);
+    const XmlElement nested = only(
+        "<move_in><character><player>Eastwind</player></character> has arrived from the "
+        "west.</move_in>");
+    QCOMPARE(nested.children.size(), static_cast<size_t>(1));
+
+    // A tagged mount is not the one moving: the rider's name goes first.
+    const XmlElement mounted = only(
+        "<move_out>Kohrn (koh) leaves west riding <character>a pony</character>.</move_out>");
+    QCOMPARE(mounted.children.size(), static_cast<size_t>(2));
+    QCOMPARE(mounted.children[0].text, QStringLiteral("Kohrn"));
+    QCOMPARE(mounted.children[1].text, QStringLiteral("a pony"));
+    QCOMPARE(QString::fromStdString(mounted.direction), QStringLiteral("west"));
+
+    // A line of another shape, and other tags, get nothing.
+    QCOMPARE(moverOf("<move_out>Something vanishes.</move_out>"), QStringLiteral("<none>"));
+    QCOMPARE(moverOf("<tell>Gandalf leaves north.</tell>"), QStringLiteral("<none>"));
+    QCOMPARE(moverOf("<movement dir=north/>"), QStringLiteral("<none>"));
+    XmlElement hit;
+    hit.tag = XmlTagEnum::HIT;
+    hit.text = QStringLiteral("A dirty uruk leaves you bleeding.");
+    QVERIFY(readMoverName(hit).isEmpty());
+}
+
 QTEST_MAIN(TestXmlElements)

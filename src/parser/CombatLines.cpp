@@ -383,6 +383,11 @@ const SpellLine g_spellLines[] = {
 const QRegularExpression g_fleeAttempt{QStringLiteral(
     R"(^(?<w>.+?) panics, (?:and attempts to flee|(?<failed>but can't stop fighting to flee))\.$)")};
 const QRegularExpression g_fleeHeels{QStringLiteral(R"(^You flee head over heels\.$)")};
+// Somebody else's flee that got away, "*a Man* (one) flees head over heels.": seen from the room it
+// names no way, and no "leaves" line follows it. MUME does not write "X flees north." for others;
+// their way out is in the "X leaves north." that follows "X panics, and attempts to flee.", which
+// reaches a client as a move_out element, not here.
+const QRegularExpression g_fleesHeels{QStringLiteral(R"(^(?<w>.+?) flees head over heels\.$)")};
 const QRegularExpression g_fleeDirection{
     QStringLiteral(R"(^You flee (?<dir>north|south|east|west|up|down)\.$)")};
 // The player's flee or escape failing, roots holding the player among them.
@@ -911,6 +916,12 @@ std::optional<CombatEvent> parseCombatLine(const QString &raw)
         CombatEvent event = make(CombatKindEnum::FLEE, line);
         event.phase = CombatPhaseEnum::ATTEMPT;
         event.actor = QStringLiteral("you");
+        return event;
+    }
+    if ((m = g_fleesHeels.match(line)).hasMatch()) {
+        CombatEvent event = make(CombatKindEnum::FLEE, line);
+        event.phase = CombatPhaseEnum::ESCAPED;
+        event.actor = who(m.captured(u"w"));
         return event;
     }
     if ((m = g_fleeDirection.match(line)).hasMatch()) {

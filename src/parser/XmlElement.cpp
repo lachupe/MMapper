@@ -11,6 +11,8 @@
 #include <optional>
 #include <sstream>
 
+#include <QRegularExpression>
+
 namespace {
 
 struct NODISCARD XmlTagName final
@@ -173,6 +175,99 @@ std::string deriveMovementDirection(const XmlElement &element)
     }
     consider();
     return found;
+}
+
+namespace {
+
+// A group label trails a name in parentheses, "Ugúlukk (lead)", or in square brackets,
+// "*Stolb the Orc* [stolb]". The same pattern as CombatLines.cpp's g_label, less the possessive
+// "s" that only a blow's line can carry; not shared, because every target that compiles this file
+// would then have to compile the combat parser as well.
+const QRegularExpression g_groupLabel{
+    QStringLiteral(R"(\s+(?:\([^()]{1,8}\)|\[[^\[\]]{1,12}\])$)")};
+
+// The one who is coming or going: everything before the verb. "X leaves north.", "X leaves east
+// riding a hungry warg.", "X leaves with a sigh.", "X has arrived from the south.", and any other
+// verb that is followed by the way itself, "A trout swims east.". The name is matched as short
+// as it can be, so the rider is taken, not the mount.
+const QRegularExpression g_moverLine{QStringLiteral(
+    R"(^(?<n>.+?) (?:leaves|has arrived|arrives|[a-z]+s (?=(?:north|south|east|west|up|down)\b)))")};
+
+/// The longest a name read out of a line may be. A longer one is a line this does not know, not
+/// a name.
+constexpr qsizetype MAX_MOVER_NAME = 80;
+
+NODISCARD bool namesSomebody(const XmlTagEnum tag)
+{
+    return tag == XmlTagEnum::CHARACTER || tag == XmlTagEnum::PLAYER || tag == XmlTagEnum::ENEMY;
+}
+
+/// The first name inside the element, depth first in document order, as a consumer walking its
+/// children meets it.
+NODISCARD const XmlElement *firstName(const XmlElement &element)
+{
+    for (const XmlElement &child : element.children) {
+        if (namesSomebody(child.tag)) {
+            return &child;
+        }
+        if (const XmlElement *const inner = firstName(child)) {
+            return inner;
+        }
+    }
+    return nullptr;
+}
+
+NODISCARD QString withoutLeadingStar(const QString &text)
+{
+    QString trimmed = text.trimmed();
+    while (trimmed.startsWith(QChar{'*'})) {
+        trimmed.remove(0, 1);
+    }
+    return trimmed;
+}
+
+} // namespace
+
+QString readMoverName(const XmlElement &element)
+{
+    if (element.tag != XmlTagEnum::MOVE_IN && element.tag != XmlTagEnum::MOVE_OUT) {
+        return {};
+    }
+    const QRegularExpressionMatch m = g_moverLine.match(element.text.trimmed());
+    if (!m.hasMatch()) {
+        return {};
+    }
+    QString name = m.captured(u"n");
+    name.remove(g_groupLabel);
+    name = name.trimmed();
+    if (name.length() > MAX_MOVER_NAME) {
+        return {};
+    }
+    return name;
+}
+
+void completeMovementElement(XmlElement &element)
+{
+    if (element.tag == XmlTagEnum::MOVE_IN || element.tag == XmlTagEnum::MOVE_OUT) {
+        // Whether MUME tagged the one the line is about: the first name in it opens the line.
+        // A tagged mount further on ("... riding <character>a warg</character>.") is not them.
+        const XmlElement *const tagged = firstName(element);
+        const bool subjectTagged = tagged != nullptr && !withoutLeadingStar(tagged->text).isEmpty()
+                                   && withoutLeadingStar(element.text)
+                                          .startsWith(withoutLeadingStar(tagged->text));
+        if (!subjectTagged) {
+            const QString name = readMoverName(element);
+            if (!name.isEmpty()) {
+                XmlElement character;
+                character.tag = XmlTagEnum::CHARACTER;
+                character.name = std::string{to_string_view(XmlTagEnum::CHARACTER)};
+                character.text = name;
+                element.children.insert(element.children.begin(), std::move(character));
+            }
+        }
+    }
+    // After the name, so that a name read out of the line is left out of the search too.
+    element.direction = deriveMovementDirection(element);
 }
 
 // Lifted from MumeXmlParser::element(), which built this and then discarded the result.

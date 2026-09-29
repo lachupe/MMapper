@@ -140,6 +140,15 @@ void TestCombatLines::fleeTest()
 
     QCOMPARE(parsed("You flee head over heels.").phase, CombatPhaseEnum::ATTEMPT);
 
+    // Somebody else's flee that got away, seen from the room: no way named, no "leaves" after it.
+    const CombatEvent gone = parsed("*a Man* (one) flees head over heels.");
+    QCOMPARE(gone.kind, CombatKindEnum::FLEE);
+    QCOMPARE(gone.phase, CombatPhaseEnum::ESCAPED);
+    QCOMPARE(gone.actor, QString("*a Man*"));
+    QVERIFY(gone.detail.isEmpty());
+    QCOMPARE(parsed("A mother eagle (Bongo) flees head over heels.").actor,
+             QString("A mother eagle"));
+
     const CombatEvent away = parsed("You flee down.");
     QCOMPARE(away.phase, CombatPhaseEnum::ESCAPED);
     QCOMPARE(away.detail, QString("down"));

@@ -109,6 +109,9 @@ struct NODISCARD XmlElement final
     std::string name;
     XmlAttributes attributes;
     QString text;
+    /// What MUME nested inside, in order. The one exception: a MOVE_IN or MOVE_OUT whose mover
+    /// MUME left untagged gets a CHARACTER child first, read from the line by MMapper (see
+    /// completeMovementElement()).
     std::vector<XmlElement> children;
     /// True when something here was cut short: text past the size limit was discarded, the
     /// element was closed implicitly because MUME never sent its closing tag, or a nested
@@ -118,7 +121,7 @@ struct NODISCARD XmlElement final
     /// For the movement tags only: which way someone went, as a lowercase direction word
     /// ("north" ... "down"), or empty when that cannot be told. For MOVE_IN it is where they
     /// came from and for MOVE_OUT where they went, read out of the line; for MOVEMENT it is
-    /// MUME's own `dir`. Filled in when the element completes; see deriveMovementDirection().
+    /// MUME's own `dir`. Filled in when the element completes; see completeMovementElement().
     std::string direction;
 };
 
@@ -139,6 +142,22 @@ NODISCARD std::string_view to_string_view(XmlCategoryEnum category);
 /// direction's clause). Empty for every other tag, and for a line that names no direction,
 /// such as "An old man leaves with a sigh."
 NODISCARD std::string deriveMovementDirection(const XmlElement &element);
+
+/// Who a MOVE_IN or MOVE_OUT line is about, read from the line: the words before the verb in
+/// "X leaves north.", "X leaves east riding a hungry warg.", "X has arrived from the south.",
+/// "A trout swims east.", with a group label such as "(lead)" or "[stolb]" taken off the end as
+/// CombatLines does. A player's stars stay, as they do in a combat event's names:
+/// "*a Man* (one) leaves west." is "*a Man*". Empty for every other tag and for a line of another
+/// shape.
+NODISCARD QString readMoverName(const XmlElement &element);
+
+/// Finishes a movement element once it is complete, for a consumer that cannot match an unnamed
+/// line to anyone: where MUME did not tag the one who moves -- "The willow leaves north." has no
+/// markup at all -- a CHARACTER child holding readMoverName() is put first among the children, so
+/// that every move_in and move_out a name can be read from names somebody the same way. A name
+/// MUME did tag is left exactly as MUME sent it. Then fills `direction` (deriveMovementDirection()).
+/// Every other tag only has `direction` set, which is empty for them.
+void completeMovementElement(XmlElement &element);
 
 /// Parses the attributes out of a tag body, i.e. what stood between < and > with the tag
 /// name still on the front. MUME's XML is, in its own words, "not very strict": values may
