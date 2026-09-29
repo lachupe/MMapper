@@ -483,4 +483,423 @@ void TestCombatLines::refusedMovesTest()
     }
 }
 
+namespace {
+
+struct NODISCARD BlowCase final
+{
+    const char *line;
+    BlowOutcomeEnum outcome;
+    const char *actor;
+    const char *target;
+    const char *verb;
+    const char *part;
+    const char *detail;
+};
+
+void checkBlows(const std::initializer_list<BlowCase> cases)
+{
+    for (const BlowCase &c : cases) {
+        const CombatEvent e = parsed(c.line);
+        QVERIFY2(e.kind == CombatKindEnum::BLOW, c.line);
+        QVERIFY2(e.outcome == c.outcome, c.line);
+        QCOMPARE(e.actor, QString(c.actor));
+        QCOMPARE(e.target, QString(c.target));
+        QCOMPARE(e.verb, QString(c.verb));
+        QCOMPARE(e.part, QString(c.part));
+        QCOMPARE(e.detail, QString(c.detail));
+    }
+}
+
+} // namespace
+
+void TestCombatLines::animalPartsTest()
+{
+    // Beasts' fore- and hindlegs and -feet, a bat's claws, a clump of roots' tip, a fungus'
+    // crown, a shrub's leaves, a fish's tail fin.
+    const auto H = BlowOutcomeEnum::HIT;
+    checkBlows({
+        {"You pound a demon wolf's left foreleg extremely hard.",
+         H,
+         "you",
+         "a demon wolf",
+         "pound",
+         "left foreleg",
+         ""},
+        {"You pound a demon wolf (buh)'s right hindleg extremely hard and shatter it.",
+         H,
+         "you",
+         "a demon wolf",
+         "pound",
+         "right hindleg",
+         ""},
+        {"You pound a ferocious warg's right hindfoot extremely hard and shatter it.",
+         H,
+         "you",
+         "a ferocious warg",
+         "pound",
+         "right hindfoot",
+         ""},
+        {"You slash a giant rat's right forefoot extremely hard and shatter it.",
+         H,
+         "you",
+         "a giant rat",
+         "slash",
+         "right forefoot",
+         ""},
+        {"You cleave a large bat's left claw extremely hard and shatter it.",
+         H,
+         "you",
+         "a large bat",
+         "cleave",
+         "left claw",
+         ""},
+        {"You pound a clump of roots' tip extremely hard and shatter it.",
+         H,
+         "you",
+         "a clump of roots",
+         "pound",
+         "tip",
+         ""},
+        {"You barely hit a clump of roots' tip and tickle it.",
+         H,
+         "you",
+         "a clump of roots",
+         "hit",
+         "tip",
+         ""},
+        {"You pierce a giant green fungus' crown extremely hard.",
+         H,
+         "you",
+         "a giant green fungus",
+         "pierce",
+         "crown",
+         ""},
+        {"You pound a black fungus' leaves extremely hard and shatter it.",
+         H,
+         "you",
+         "a black fungus",
+         "pound",
+         "leaves",
+         ""},
+        {"You strongly pierce a wild ox's right foreleg.",
+         H,
+         "you",
+         "a wild ox",
+         "pierce",
+         "right foreleg",
+         ""},
+        {"You pierce a large pike's tail fin very hard.",
+         H,
+         "you",
+         "a large pike",
+         "pierce",
+         "tail fin",
+         ""},
+        {"*a Dreadful Orc* cleaves your right thigh and wounds it.",
+         H,
+         "*a Dreadful Orc*",
+         "you",
+         "cleave",
+         "right thigh",
+         ""},
+        {"*a Dreadful Orc* cleaves your waist and wounds it.",
+         H,
+         "*a Dreadful Orc*",
+         "you",
+         "cleave",
+         "waist",
+         ""},
+        {"Harle the Hobbit lightly hits a heap of rooting stems (buh)'s leaves.",
+         H,
+         "Harle the Hobbit",
+         "a heap of rooting stems",
+         "hit",
+         "leaves",
+         ""},
+    });
+    const CombatEvent e = parsed(
+        "You pound a demon wolf's right hindleg extremely hard and shatter it.");
+    QCOMPARE(e.severity, QString("extremely hard"));
+    QCOMPARE(e.effect, QString("shatter"));
+}
+
+void TestCombatLines::damageAnnotationTest()
+{
+    // A damage counter after the full stop, and a group label in square brackets.
+    const CombatEvent e = parsed("*a Dreadful Orc* cleaves your neck and wounds it. [Damage:16]");
+    QCOMPARE(e.kind, CombatKindEnum::BLOW);
+    QCOMPARE(e.target, QString("you"));
+    QCOMPARE(e.part, QString("neck"));
+    QCOMPARE(e.effect, QString("wound"));
+    QCOMPARE(e.text, QString("*a Dreadful Orc* cleaves your neck and wounds it."));
+    const CombatEvent labelled = parsed(
+        "*an Orc* [stolb] lightly cleaves your left shoulder and injures it. [Damage:12]");
+    QCOMPARE(labelled.actor, QString("*an Orc*"));
+    QCOMPARE(labelled.quality, QString("lightly"));
+    QCOMPARE(parsed("You strike *an Orc* [dork] with a magical missile. [Damage:4]").target,
+             QString("*an Orc*"));
+    QCOMPARE(parsed("You stab *Stolb the Orc* [stolb]'s head and shatter it.").target,
+             QString("*Stolb the Orc*"));
+}
+
+void TestCombatLines::defendedTest()
+{
+    const auto P = BlowOutcomeEnum::PARRY;
+    const auto D = BlowOutcomeEnum::DODGE;
+    checkBlows({
+        // The player's blow dodged: "your attempt".
+        {"A shadow (buh) swiftly dodges your attempt to slash it.",
+         D,
+         "you",
+         "A shadow",
+         "slash",
+         "",
+         ""},
+        {"The sage (buh) swiftly dodges your attempt to pierce him.",
+         D,
+         "you",
+         "The sage",
+         "pierce",
+         "",
+         ""},
+        {"*Zubr the Dwarf* swiftly dodges your attempt to pierce him.",
+         D,
+         "you",
+         "*Zubr the Dwarf*",
+         "pierce",
+         "",
+         ""},
+        // A shadow's icy grasp, which names no verb.
+        {"The icy grasp of a shadow blocks your attempt!", P, "you", "a shadow", "", "", "block"},
+        {"The icy grasp of a shadow (buh) blocks your attempt!", P, "you", "a shadow", "", "", "block"},
+        // One MUME port's blocks and parries, which name the part aimed at.
+        {"*a Dreadful Orc* blocks your attempt to stab his head.",
+         P,
+         "you",
+         "*a Dreadful Orc*",
+         "stab",
+         "head",
+         "block"},
+        {"You block *Stolb the Orc* [stolb]s' attempt to cleave your head.",
+         P,
+         "*Stolb the Orc*",
+         "you",
+         "cleave",
+         "head",
+         "block"},
+        {"You block *an Orc* [dork]s' attempt to cleave your left thigh.",
+         P,
+         "*an Orc*",
+         "you",
+         "cleave",
+         "left thigh",
+         "block"},
+        {"You block *a Dreadful Orc*s' attempt to cleave your head.",
+         P,
+         "*a Dreadful Orc*",
+         "you",
+         "cleave",
+         "head",
+         "block"},
+        {"*an Orc* [dork] swiftly parries your attempt to stab his waist.",
+         P,
+         "you",
+         "*an Orc*",
+         "stab",
+         "waist",
+         ""},
+    });
+}
+
+void TestCombatLines::interceptTest()
+{
+    // Whoever steps in is the one the blow met.
+    const auto P = BlowOutcomeEnum::PARRY;
+    checkBlows({
+        {"*Guthol the Dwarf* intercepts your blow.",
+         P,
+         "you",
+         "*Guthol the Dwarf*",
+         "",
+         "",
+         "intercept"},
+        {"You intercept a brown-skinned orc's blow.",
+         P,
+         "a brown-skinned orc",
+         "you",
+         "",
+         "",
+         "intercept"},
+        {"You intercept *Breaux the Orc* (buh)'s blow.",
+         P,
+         "*Breaux the Orc*",
+         "you",
+         "",
+         "",
+         "intercept"},
+        {"Pampa (P) intercepts *a Troll*'s blow.", P, "*a Troll*", "Pampa", "", "", "intercept"},
+        {"Stolb intercepts a swarm of blow-flies' blow.",
+         P,
+         "a swarm of blow-flies",
+         "Stolb",
+         "",
+         "",
+         "intercept"},
+    });
+    // Failing to step in is not a blow: the blow goes where it was aimed, on a line of its own.
+    QVERIFY(!parseCombatLine(QStringLiteral("You fail to intercept *a Troll*'s blow.")).has_value());
+}
+
+void TestCombatLines::approachTest()
+{
+    for (const char *line : {"You approach *a Dwarf* (ff), trying to pound him.",
+                             "You approach *Blomma the Mountain Troll*, trying to pound her.",
+                             "You approach *an Orc* [dork] and attack him."}) {
+        const CombatEvent e = parsed(line);
+        QCOMPARE(e.kind, CombatKindEnum::BLOW);
+        QCOMPARE(e.phase, CombatPhaseEnum::ATTEMPT);
+        QCOMPARE(e.actor, QString("you"));
+    }
+    const CombatEvent pound = parsed("You approach *a Dwarf* (ff), trying to pound him.");
+    QCOMPARE(pound.target, QString("*a Dwarf*"));
+    QCOMPARE(pound.verb, QString("pound"));
+    const CombatEvent theirs = parsed("*a Troll* approaches Pampa (P), trying to pound him.");
+    QCOMPARE(theirs.phase, CombatPhaseEnum::ATTEMPT);
+    QCOMPARE(theirs.actor, QString("*a Troll*"));
+    QCOMPARE(theirs.target, QString("Pampa"));
+    QCOMPARE(parsed("*an Orc* [dork] approaches Grayelf and attacks him.").target,
+             QString("Grayelf"));
+}
+
+void TestCombatLines::triesTailsTest()
+{
+    const auto P = BlowOutcomeEnum::PARRY;
+    const auto D = BlowOutcomeEnum::DODGE;
+    const auto M = BlowOutcomeEnum::MISS;
+    checkBlows({
+        {"A Skeletal Warrior (buh) tries to kick you, but you manage to avoid his foot.",
+         D,
+         "A Skeletal Warrior",
+         "you",
+         "kick",
+         "",
+         ""},
+        {"The bloodwight (buh) tries to bite you, but you dodge swiftly.",
+         D,
+         "The bloodwight",
+         "you",
+         "bite",
+         "",
+         ""},
+        {"Amund tries to pound Mehine, but fails.", M, "Amund", "Mehine", "pound", "", ""},
+        {"A burly orc tries to slash you, but you keep him at bay.",
+         P,
+         "A burly orc",
+         "you",
+         "slash",
+         "",
+         ""},
+        {"A white rat tries to hit Stolb, but he manages to keep him at bay.",
+         P,
+         "A white rat",
+         "Stolb",
+         "hit",
+         "",
+         ""},
+        {"*an Orc* tries to cleave your back but you swiftly parry it.",
+         P,
+         "*an Orc*",
+         "you",
+         "cleave",
+         "back",
+         ""},
+        {"*an Orc* [dork] tries to cleave your waist but you manage to dodge it.",
+         D,
+         "*an Orc*",
+         "you",
+         "cleave",
+         "waist",
+         ""},
+        {"Your attempt to slash a shadow (buh) fails.", M, "you", "a shadow", "slash", "", ""},
+        {"Your attempt to pierce the hardened ranger fails.",
+         M,
+         "you",
+         "the hardened ranger",
+         "pierce",
+         "",
+         ""},
+    });
+}
+
+void TestCombatLines::spellHitTest()
+{
+    const auto H = BlowOutcomeEnum::HIT;
+    checkBlows({
+        {"You burn *an Elf*.", H, "you", "*an Elf*", "burn", "", ""},
+        {"You burn *a Dwarf* (buh).", H, "you", "*a Dwarf*", "burn", "", ""},
+        {"*Rhina the Silvan Elf* burns you.", H, "*Rhina the Silvan Elf*", "you", "burn", "", ""},
+        {"You strike *Stolb the Orc* [stolb] with a magical missile.",
+         H,
+         "you",
+         "*Stolb the Orc*",
+         "strike",
+         "",
+         "magic missile"},
+        {"Vardamir throws a glowing magical missile at *Aralos the Noldorin Elf*.",
+         H,
+         "Vardamir",
+         "*Aralos the Noldorin Elf*",
+         "strike",
+         "",
+         "magic missile"},
+        {"Your magic missile hits Nagash the Dark (buh).",
+         H,
+         "you",
+         "Nagash the Dark",
+         "hit",
+         "",
+         "magic missile"},
+        {"Your fireball completely envelops a shadow (buh) in flames.",
+         H,
+         "you",
+         "a shadow",
+         "burn",
+         "",
+         "fireball"},
+        {"Your fireball hits a shadow with full force, causing an immediate death.",
+         H,
+         "you",
+         "a shadow",
+         "burn",
+         "",
+         "fireball"},
+        {"The sage's fireball completely envelops you, causing infernal pain.",
+         H,
+         "The sage",
+         "you",
+         "burn",
+         "",
+         "fireball"},
+    });
+}
+
+void TestCombatLines::notBlowTest()
+{
+    // Look-alikes of the new forms, all from the logs.
+    for (const char *line :
+         {"A small campfire burns here, its low flames giving off only a little light.",
+          "The bloodwight lets out a long wailing cry which freezes your spine!",
+          "South - The glare of the sun burns your eyes.",
+          "You tip your hat.",
+          "You try to keep a tree-snake at bay, but fail.",
+          "Stolb tries to keep a shade at bay, but fails.",
+          "You strike out into the wall of thornbushes....",
+          "You aim your spell at the ice layer.",
+          "Your power blocking the plank resisted a breaking attempt!",
+          "Wobbler the Man Acolyte [Retired]"}) {
+        const std::optional<CombatEvent> e = parseCombatLine(QString::fromUtf8(line));
+        QVERIFY2(!e.has_value() || e->kind != CombatKindEnum::BLOW, line);
+    }
+}
+
 QTEST_MAIN(TestCombatLines)

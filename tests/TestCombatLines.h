@@ -37,4 +37,12 @@ private Q_SLOTS:
     static void bashVariantsTest();
     static void ownDeathAndConditionTest();
     static void refusedMovesTest();
+    static void animalPartsTest();
+    static void damageAnnotationTest();
+    static void defendedTest();
+    static void interceptTest();
+    static void approachTest();
+    static void triesTailsTest();
+    static void spellHitTest();
+    static void notBlowTest();
 };

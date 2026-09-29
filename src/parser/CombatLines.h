@@ -50,8 +50,13 @@ enum class NODISCARD CombatKindEnum : uint8_t {
     SELF
 };
 
+/// A blow stopped by a block or by somebody stepping in to take it is a PARRY, with detail
+/// "block" or "intercept"; for an intercepted blow the target is the one who stepped in.
 enum class NODISCARD BlowOutcomeEnum : uint8_t { HIT, PARRY, DODGE, MISS };
 
+/// For BLOW: none for a blow that was struck, attempt for the swing that opens a fight ("You
+/// approach X, trying to pound him."), whose outcome is not known yet and is left at HIT; where
+/// it lands is a line of its own.
 /// For FLEE: an attempt seen from outside, a failure, or getting away.
 /// For CAST: started, went off, broken, or refused before it started.
 /// For BASH: none for a bash that landed, dodged for one that missed and floored the one who
@@ -94,9 +99,10 @@ struct NODISCARD CombatEvent final
     QString effect;
     /// FLEE: the direction fled in. CONDITION: the condition. CAST: the words uttered, the
     /// spell named, or why it was refused. REFUSED: why the move was refused, one of the
-    /// words listed at parseCombatLine().
+    /// words listed at parseCombatLine(). BLOW: "block" or "intercept" for how a PARRY was
+    /// made, or the spell that struck ("magic missile", "fireball"); empty otherwise.
     QString detail;
-    /// The line as it was recognised, twiddlers removed.
+    /// The line as it was recognised, twiddlers and a trailing "[Damage:N]" removed.
     QString text;
 };
 

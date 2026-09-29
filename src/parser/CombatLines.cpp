@@ -22,28 +22,80 @@ namespace {
     "hit|slash|pierce|pound|crush|cleave|stab|whip|smite|bite|claw|sting|shoot|strike|punch|" \
     "kick|lash|gore|butt|maul|burn|freeze|shock|ram|trample"
 
+// Where a blow lands, every part the logs name. Beasts have fore- and hindlegs and -feet, bats
+// claws, a clump of roots a tip, a fungus a crown, a shrub leaves. Words MUME also uses for a
+// body outside a blow ("burns your eyes", "freezes your spine") are left out.
 #define PARTS \
     "(?:left |right )?(?:head|neck|body|arm|hand|leg|foot|wing|tail|back|chest|shoulder|face|" \
-    "trunk|root|branch|paw|horn|belly|flank|side)"
+    "trunk|root|branch|paw|horn|belly|flank|side|waist|thigh|fin|foreleg|hindleg|forefoot|" \
+    "hindfoot|claw|tip|crown|leaves|tail fin)"
 
-// A group label trails a name in parentheses: "Kazadoe (K)", "the sage (buh)".
-const QRegularExpression g_label{QStringLiteral(R"(\s+\([^()]{1,8}\)$)")};
+// A group label trails a name in parentheses, "Kazadoe (K)", "the sage (buh)", or in square
+// brackets, "*Stolb the Orc* [stolb]". One MUME port writes a possessive as "[stolb]s'" and
+// "*an Orc*s'", so an s straight after the brackets or the stars comes off with them.
+const QRegularExpression g_label{
+    QStringLiteral(R"((?:\s+(?:\([^()]{1,8}\)|\[[^\[\]]{1,12}\]s?)|(?<=\*)s)$)")};
 // The "twiddlers" prompt option draws \|/- while a delayed action runs, and they end up on the
 // front of whatever line comes next. Backspaces come with them when the terminal is live.
 const QRegularExpression g_twiddlers{QStringLiteral(R"(^[\\|/\-\x08]+(?=[A-Z*]))")};
+// Some players have MUME add a counter after the line's last full stop: "*Hazad* sends you
+// sprawling. [Damage:1]". It is not part of the sentence, and comes off before any pattern below
+// is tried.
+const QRegularExpression g_annotation{QStringLiteral(R"((?<=[.!?])\s+\[[A-Za-z]+: ?-?\d+\]$)")};
 
 const QRegularExpression g_hit{QStringLiteral(
     R"(^(?<a>.+?) (?:(?<q>barely|lightly|strongly|brutally|savagely) )?(?<v>)" VERBS
     R"() (?:(?<you>your)|(?<t>.+?)'s?) (?<p>)" PARTS
     R"()(?: (?<s>(?:very |extremely |incredibly )?hard))?(?: and (?<e>[a-z]+) (?:it|them))?[.!]$)")};
-const QRegularExpression g_parry{QStringLiteral(
-    R"(^(?<a>.+?) (?:tries|try) to (?<v>)" BASE_VERBS
-    R"() (?<t>.+?), but (?:your parry is successful|(?:he|she|it) parries successfully)\.$)")};
-const QRegularExpression g_dodge{
-    QStringLiteral(R"(^(?<d>.+?) swiftly dodges? (?<a>.+?)'s? attempt to (?<v>)" BASE_VERBS
-                   R"() (?:you|him|her|it|them)\.$)")};
+// "<someone> tries to <verb> <someone>, but ...", where the tail says how it ended: a parry, a
+// dodge ("you dodge swiftly", a kick's "you manage to avoid his foot"), or nothing ("but fails").
+// Keeping somebody at bay ("but you keep him at bay", "but she manages to keep it at bay") is
+// a parry.
+// One MUME port names the part aimed at and drops the comma: "*an Orc* tries to cleave your neck
+// but you manage to dodge it."
+const QRegularExpression g_tries{QStringLiteral(
+    R"(^(?<a>.+?) (?:tries|try) to (?<v>)" BASE_VERBS R"() (?:(?<you>you)(?:r (?<p>)" PARTS
+    R"())?|(?<t>.+?)),? but (?:(?<parry>your parry is successful|(?:he|she|it) parries successfully|you swiftly parry it|(?:you|(?:he|she|it) manages to) keep (?:him|her|it|them) at bay)|(?<dodge>you dodge swiftly|you manage to (?:avoid (?:his|her|its) foot|dodge it))|(?<miss>fails?))\.$)")};
+// A blow stopped, told from the defender's side, so the attacker comes second: "You swiftly
+// dodge a dirty uruk's attempt to slash you.", "A shadow swiftly dodges your attempt to pierce
+// it.", and one port's "*a Dreadful Orc* blocks your attempt to stab his head." and "X swiftly
+// parries Y's attempt to cleave his neck."
+const QRegularExpression g_defended{QStringLiteral(
+    R"(^(?:(?<dyou>You)|(?<d>.+?)) (?:swiftly )?(?<how>dodges?|parry|parries|blocks?) (?:(?<ayou>your)|(?<a>.+?)'s?) attempt to (?<v>)" BASE_VERBS
+    R"() (?:you|him|her|it|them|(?:your|his|her|its) (?<p>)" PARTS R"())\.$)")};
+// A shadow's own defence, which names neither verb nor part: "The icy grasp of a shadow blocks
+// your attempt!"
+const QRegularExpression g_grasp{QStringLiteral(
+    R"(^The icy grasp of (?<d>.+?) blocks (?:(?<ayou>your)|(?<a>.+?)'s?) attempt!$)")};
+// Somebody stepping in to take a blow meant for someone else: "Pampa (P) intercepts *a Troll*'s
+// blow.", "*Guthol the Dwarf* intercepts your blow.", "You intercept a burly orc's blow." -- but
+// not "You fail to intercept ...", after which the blow goes where it was aimed.
+const QRegularExpression g_intercept{QStringLiteral(
+    R"(^(?:(?<dyou>You) intercept|(?<d>.+?) intercepts) (?:(?<ayou>your)|(?<a>.+?)'s?) blow\.$)")};
+// The first swing of a fight, closing in: "You approach *a Dwarf* (ff), trying to pound him.",
+// "*a Troll* approaches Pampa (P), trying to pound him.", and one port's "You approach *an Orc*
+// [dork] and attack him." Where it lands, if it does, is a line of its own.
+const QRegularExpression g_approach{QStringLiteral(
+    R"(^(?:(?<ayou>You) approach|(?<a>.+?) approaches) (?:(?<you>you)|(?<t>.+?))(?:, trying to (?<v>)" BASE_VERBS
+    R"() (?:you|him|her|it|them)| and attacks? (?:you|him|her|it|them))\.$)")};
 const QRegularExpression g_miss{
     QStringLiteral(R"(^(?<a>.+?) fails? to (?<v>)" BASE_VERBS R"() (?<t>.+?)\.$)")};
+// One port's own miss: "Your attempt to stab *an Orc* [stolb] fails."
+const QRegularExpression g_yourMiss{
+    QStringLiteral(R"(^Your attempt to (?<v>)" BASE_VERBS R"() (?<t>.+?) fails\.$)")};
+
+// Attack spells that land, in the forms that name both sides: burning hands ("You burn *an
+// Elf*.", "*an Elf* burns you."; somebody else's reads like "A small campfire burns here." and is
+// left alone), magic missile and fireball ("Your fireball hits a shadow with full force, causing
+// an immediate death.").
+const QRegularExpression g_burn{
+    QStringLiteral(R"(^(?:(?<ayou>You) burn (?!your )(?<t>.+?)|(?<a>.+?) burns (?<you>you))\.$)")};
+const QRegularExpression g_missileStrike{
+    QStringLiteral(R"(^You strike (?<t>.+?) with a magical missile\.$)")};
+const QRegularExpression g_missileThrown{QStringLiteral(
+    R"(^(?<a>.+?) throws a glowing magical missile at (?:(?<you>you)|(?<t>.+?))\.$)")};
+const QRegularExpression g_spellHit{QStringLiteral(
+    R"(^(?:(?<ayou>Your)|(?<a>.+?)'s?) (?<sp>magic missile|fireball) (?:hits|completely envelops) (?:(?<you>you)|(?<t>.+?))(?: in flames|, causing infernal pain| with full force, causing an immediate death)?\.$)")};
 
 const QRegularExpression g_fleeAttempt{
     QStringLiteral(R"(^(?<w>.+?) panics, and attempts to flee\.$)")};
@@ -186,23 +238,61 @@ NODISCARD CombatEvent make(const CombatKindEnum kind, const QString &text)
     return event;
 }
 
+/// One side of a blow from a pattern that has a group for the player ("you", "your") beside the
+/// group for a name: "you" when the first matched, otherwise the name.
+NODISCARD QString side(const QRegularExpressionMatch &m,
+                       const QStringView you,
+                       const QStringView name)
+{
+    return m.captured(you).isEmpty() ? who(m.captured(name)) : QStringLiteral("you");
+}
+
+NODISCARD CombatEvent blow(const BlowOutcomeEnum outcome,
+                           const QString &line,
+                           const QString &actor,
+                           const QString &target)
+{
+    CombatEvent event = make(CombatKindEnum::BLOW, line);
+    event.outcome = outcome;
+    event.actor = actor;
+    event.target = target;
+    return event;
+}
+
 } // namespace
 
 std::optional<CombatEvent> parseCombatLine(const QString &raw)
 {
     QString line = raw.trimmed();
     line.remove(g_twiddlers);
+    line.remove(g_annotation);
     if (line.isEmpty()) {
         return std::nullopt;
     }
 
     QRegularExpressionMatch m;
 
+    if ((m = g_defended.match(line)).hasMatch()) {
+        // Told from the defender's side: "You swiftly dodge X's attempt". Tried before a hit,
+        // which "You block X's attempt to cleave your head." would otherwise read as.
+        const QString how = m.captured(u"how");
+        const bool dodged = how.startsWith(QLatin1String("dodge"));
+        CombatEvent event = blow(dodged ? BlowOutcomeEnum::DODGE : BlowOutcomeEnum::PARRY,
+                                 line,
+                                 side(m, u"ayou", u"a"),
+                                 side(m, u"dyou", u"d"));
+        event.verb = m.captured(u"v");
+        event.part = m.captured(u"p");
+        if (how.startsWith(QLatin1String("block"))) {
+            event.detail = QStringLiteral("block");
+        }
+        return event;
+    }
     if ((m = g_hit.match(line)).hasMatch()) {
-        CombatEvent event = make(CombatKindEnum::BLOW, line);
-        event.outcome = BlowOutcomeEnum::HIT;
-        event.actor = who(m.captured(u"a"));
-        event.target = m.captured(u"you").isEmpty() ? who(m.captured(u"t")) : QStringLiteral("you");
+        CombatEvent event = blow(BlowOutcomeEnum::HIT,
+                                 line,
+                                 who(m.captured(u"a")),
+                                 side(m, u"you", u"t"));
         event.quality = m.captured(u"q");
         event.verb = base(m.captured(u"v"));
         event.part = m.captured(u"p");
@@ -210,21 +300,83 @@ std::optional<CombatEvent> parseCombatLine(const QString &raw)
         event.effect = base(m.captured(u"e"));
         return event;
     }
-    if ((m = g_parry.match(line)).hasMatch()) {
-        CombatEvent event = make(CombatKindEnum::BLOW, line);
-        event.outcome = BlowOutcomeEnum::PARRY;
-        event.actor = who(m.captured(u"a"));
-        event.target = who(m.captured(u"t"));
+    if ((m = g_tries.match(line)).hasMatch()) {
+        const BlowOutcomeEnum outcome = !m.captured(u"parry").isEmpty()   ? BlowOutcomeEnum::PARRY
+                                        : !m.captured(u"dodge").isEmpty() ? BlowOutcomeEnum::DODGE
+                                                                          : BlowOutcomeEnum::MISS;
+        CombatEvent event = blow(outcome, line, who(m.captured(u"a")), side(m, u"you", u"t"));
+        event.verb = m.captured(u"v");
+        event.part = m.captured(u"p");
+        return event;
+    }
+    if ((m = g_grasp.match(line)).hasMatch()) {
+        CombatEvent event = blow(BlowOutcomeEnum::PARRY,
+                                 line,
+                                 side(m, u"ayou", u"a"),
+                                 who(m.captured(u"d")));
+        event.detail = QStringLiteral("block");
+        return event;
+    }
+    if ((m = g_intercept.match(line)).hasMatch()) {
+        // The one who stepped in is the one the blow met.
+        CombatEvent event = blow(BlowOutcomeEnum::PARRY,
+                                 line,
+                                 side(m, u"ayou", u"a"),
+                                 side(m, u"dyou", u"d"));
+        event.detail = QStringLiteral("intercept");
+        return event;
+    }
+    if ((m = g_approach.match(line)).hasMatch()) {
+        CombatEvent event = blow(BlowOutcomeEnum::HIT,
+                                 line,
+                                 side(m, u"ayou", u"a"),
+                                 side(m, u"you", u"t"));
+        event.phase = CombatPhaseEnum::ATTEMPT;
         event.verb = m.captured(u"v");
         return event;
     }
-    if ((m = g_dodge.match(line)).hasMatch()) {
-        CombatEvent event = make(CombatKindEnum::BLOW, line);
-        event.outcome = BlowOutcomeEnum::DODGE;
-        // The line is told from the defender's side: "You swiftly dodge X's attempt".
-        event.actor = who(m.captured(u"a"));
-        event.target = who(m.captured(u"d"));
+    if ((m = g_yourMiss.match(line)).hasMatch()) {
+        CombatEvent event = blow(BlowOutcomeEnum::MISS,
+                                 line,
+                                 QStringLiteral("you"),
+                                 who(m.captured(u"t")));
         event.verb = m.captured(u"v");
+        return event;
+    }
+    if ((m = g_burn.match(line)).hasMatch()) {
+        CombatEvent event = blow(BlowOutcomeEnum::HIT,
+                                 line,
+                                 side(m, u"ayou", u"a"),
+                                 side(m, u"you", u"t"));
+        event.verb = QStringLiteral("burn");
+        return event;
+    }
+    if ((m = g_missileStrike.match(line)).hasMatch()) {
+        CombatEvent event = blow(BlowOutcomeEnum::HIT,
+                                 line,
+                                 QStringLiteral("you"),
+                                 who(m.captured(u"t")));
+        event.verb = QStringLiteral("strike");
+        event.detail = QStringLiteral("magic missile");
+        return event;
+    }
+    if ((m = g_missileThrown.match(line)).hasMatch()) {
+        CombatEvent event = blow(BlowOutcomeEnum::HIT,
+                                 line,
+                                 who(m.captured(u"a")),
+                                 side(m, u"you", u"t"));
+        event.verb = QStringLiteral("strike");
+        event.detail = QStringLiteral("magic missile");
+        return event;
+    }
+    if ((m = g_spellHit.match(line)).hasMatch()) {
+        CombatEvent event = blow(BlowOutcomeEnum::HIT,
+                                 line,
+                                 side(m, u"ayou", u"a"),
+                                 side(m, u"you", u"t"));
+        event.detail = m.captured(u"sp");
+        event.verb = event.detail == QStringLiteral("fireball") ? QStringLiteral("burn")
+                                                                : QStringLiteral("hit");
         return event;
     }
     if ((m = g_fleeAttempt.match(line)).hasMatch()) {
@@ -395,10 +547,10 @@ std::optional<CombatEvent> parseCombatLine(const QString &raw)
     // Last, because its shape -- "<someone> fails to <verb> <someone>." -- is the loosest, and
     // any line that fits a stricter one above is better read that way.
     if ((m = g_miss.match(line)).hasMatch()) {
-        CombatEvent event = make(CombatKindEnum::BLOW, line);
-        event.outcome = BlowOutcomeEnum::MISS;
-        event.actor = who(m.captured(u"a"));
-        event.target = who(m.captured(u"t"));
+        CombatEvent event = blow(BlowOutcomeEnum::MISS,
+                                 line,
+                                 who(m.captured(u"a")),
+                                 who(m.captured(u"t")));
         event.verb = m.captured(u"v");
         return event;
     }
