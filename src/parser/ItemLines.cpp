@@ -101,7 +101,7 @@ const QRegularExpression g_conditionWords{QStringLiteral(R"(^[a-z][a-z ,.-]*$)")
 const QRegularExpression g_using{QStringLiteral(R"(^([A-Z*].*) is using:$)")};
 // "backpack (used) :", "pouch (carried) :", "corpse (here) :", "the corpse of *an Elf* (here):".
 const QRegularExpression g_container{QStringLiteral(
-    R"(^(?:In your )?([a-z*][^()]*?) \((used|carried|here|worn(?: [^()]*)?)\) ?:$)")};
+    R"(^(?:In your )?([a-z*][^()]*?) \((used|carried|in inventory|here|on ground|on the ground|held|wielded|worn(?: [^()]*)?)\) ?:$)")};
 const QRegularExpression g_isClosed{QStringLiteral(R"(^(?:The|An?) (.+) is closed\.$)")};
 
 // Replies of one line.
@@ -570,9 +570,23 @@ std::vector<ItemBlock> ItemBlockTracker::receiveLine(const QString &line)
     } else if (const auto header = g_container.match(text); header.hasMatch()) {
         ItemBlock block;
         block.kind = K::CONTAINER;
-        block.keyword = header.captured(1);
+        block.keyword = text.startsWith(QStringLiteral("In your "))
+                            ? containerKeyword(header.captured(1))
+                            : header.captured(1);
+        if (block.keyword.isEmpty()) {
+            block.keyword = header.captured(1);
+        }
         block.where = header.captured(2).startsWith(QStringLiteral("worn")) ? QStringLiteral("used")
                                                                             : header.captured(2);
+        if (block.where == QStringLiteral("held") || block.where == QStringLiteral("wielded")) {
+            block.where = QStringLiteral("used");
+        } else if (block.where == QStringLiteral("on ground")
+                   || block.where == QStringLiteral("on the ground")) {
+            block.where = QStringLiteral("here");
+        }
+        if (block.where == QStringLiteral("in inventory")) {
+            block.where = QStringLiteral("carried");
+        }
         if (m_look.has_value() && namesContainer(m_look->word, block.keyword)) {
             block.target = m_look->target;
             block.listingMode = m_look->listingMode;
@@ -675,21 +689,22 @@ std::optional<ItemCommandObservation> ItemCommandTracker::receiveCommand(const Q
     }
     const QString command = trimmed.simplified();
     const QString verb = command.section(QLatin1Char(' '), 0, 0).toLower();
-    const QStringList verbs{QStringLiteral("get"),
-                            QStringLiteral("put"),
-                            QStringLiteral("drop"),
-                            QStringLiteral("give"),
-                            QStringLiteral("wear"),
-                            QStringLiteral("remove"),
-                            QStringLiteral("wield"),
-                            QStringLiteral("hold"),
-                            QStringLiteral("light"),
-                            QStringLiteral("equipment"),
-                            QStringLiteral("inventory"),
-                            QStringLiteral("look"),
-                            QStringLiteral("examine"),
-                            QStringLiteral("open"),
-                            QStringLiteral("close")};
+    const QStringList verbs{QStringLiteral("get"),       QStringLiteral("put"),
+                            QStringLiteral("drop"),      QStringLiteral("give"),
+                            QStringLiteral("wear"),      QStringLiteral("remove"),
+                            QStringLiteral("wield"),     QStringLiteral("hold"),
+                            QStringLiteral("light"),     QStringLiteral("equipment"),
+                            QStringLiteral("inventory"), QStringLiteral("look"),
+                            QStringLiteral("examine"),   QStringLiteral("open"),
+                            QStringLiteral("close"),     QStringLiteral("use"),
+                            QStringLiteral("eat"),       QStringLiteral("taste"),
+                            QStringLiteral("drink"),     QStringLiteral("sip"),
+                            QStringLiteral("butcher"),   QStringLiteral("scalp"),
+                            QStringLiteral("cook"),      QStringLiteral("read"),
+                            QStringLiteral("consider"),  QStringLiteral("light"),
+                            QStringLiteral("snuff"),     QStringLiteral("fill"),
+                            QStringLiteral("lock"),      QStringLiteral("unlock"),
+                            QStringLiteral("pour")};
     if (!verbs.contains(verb) || m_pending.size() >= 64) {
         return std::nullopt;
     }
@@ -756,6 +771,17 @@ void ItemCommandTracker::receiveLine(const QString &line)
         return;
     }
     auto &pending = m_pending.front();
+    // Only direct first-person result evidence counts; starting a delayed task is not success.
+    const bool consumed = (pending.action == QStringLiteral("eat")
+                           && text.startsWith(QStringLiteral("You eat ")))
+                          || (pending.action == QStringLiteral("drink")
+                              && text.startsWith(QStringLiteral("You drink ")));
+    const bool butchered = pending.action == QStringLiteral("butcher")
+                           && text.startsWith(QStringLiteral("You produce "));
+    if (consumed || butchered) {
+        ++pending.successes;
+        return;
+    }
     const bool opening = pending.action == QStringLiteral("open")
                          || pending.action == QStringLiteral("close");
     if (opening

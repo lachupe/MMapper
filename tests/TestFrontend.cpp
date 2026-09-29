@@ -224,7 +224,7 @@ void TestFrontend::sessionStateTest()
     QCOMPARE(connected.getName().toQByteArray(), QByteArray("MMapper.Session.State"));
     QCOMPARE(payloadOf(connected)["upstream"].toString(), QStringLiteral("connected"));
     QCOMPARE(payloadOf(connected)["mapLoaded"].toBool(), true);
-    QCOMPARE(payloadOf(connected)["itemCommands"].toInt(), 3);
+    QCOMPARE(payloadOf(connected)["itemCommands"].toInt(), 6);
 
     // The map is named, so that a frontend reading an export of its own can tell whether that
     // is of this map, and whether this map has changed since.

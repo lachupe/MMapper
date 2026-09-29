@@ -213,7 +213,7 @@ GmcpMessage makeSessionState(const bool upstreamConnected,
                              const bool driving)
 {
     QJsonObject obj;
-    obj["itemCommands"] = 3;
+    obj["itemCommands"] = 6;
     obj["upstream"] = upstreamConnected ? QStringLiteral("connected")
                                         : QStringLiteral("disconnected");
     obj["mapLoaded"] = map.rooms != 0;

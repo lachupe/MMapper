@@ -587,6 +587,7 @@ void TestItemLines::itemEventTest()
     QCOMPARE(e.action, A::RECEIVE);
     QCOMPARE(e.item, QStringLiteral("a red ruby"));
     QCOMPARE(e.other, QStringLiteral("Stolb"));
+    QVERIFY(!parseItemEvent(QStringLiteral("Stolb says 'Someone gives you a ruby.'")).has_value());
 
     // Colour and twiddlers come off.
     e = eventOf(QStringLiteral("\x1b[0m|/-You drop the key.\x1b[0m"));
@@ -748,6 +749,57 @@ void TestItemLines::commandObservationTest()
 
 void TestItemLines::queryAndTimeoutTest()
 {
+    for (const QString &verb : {QStringLiteral("eat"),
+                                QStringLiteral("taste"),
+                                QStringLiteral("drink"),
+                                QStringLiteral("sip"),
+                                QStringLiteral("butcher"),
+                                QStringLiteral("scalp"),
+                                QStringLiteral("cook"),
+                                QStringLiteral("read"),
+                                QStringLiteral("consider"),
+                                QStringLiteral("light"),
+                                QStringLiteral("snuff"),
+                                QStringLiteral("fill"),
+                                QStringLiteral("lock"),
+                                QStringLiteral("unlock")}) {
+        ItemCommandTracker action;
+        QVERIFY(action.receiveCommand(verb + QStringLiteral(" inventory.item")).has_value());
+        action.receiveLine(QStringLiteral("Unrecognised server wording."));
+        QCOMPARE(action.finish(true).front().status, QStringLiteral("unknown"));
+    }
+    ItemCommandTracker butcher;
+    std::ignore = butcher.receiveCommand(QStringLiteral("butcher room.corpse"));
+    butcher.receiveLine(QStringLiteral("You start butchering the corpse."));
+    QCOMPARE(butcher.finish(true).front().status, QStringLiteral("unknown"));
+    std::ignore = butcher.receiveCommand(QStringLiteral("butcher room.corpse"));
+    butcher.receiveLine(QStringLiteral("You produce a short, moist tail."));
+    QCOMPARE(butcher.finish(true).front().status, QStringLiteral("observed"));
+    ItemCommandTracker eat;
+    std::ignore = eat.receiveCommand(QStringLiteral("eat inventory.bread"));
+    eat.receiveLine(QStringLiteral("You eat a loaf of bread."));
+    QCOMPARE(eat.finish(true).front().status, QStringLiteral("observed"));
+    std::ignore = eat.receiveCommand(QStringLiteral("drink inventory.skin"));
+    std::ignore = eat.receiveCommand(QStringLiteral("look"));
+    eat.receiveLine(QStringLiteral("You drink the water."));
+    QCOMPARE(eat.finish(true).front().status, QStringLiteral("ambiguous"));
+    ItemCommandTracker pour;
+    QVERIFY(pour.receiveCommand(QStringLiteral("pour water inventory.flask")).has_value());
+    pour.receiveLine(QStringLiteral("Unknown liquid-transfer wording."));
+    QCOMPARE(pour.finish(true).front().status, QStringLiteral("unknown"));
+    // A gift received while observing another command is not evidence that it succeeded.
+    std::ignore = pour.receiveCommand(QStringLiteral("pour water inventory.flask"));
+    pour.receiveEvent(eventOf(QStringLiteral("Zhuk gives you a reinforced oak staff.")));
+    QCOMPARE(pour.finish(true).front().status, QStringLiteral("unknown"));
+    ItemCommandTracker use;
+    const auto pendingUse = use.receiveCommand(QStringLiteral("use equipment.whetstone"));
+    QVERIFY(pendingUse.has_value());
+    use.receiveLine(QStringLiteral("You must hold it first."));
+    const auto useResult = use.finish(true);
+    QCOMPARE(useResult.front().status, QStringLiteral("unknown"));
+    QCOMPARE(useResult.front().text.front(), QStringLiteral("You must hold it first."));
+    // Arbitrary use prose is diagnostic evidence, never assumed success.
+
     const auto across = eventOf(QStringLiteral("You put a leather baldric across your shoulder."));
     QCOMPARE(across.action, ItemActionEnum::WEAR);
     QCOMPARE(across.slot, QStringLiteral("across_back"));
@@ -797,6 +849,35 @@ void TestItemLines::queryAndTimeoutTest()
 
 void TestItemLines::examineStacksTest()
 {
+    for (const auto &name : {QStringLiteral("satchel"),
+                             QStringLiteral("haversack"),
+                             QStringLiteral("sable"),
+                             QStringLiteral("wallet"),
+                             QStringLiteral("sheath"),
+                             QStringLiteral("keyring"),
+                             QStringLiteral("moneybag"),
+                             QStringLiteral("web")}) {
+        ItemBlockTracker named;
+        named.receiveCommand(QStringLiteral("examine inventory.") + name);
+        const auto listed = feed(named,
+                                 {QStringLiteral("In your silvan %1 (in inventory):").arg(name),
+                                  QStringLiteral("a map of Bree")});
+        QCOMPARE(listed.size(), size_t{1});
+        QCOMPARE(listed.front().target, QStringLiteral("inventory.") + name);
+        QCOMPARE(listed.front().where, QStringLiteral("carried"));
+    }
+    for (const auto &location : {QStringLiteral("held"),
+                                 QStringLiteral("worn on back"),
+                                 QStringLiteral("worn across back"),
+                                 QStringLiteral("worn on belt")}) {
+        ItemBlockTracker located;
+        located.receiveCommand(QStringLiteral("examine equipment.satchel"));
+        const auto listed = feed(located,
+                                 {QStringLiteral("In your silvan satchel (%1):").arg(location),
+                                  QStringLiteral("a map of Bree")});
+        QCOMPARE(listed.front().target, QStringLiteral("equipment.satchel"));
+        QCOMPARE(listed.front().where, QStringLiteral("used"));
+    }
     ItemBlockTracker tracker;
     tracker.receiveCommand(QStringLiteral("examine equipment.backpack"));
     auto blocks = feed(tracker,
@@ -810,6 +891,16 @@ void TestItemLines::examineStacksTest()
     QCOMPARE(blocks.front().listingMode, QStringLiteral("separate"));
     QCOMPARE(blocks.front().items.size(), size_t{3});
     QCOMPARE(blocks.front().items.at(2).count, 1);
+    tracker.receiveCommand(QStringLiteral("examine inventory.sack"));
+    blocks = feed(tracker,
+                  {QStringLiteral("In your large sack (in inventory):"),
+                   QStringLiteral("a map of Bree")});
+    QCOMPARE(blocks.size(), size_t{1});
+    QCOMPARE(blocks.front().target, QStringLiteral("inventory.sack"));
+    QCOMPARE(blocks.front().keyword, QStringLiteral("sack"));
+    QCOMPARE(blocks.front().where, QStringLiteral("carried"));
+    QCOMPARE(blocks.front().listingMode, QStringLiteral("separate"));
+    QCOMPARE(blocks.front().items.size(), size_t{1});
     tracker.receiveCommand(QStringLiteral("look in equipment.backpack"));
     blocks = feed(tracker,
                   {QStringLiteral("In your backpack (worn on back):"),
