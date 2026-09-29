@@ -39,29 +39,40 @@ enum class NODISCARD CombatKindEnum : uint8_t {
     BASH,
     /// stabbed in the back by somebody who was not visible until then
     BACKSTAB,
-    /// a condition line: incapacitated, mortally wounded, stunned
+    /// a condition line: incapacitated, mortally wounded, stunned; and a harmful state landing
+    /// on somebody: blind, poisoned, bleeding, entangled (its end, where MUME tells it, is an
+    /// AFFECT down with the same detail)
     CONDITION,
     /// "is dead! R.I.P.", and the player's own "You are dead! Sorry..."
     DEATH,
     /// a delayed action starting, going off, being broken, or refused before it began
     CAST,
     /// the player's own state changing in a way the prompt may not show: stunned, sleepy,
-    /// standing up again
-    SELF
+    /// standing up again, falling
+    SELF,
+    /// a spell or other lasting effect on somebody taking hold, wearing off or being renewed
+    /// (armour, shield, sanctuary, bless, strength, ...), or a heal landing; the one it is on
+    /// is the actor, and the effect is the detail
+    AFFECT
 };
 
 /// A blow stopped by a block or by somebody stepping in to take it is a PARRY, with detail
-/// "block" or "intercept"; for an intercepted blow the target is the one who stepped in.
+/// "block" or "intercept"; for an intercepted blow the target is the one who stepped in. A blow
+/// a shimmering tunic turned aside is a DODGE with detail "shimmer".
 enum class NODISCARD BlowOutcomeEnum : uint8_t { HIT, PARRY, DODGE, MISS };
 
 /// For BLOW: none for a blow that was struck, attempt for the swing that opens a fight ("You
-/// approach X, trying to pound him."), whose outcome is not known yet and is left at HIT; where
-/// it lands is a line of its own.
-/// For FLEE: an attempt seen from outside, a failure, or getting away.
-/// For CAST: started, went off, broken, or refused before it started.
+/// approach X, trying to pound him.", "X quickly approaches, trying to hit you.") or a called
+/// shot ("X strikes for a weakness in your armour!"), whose outcome is not known yet and is left
+/// at HIT; where it lands is a line of its own. An opening that was held off or turned aside
+/// keeps attempt with its outcome, PARRY or DODGE.
+/// For FLEE: an attempt, a failure, or getting away, the player's or anybody's.
+/// For CAST: started, went off, broken (a backfire too), or refused before it started.
 /// For BASH: none for a bash that landed, dodged for one that missed and floored the one who
-/// tried it, recovered for the player getting over one.
-/// For SELF: stunned, sleepy, stood.
+/// tried it, recovered for somebody getting over one.
+/// For SELF: stunned, sleepy, stood, fell.
+/// For AFFECT: up when it takes hold (a heal too), down when it wears off, refresh when it is
+/// renewed while still on.
 enum class NODISCARD CombatPhaseEnum : uint8_t {
     NONE,
     ATTEMPT,
@@ -75,7 +86,11 @@ enum class NODISCARD CombatPhaseEnum : uint8_t {
     STOOD,
     REFUSED,
     DODGED,
-    RECOVERED
+    RECOVERED,
+    FELL,
+    UP,
+    DOWN,
+    REFRESH
 };
 
 struct NODISCARD CombatEvent final
@@ -95,12 +110,15 @@ struct NODISCARD CombatEvent final
     QString quality;
     /// After the part: "hard", "very hard", "extremely hard".
     QString severity;
-    /// Base form: "shatter", "tickle".
+    /// Base form: "shatter", "tickle", "fragment". For a blow a tunic turned aside, the tunic
+    /// as MUME named it: "ebony tunic", "tunic".
     QString effect;
     /// FLEE: the direction fled in. CONDITION: the condition. CAST: the words uttered, the
-    /// spell named, or why it was refused. REFUSED: why the move was refused, one of the
-    /// words listed at parseCombatLine(). BLOW: "block" or "intercept" for how a PARRY was
-    /// made, or the spell that struck ("magic missile", "fireball"); empty otherwise.
+    /// spell named, why it was refused, "stored" for a stored spell recalled, "backfire".
+    /// REFUSED: why the move was refused, one of the words listed at parseCombatLine(). BLOW:
+    /// "block" or "intercept" for how a PARRY was made, "shimmer" for a tunic's DODGE,
+    /// "keep-at-bay", "armour-gap" or "fumble", or the spell that struck ("magic missile",
+    /// "lightning bolt", ...); empty otherwise. AFFECT: the effect ("armour", "heal", ...).
     QString detail;
     /// The line as it was recognised, twiddlers and a trailing "[Damage:N]" removed.
     QString text;

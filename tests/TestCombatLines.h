@@ -45,4 +45,15 @@ private Q_SLOTS:
     static void triesTailsTest();
     static void spellHitTest();
     static void notBlowTest();
+    static void tunicTest();
+    static void openingsTest();
+    static void blowVariantsTest();
+    static void fleeVariantsTest();
+    static void bashRecoveredTest();
+    static void castVariantsTest();
+    static void attackSpellTest();
+    static void fellTest();
+    static void affectTest();
+    static void harmfulConditionTest();
+    static void notFix16Test();
 };

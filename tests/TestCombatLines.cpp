@@ -249,7 +249,7 @@ void TestCombatLines::notCombatTest()
                              "You follow Kazadoe.",
                              "An orc of the Ohurk-uai stands here, cursing and grumbling.",
                              "The guard fails to notice you.",
-                             "-\\|/-\\|/A blue transparent wall slowly appears around you.",
+                             "|/-\\|/-\\|/Ok.",
                              ""}) {
         QVERIFY2(!parseCombatLine(QString::fromUtf8(line)).has_value(), line);
     }
@@ -835,9 +835,24 @@ void TestCombatLines::spellHitTest()
 {
     const auto H = BlowOutcomeEnum::HIT;
     checkBlows({
-        {"You burn *an Elf*.", H, "you", "*an Elf*", "burn", "", ""},
-        {"You burn *a Dwarf* (buh).", H, "you", "*a Dwarf*", "burn", "", ""},
-        {"*Rhina the Silvan Elf* burns you.", H, "*Rhina the Silvan Elf*", "you", "burn", "", ""},
+        {"You burn *an Elf*.", H, "you", "*an Elf*", "burn", "", "burning hands"},
+        {"You burn *a Dwarf* (buh).", H, "you", "*a Dwarf*", "burn", "", "burning hands"},
+        {"*Rhina the Silvan Elf* burns you.",
+         H,
+         "*Rhina the Silvan Elf*",
+         "you",
+         "burn",
+         "",
+         "burning hands"},
+        // Between two others, now that the things MUME says burn are kept out.
+        {"Auluua (Au) burns *Thralk the Orc*.",
+         H,
+         "Auluua",
+         "*Thralk the Orc*",
+         "burn",
+         "",
+         "burning hands"},
+        {"Minde burns the scaly beast.", H, "Minde", "the scaly beast", "burn", "", "burning hands"},
         {"You strike *Stolb the Orc* [stolb] with a magical missile.",
          H,
          "you",
@@ -891,14 +906,721 @@ void TestCombatLines::notBlowTest()
           "The bloodwight lets out a long wailing cry which freezes your spine!",
           "South - The glare of the sun burns your eyes.",
           "You tip your hat.",
-          "You try to keep a tree-snake at bay, but fail.",
-          "Stolb tries to keep a shade at bay, but fails.",
           "You strike out into the wall of thornbushes....",
           "You aim your spell at the ice layer.",
           "Your power blocking the plank resisted a breaking attempt!",
           "Wobbler the Man Acolyte [Retired]"}) {
         const std::optional<CombatEvent> e = parseCombatLine(QString::fromUtf8(line));
         QVERIFY2(!e.has_value() || e->kind != CombatKindEnum::BLOW, line);
+    }
+}
+
+namespace {
+
+// A line's kind, phase, the two sides and the detail.
+struct NODISCARD EventCase final
+{
+    const char *line;
+    CombatKindEnum kind;
+    CombatPhaseEnum phase;
+    const char *actor;
+    const char *target;
+    const char *detail;
+};
+
+void checkEvents(const std::initializer_list<EventCase> cases)
+{
+    for (const EventCase &c : cases) {
+        const CombatEvent e = parsed(c.line);
+        QVERIFY2(e.kind == c.kind, c.line);
+        QVERIFY2(e.phase == c.phase, c.line);
+        QCOMPARE(e.actor, QString::fromUtf8(c.actor));
+        QCOMPARE(e.target, QString::fromUtf8(c.target));
+        QCOMPARE(e.detail, QString::fromUtf8(c.detail));
+    }
+}
+
+} // namespace
+
+void TestCombatLines::tunicTest()
+{
+    // The wearer's line used to read as a miss by "Your ebony tunic shimmers as a mother eagle".
+    const auto D = BlowOutcomeEnum::DODGE;
+    checkBlows({
+        {"Your ebony tunic shimmers as a mother eagle fails to hit you.",
+         D,
+         "a mother eagle",
+         "you",
+         "hit",
+         "",
+         "shimmer"},
+        {"Your grey tunic shimmers as an Ohurk-uai orc-guard fails to slash you.",
+         D,
+         "an Ohurk-uai orc-guard",
+         "you",
+         "slash",
+         "",
+         "shimmer"},
+        {"Your frayed tunic shimmers as a great warg fails to engage you.",
+         D,
+         "a great warg",
+         "you",
+         "engage",
+         "",
+         "shimmer"},
+        {"Your tunic shimmers and a great warg fails to engage you.",
+         D,
+         "a great warg",
+         "you",
+         "engage",
+         "",
+         "shimmer"},
+        {"A lithe orc (two) tries to engage *a noble Elf*, but his ebony tunic shimmers and shifts "
+         "him.",
+         D,
+         "A lithe orc",
+         "*a noble Elf*",
+         "engage",
+         "",
+         "shimmer"},
+        {"A lithe orc (one) tries to engage *Láminë the Noldorin Elf*, but her tunic shimmers and "
+         "shifts her.",
+         D,
+         "A lithe orc",
+         "*Láminë the Noldorin Elf*",
+         "engage",
+         "",
+         "shimmer"},
+        {"A spirit tries to hit *Lonewülf the Black Númenórean*, but his tunic shimmers and shifts "
+         "him.",
+         D,
+         "A spirit",
+         "*Lonewülf the Black Númenórean*",
+         "hit",
+         "",
+         "shimmer"},
+    });
+    // The tunic as MUME named it; "engage" is an opening turned aside, a blow is not.
+    const CombatEvent ebony = parsed(
+        "Your ebony tunic shimmers as a mother eagle fails to hit you.");
+    QCOMPARE(ebony.effect, QString("ebony tunic"));
+    QCOMPARE(ebony.phase, CombatPhaseEnum::NONE);
+    const CombatEvent engaged = parsed("Your tunic shimmers and a great warg fails to engage you.");
+    QCOMPARE(engaged.effect, QString("tunic"));
+    QCOMPARE(engaged.phase, CombatPhaseEnum::ATTEMPT);
+}
+
+void TestCombatLines::openingsTest()
+{
+    const auto H = BlowOutcomeEnum::HIT;
+    checkBlows({
+        {"A mother eagle quickly approaches, trying to hit you.",
+         H,
+         "A mother eagle",
+         "you",
+         "hit",
+         "",
+         ""},
+        {"*an Orc* quickly approaches, trying to pound you.", H, "*an Orc*", "you", "pound", "", ""},
+        {"A dwarven cityguard quickly approaches, trying to cleave you.",
+         H,
+         "A dwarven cityguard",
+         "you",
+         "cleave",
+         "",
+         ""},
+        // Held off, and failing to hold off: the one kept at bay is the attacker.
+        {"You approach *a dreadful Orc*, but he manages to keep you at bay.",
+         BlowOutcomeEnum::PARRY,
+         "you",
+         "*a dreadful Orc*",
+         "",
+         "",
+         "keep-at-bay"},
+        {"You try to keep *Ful the Orc* at bay, but fail.",
+         H,
+         "*Ful the Orc*",
+         "you",
+         "",
+         "",
+         "keep-at-bay"},
+        {"You try to keep a tree-snake at bay, but fail.",
+         H,
+         "a tree-snake",
+         "you",
+         "",
+         "",
+         "keep-at-bay"},
+        {"*an Orc* tries to keep you at bay, but fails.", H, "you", "*an Orc*", "", "", "keep-at-bay"},
+        {"A lithe orc tries to keep a mother eagle (YKS) at bay, but fails.",
+         H,
+         "a mother eagle",
+         "A lithe orc",
+         "",
+         "",
+         "keep-at-bay"},
+        // A called shot; the blow it makes comes on a line of its own.
+        {"*an Orc* strikes for a weakness in your armour!", H, "*an Orc*", "you", "", "", "armour-gap"},
+        {"*Variant the Orc* (x) aims for a gap in your armour!",
+         H,
+         "*Variant the Orc*",
+         "you",
+         "",
+         "",
+         "armour-gap"},
+        {"You aim for a gap in *Víí the Half-Elf* (DEAD)'s armour!",
+         H,
+         "you",
+         "*Víí the Half-Elf*",
+         "",
+         "",
+         "armour-gap"},
+        {"You strike for a weakness in a huge tarantula's chitinous armour!",
+         H,
+         "you",
+         "a huge tarantula",
+         "",
+         "",
+         "armour-gap"},
+    });
+    for (const char *line : {"A mother eagle quickly approaches, trying to hit you.",
+                             "You approach *a dreadful Orc*, but he manages to keep you at bay.",
+                             "*an Orc* tries to keep you at bay, but fails.",
+                             "*an Orc* strikes for a weakness in your armour!"}) {
+        QVERIFY2(parsed(line).phase == CombatPhaseEnum::ATTEMPT, line);
+    }
+}
+
+void TestCombatLines::blowVariantsTest()
+{
+    const auto H = BlowOutcomeEnum::HIT;
+    checkBlows({
+        // A beast's bite or sting with no part.
+        {"A huge tarantula bites you!", H, "A huge tarantula", "you", "bite", "", ""},
+        {"A great warg bites you!", H, "A great warg", "you", "bite", "", ""},
+        {"A pack leader bites an elite Dunadan soldier!",
+         H,
+         "A pack leader",
+         "an elite Dunadan soldier",
+         "bite",
+         "",
+         ""},
+        {"A huge tarantula (bud) bites *a Dwarf*!", H, "A huge tarantula", "*a Dwarf*", "bite", "", ""},
+        {"Mormaeg stings you.", H, "Mormaeg", "you", "sting", "", ""},
+        {"A huge queen bee (george) deeply stings *Flex the Orc*!",
+         H,
+         "A huge queen bee",
+         "*Flex the Orc*",
+         "sting",
+         "",
+         ""},
+        // A mounted charge.
+        {"An orkish warg-rider barely charges your body and tickles it.",
+         H,
+         "An orkish warg-rider",
+         "you",
+         "charge",
+         "body",
+         ""},
+        {"You swiftly dodge an orkish warg-rider's attempt to charge you.",
+         BlowOutcomeEnum::DODGE,
+         "an orkish warg-rider",
+         "you",
+         "charge",
+         "",
+         ""},
+        {"An orkish warg-rider tries to charge you, but your parry is successful.",
+         BlowOutcomeEnum::PARRY,
+         "An orkish warg-rider",
+         "you",
+         "charge",
+         "",
+         ""},
+        // A fumble lands on the one who swung.
+        {"Ooops! You fumble... and hit yourself HARD!", H, "you", "you", "hit", "", "fumble"},
+        {"*Alfonso the Black Númenórean* fumbles and hits himself HARD.",
+         H,
+         "*Alfonso the Black Númenórean*",
+         "*Alfonso the Black Númenórean*",
+         "hit",
+         "",
+         "fumble"},
+    });
+    QCOMPARE(parsed("A huge queen bee (george) deeply stings *Flex the Orc*!").quality,
+             QString("deeply"));
+
+    // The top tier of damage in its other wording.
+    const CombatEvent fragments = parsed(
+        "*a Troll* hits Dragomir's body and reduce it to small fragments.");
+    QCOMPARE(fragments.kind, CombatKindEnum::BLOW);
+    QCOMPARE(fragments.target, QString("Dragomir"));
+    QCOMPARE(fragments.part, QString("body"));
+    QCOMPARE(fragments.effect, QString("fragment"));
+    const CombatEvent mine = parsed(
+        "You slash *a Troll*'s left leg and reduce it to small fragments.");
+    QCOMPARE(mine.actor, QString("you"));
+    QCOMPARE(mine.part, QString("left leg"));
+    QCOMPARE(mine.effect, QString("fragment"));
+}
+
+void TestCombatLines::fleeVariantsTest()
+{
+    const auto F = CombatKindEnum::FLEE;
+    checkEvents({
+        {"*an Orc* panics, but can't stop fighting to flee.",
+         F,
+         CombatPhaseEnum::FAILED,
+         "*an Orc*",
+         "",
+         ""},
+        {"*a Man* panics, but can't stop fighting to flee.",
+         F,
+         CombatPhaseEnum::FAILED,
+         "*a Man*",
+         "",
+         ""},
+        {"You try to flee, but cannot!", F, CombatPhaseEnum::FAILED, "you", "", ""},
+        {"You failed to escape the fight!", F, CombatPhaseEnum::FAILED, "you", "", ""},
+        {"You can't seem to escape the roots!", F, CombatPhaseEnum::FAILED, "you", "", ""},
+        {"You can't seem to escape a clump of roots!", F, CombatPhaseEnum::FAILED, "you", "", ""},
+        // The escape skill.
+        {"You seek to escape...", F, CombatPhaseEnum::ATTEMPT, "you", "", ""},
+        {"You successfully escaped the fight!", F, CombatPhaseEnum::ESCAPED, "you", "", ""},
+        {"*an Orc* seems to avoid the fight.", F, CombatPhaseEnum::ATTEMPT, "*an Orc*", "", ""},
+        {"*a noble Elf* (dead) seems to avoid the fight.",
+         F,
+         CombatPhaseEnum::ATTEMPT,
+         "*a noble Elf*",
+         "",
+         ""},
+        {"*Gilhdur the Half-Elf* tried to escape but failed.",
+         F,
+         CombatPhaseEnum::FAILED,
+         "*Gilhdur the Half-Elf*",
+         "",
+         ""},
+        {"Someone tried to escape but failed.", F, CombatPhaseEnum::FAILED, "Someone", "", ""},
+    });
+    // Still an attempt.
+    QCOMPARE(parsed("*an Orc* panics, and attempts to flee.").phase, CombatPhaseEnum::ATTEMPT);
+}
+
+void TestCombatLines::bashRecoveredTest()
+{
+    const auto B = CombatKindEnum::BASH;
+    const auto R = CombatPhaseEnum::RECOVERED;
+    checkEvents({
+        {"*an Orc* seems to have recovered his senses.", B, R, "", "*an Orc*", ""},
+        {"A mother eagle seems to have recovered her senses.", B, R, "", "A mother eagle", ""},
+        {"Glorizmaeg (g) seems to have recovered his senses.", B, R, "", "Glorizmaeg", ""},
+        {"*an Orc* (DEAD) seems to have recovered his senses.", B, R, "", "*an Orc*", ""},
+        {"You have recovered from being bashed!", B, R, "", "you", ""},
+    });
+}
+
+void TestCombatLines::castVariantsTest()
+{
+    const auto C = CombatKindEnum::CAST;
+    checkEvents({
+        // A spell of one word.
+        {"*Farrah the Black Númenórean* utters the word 'gwahpzf'",
+         C,
+         CombatPhaseEnum::DONE,
+         "*Farrah the Black Númenórean*",
+         "",
+         "gwahpzf"},
+        {"*an Elf* utters the word 'earthquake'",
+         C,
+         CombatPhaseEnum::DONE,
+         "*an Elf*",
+         "",
+         "earthquake"},
+        {"Kinghal (KI) utters the word 'armour'", C, CombatPhaseEnum::DONE, "Kinghal", "", "armour"},
+        // A stored spell recalled.
+        {"You quickly recall your stored spell...", C, CombatPhaseEnum::STARTED, "you", "", "stored"},
+        {"Argh! You cannot concentrate any more...", C, CombatPhaseEnum::BROKEN, "you", "", ""},
+        {"Alas, not enough mana flows through you...", C, CombatPhaseEnum::REFUSED, "you", "", "mana"},
+        // Backfires.
+        {"Your spell backfired! You feel drained.", C, CombatPhaseEnum::BROKEN, "you", "", "backfire"},
+        {"You have a sudden lapse of memory... Your spell backfired! You feel drained.",
+         C,
+         CombatPhaseEnum::BROKEN,
+         "you",
+         "",
+         "backfire"},
+        {"You mispronounced the magical words... Your spell backfired! You feel exhausted.",
+         C,
+         CombatPhaseEnum::BROKEN,
+         "you",
+         "",
+         "backfire"},
+        {"Your spell backfired! You feel your life draining away.",
+         C,
+         CombatPhaseEnum::BROKEN,
+         "you",
+         "",
+         "backfire"},
+        {"Barclay (BB)'s spell backfires, and he squeals in surprise!",
+         C,
+         CombatPhaseEnum::BROKEN,
+         "Barclay",
+         "",
+         "backfire"},
+        {"Oedipus' spell backfires, and he squeals in surprise!",
+         C,
+         CombatPhaseEnum::BROKEN,
+         "Oedipus",
+         "",
+         "backfire"},
+    });
+    QCOMPARE(parsed("You quickly recall your stored spell...").quality, QString("quick"));
+
+    // A stored spell starts the cast the prompt ends like any other.
+    OwnCastTracker tracker;
+    tracker.receiveEvent(parsed("You quickly recall your stored spell..."));
+    QVERIFY(tracker.casting());
+    tracker.receiveEvent(parsed("Argh! You cannot concentrate any more..."));
+    QVERIFY(!tracker.receivePrompt().has_value());
+}
+
+void TestCombatLines::attackSpellTest()
+{
+    const auto H = BlowOutcomeEnum::HIT;
+    checkBlows({
+        // Lightning bolt: the caster's line names no caster, and is the player's.
+        {"The lightning bolt hits *an Elf* with full impact.",
+         H,
+         "you",
+         "*an Elf*",
+         "hit",
+         "",
+         "lightning bolt"},
+        {"The lightning bolt hits *a dreadful Orc* (x) with full impact.",
+         H,
+         "you",
+         "*a dreadful Orc*",
+         "hit",
+         "",
+         "lightning bolt"},
+        {"*an Elf* sends a powerful lightning bolt at you, you stagger from the impact.",
+         H,
+         "*an Elf*",
+         "you",
+         "hit",
+         "",
+         "lightning bolt"},
+        {"Glorizmaeg (g) staggers back as the lightning bolt sent by *Ripple the Black Númenórean* "
+         "hits him.",
+         H,
+         "*Ripple the Black Númenórean*",
+         "Glorizmaeg",
+         "hit",
+         "",
+         "lightning bolt"},
+        // Earthquake strikes the room.
+        {"The earth trembles beneath your feet!", H, "you", "", "", "", "earthquake"},
+        {"*an Elf* makes the earth tremble and shiver.", H, "*an Elf*", "", "", "", "earthquake"},
+        {"The earth trembles and shivers.", H, "", "", "", "", "earthquake"},
+        {"Some debris falls on you from above.", H, "", "you", "", "", "earthquake"},
+        // Dispel evil and harm.
+        {"As you call upon Elbereth, *an Orc* shivers in pain.",
+         H,
+         "you",
+         "*an Orc*",
+         "",
+         "",
+         "dispel evil"},
+        {"*a Half-Elf* makes your evil soul suffer with his goodness.",
+         H,
+         "*a Half-Elf*",
+         "you",
+         "",
+         "",
+         "dispel evil"},
+        {"Minde cries 'Elbereth Gilthoniel' and makes the scaly beast shiver in pain.",
+         H,
+         "Minde",
+         "the scaly beast",
+         "",
+         "",
+         "dispel evil"},
+        {"A shadow is dissolved by your goodness.", H, "you", "A shadow", "", "", "dispel evil"},
+        {"As you call on ancient powers, the scaly beast (k) twists in great pain.",
+         H,
+         "you",
+         "the scaly beast",
+         "",
+         "",
+         "harm"},
+        {"*an Orc* raises his voice and calls great pain upon you.",
+         H,
+         "*an Orc*",
+         "you",
+         "",
+         "",
+         "harm"},
+        {"Warathrum (WA) raises his voice and ancient powers make *an Orc* twist in pain.",
+         H,
+         "Warathrum",
+         "*an Orc*",
+         "",
+         "",
+         "harm"},
+        // Colour spray.
+        {"You spray *an Orc* with many-coloured rays of bright light.",
+         H,
+         "you",
+         "*an Orc*",
+         "spray",
+         "",
+         "colour spray"},
+        {"*an Elf* sprays you with piercing rays of many-coloured light.",
+         H,
+         "*an Elf*",
+         "you",
+         "spray",
+         "",
+         "colour spray"},
+        {"Boltok sprays the Balrog with painfully bright, concentrated rays of light.",
+         H,
+         "Boltok",
+         "the Balrog",
+         "spray",
+         "",
+         "colour spray"},
+        {"As Róva (MM) completes her incantations, *Gâgzík the Orc*'s body is ripped apart by rays "
+         "of light.",
+         H,
+         "Róva",
+         "*Gâgzík the Orc*",
+         "spray",
+         "",
+         "colour spray"},
+        // Shocking grasp and chill touch.
+        {"You grasp at *Thralk the Orc*, shocking him.",
+         H,
+         "you",
+         "*Thralk the Orc*",
+         "grasp",
+         "",
+         "shocking grasp"},
+        {"You get a shock as *an Orc* grasps at you.",
+         H,
+         "*an Orc*",
+         "you",
+         "grasp",
+         "",
+         "shocking grasp"},
+        {"A shadow looks shocked as Cârzah grasps at it.",
+         H,
+         "Cârzah",
+         "A shadow",
+         "grasp",
+         "",
+         "shocking grasp"},
+        {"You feel drained of life as a wight bodyguard touches you.",
+         H,
+         "a wight bodyguard",
+         "you",
+         "touch",
+         "",
+         "chill touch"},
+        {"A wight bodyguard chills *a Hobbit* who suddenly seems less lively.",
+         H,
+         "A wight bodyguard",
+         "*a Hobbit*",
+         "touch",
+         "",
+         "chill touch"},
+        // Smother.
+        {"Your lungs seem to burst as *Farrah the Black Númenórean* squeezes the air out of them.",
+         H,
+         "*Farrah the Black Númenórean*",
+         "you",
+         "",
+         "",
+         "smother"},
+        {"As a dark wraith reaches towards him, Rûhn chokes and shivers in pain.",
+         H,
+         "a dark wraith",
+         "Rûhn",
+         "",
+         "",
+         "smother"},
+        // Fireball, magic missile and burning hands in the forms read here.
+        {"Sumba (L) throws a fireball at a shadow, completely enveloping it in flames.",
+         H,
+         "Sumba",
+         "a shadow",
+         "burn",
+         "",
+         "fireball"},
+        {"The fireball sent by Merilder hits *a grim Woman* (ff) with full force, causing an "
+         "immediate death.",
+         H,
+         "Merilder",
+         "*a grim Woman*",
+         "burn",
+         "",
+         "fireball"},
+        {"A magic missile sent by *Imlach the Half-Elf* hits you, causing some pain.",
+         H,
+         "*Imlach the Half-Elf*",
+         "you",
+         "hit",
+         "",
+         "magic missile"},
+        {"Rhaerys reaches out for *a Bear* and burns him to death.",
+         H,
+         "Rhaerys",
+         "*a Bear*",
+         "burn",
+         "",
+         "burning hands"},
+    });
+}
+
+void TestCombatLines::fellTest()
+{
+    for (const char *line : {"You fall, and hit yourself!", "You lose your balance and fall!"}) {
+        const CombatEvent e = parsed(line);
+        QCOMPARE(e.kind, CombatKindEnum::SELF);
+        QCOMPARE(e.phase, CombatPhaseEnum::FELL);
+        QCOMPARE(e.actor, QString("you"));
+    }
+    const CombatEvent flash = parsed("An extremely bright flash of light stuns you!");
+    QCOMPARE(flash.kind, CombatKindEnum::SELF);
+    QCOMPARE(flash.phase, CombatPhaseEnum::STUNNED);
+}
+
+void TestCombatLines::affectTest()
+{
+    const auto A = CombatKindEnum::AFFECT;
+    const auto UP = CombatPhaseEnum::UP;
+    const auto DOWN = CombatPhaseEnum::DOWN;
+    const auto RE = CombatPhaseEnum::REFRESH;
+    checkEvents({
+        {"A blue transparent wall slowly appears around you.", A, UP, "you", "", "armour"},
+        // The twiddlers come off first, as for any line.
+        {"-\\|/-\\|/A blue transparent wall slowly appears around you.", A, UP, "you", "", "armour"},
+        {"You feel less protected.", A, DOWN, "you", "", "armour"},
+        {"Your magic armour is revitalised.", A, RE, "you", "", "armour"},
+        {"You feel protected.", A, UP, "you", "", "shield"},
+        {"Your magical shield wears off.", A, DOWN, "you", "", "shield"},
+        {"Your protection is revitalised.", A, RE, "you", "", "shield"},
+        {"You start glowing.", A, UP, "you", "", "sanctuary"},
+        {"Ugúlukk (ug) is surrounded by a white aura.", A, UP, "Ugúlukk", "", "sanctuary"},
+        {"Fedrianne is surrounded by a dim white aura.", A, UP, "Fedrianne", "", "sanctuary"},
+        {"Walo is surrounded by a brilliant white aura.", A, UP, "Walo", "", "sanctuary"},
+        {"The white aura around your body fades.", A, DOWN, "you", "", "sanctuary"},
+        {"Your aura glows more intensely.", A, RE, "you", "", "sanctuary"},
+        {"You begin to feel the light of Aman shine upon you.", A, UP, "you", "", "bless"},
+        {"The light of Aman fades away from you.", A, DOWN, "you", "", "bless"},
+        {"You feel a renewed light shine upon you.", A, RE, "you", "", "bless"},
+        {"You feel stronger.", A, UP, "you", "", "strength"},
+        {"You feel weaker.", A, DOWN, "you", "", "strength"},
+        {"The duration of the strength spell has been improved.", A, RE, "you", "", "strength"},
+        {"An energy begins to flow within your legs as your body becomes lighter.",
+         A,
+         UP,
+         "you",
+         "",
+         "breath of briskness"},
+        {"Your legs feel heavier.", A, DOWN, "you", "", "breath of briskness"},
+        {"The energy in your legs is refreshed.", A, RE, "you", "", "breath of briskness"},
+        {"You are surrounded by a misty shroud.", A, UP, "you", "", "shroud"},
+        {"You feel yourself exposed.", A, DOWN, "you", "", "shroud"},
+        {"You feel your awareness improve.", A, UP, "you", "", "sense life"},
+        {"You feel less aware of your surroundings.", A, DOWN, "you", "", "sense life"},
+        // Heals, on the player and on others.
+        {"Your scratches and bruises disappear.", A, UP, "you", "", "heal"},
+        {"You begin to see scars fade away and a feeling of health comes over you.",
+         A,
+         UP,
+         "you",
+         "",
+         "heal"},
+        {"A warm feeling fills your body.", A, UP, "you", "", "heal"},
+        {"You feel a surge of healing power flow through you.", A, UP, "you", "", "heal"},
+        {"You heal yourself.", A, UP, "you", "", "heal"},
+        {"You heal Torkild (T).", A, UP, "Torkild", "", "heal"},
+        {"*Xoone the Orc* (k) heals himself.", A, UP, "*Xoone the Orc*", "", "heal"},
+        {"*a Half-Elf* heals *Kuntet the Dwarf*.", A, UP, "*Kuntet the Dwarf*", "", "heal"},
+        {"Ibuki glows briefly as healing energy flows into her.", A, UP, "Ibuki", "", "heal"},
+        {"*Stitch the Half-Elf* looks better.", A, UP, "*Stitch the Half-Elf*", "", "heal"},
+    });
+}
+
+void TestCombatLines::harmfulConditionTest()
+{
+    const auto C = CombatKindEnum::CONDITION;
+    const auto N = CombatPhaseEnum::NONE;
+    const auto A = CombatKindEnum::AFFECT;
+    const auto DOWN = CombatPhaseEnum::DOWN;
+    checkEvents({
+        {"You bleed from open wounds.", C, N, "you", "", "bleeding"},
+        {"A mother eagle (Kongo) bleeds from open wounds.", C, N, "A mother eagle", "", "bleeding"},
+        {"*a Dwarf* bleeds from open wounds.", C, N, "*a Dwarf*", "", "bleeding"},
+        {"You wish that your wounds would stop BLEEDING so much!", C, N, "you", "", "bleeding"},
+        {"Your body turns numb as the poison speeds to your brain!", C, N, "you", "", "poisoned"},
+        {"*Stitch the Half-Elf*'s body turns numb as the poison speeds to his brain!",
+         C,
+         N,
+         "*Stitch the Half-Elf*",
+         "",
+         "poisoned"},
+        {"The venom enters your body!", C, N, "you", "", "poisoned"},
+        {"You suddenly feel a terrible headache!", C, N, "you", "", "poisoned"},
+        {"A warm feeling runs through your body, you feel better.", A, DOWN, "you", "", "poisoned"},
+        {"You fight the web to get free, but just become more entangled.",
+         C,
+         N,
+         "you",
+         "",
+         "entangled"},
+        {"*Svarten the Mountain Troll* struggles to free himself from the thick cobwebs.",
+         C,
+         N,
+         "*Svarten the Mountain Troll*",
+         "",
+         "entangled"},
+        {"You break free as the cobwebs around you go up in flames.", A, DOWN, "you", "", "entangled"},
+        {"Bert the stone-troll seems to be blinded!", C, N, "Bert the stone-troll", "", "blind"},
+        {"You have been blinded!", C, N, "you", "", "blind"},
+        {"You feel a cloak of blindness dissolve.", A, DOWN, "you", "", "blind"},
+    });
+}
+
+void TestCombatLines::notFix16Test()
+{
+    // Look-alikes of the new forms, all from the logs: chat that names them, room contents and
+    // descriptions, and other things MUME says burn, bleed, glow or charge.
+    for (const char *line :
+         {"Amargwath narrates 'fark shimmer rip on trophy'",
+          "An elven scout says 'Elbereth Gilthoniel!'",
+          "Dego narrates 'he recovered?'",
+          "Frtana narrates 'saai blinded'  ## Now is my best chance! ##",
+          "Stromso tells the group 'got poisoned'",
+          "Zûd tells the group 'can you flee?'",
+          "Akallabêth tells you 'low mana'",
+          "A black candle burns in a silver stand, giving off little light. (blue aura).",
+          "The draught burns down your throat, and a fiery feeling fills your limbs.",
+          "*South* - The glare of the sun burns your eyes.",
+          "The sun burns you! You slowly turn into stone.",
+          "A cobweb burns away completely.",
+          "Barclay (BB) burns a cobweb.",
+          "The wild ox seems ready to charge you.",
+          "A young goat playfully charges and hops away.",
+          "A crayfish is here, snapping its claws at you.",
+          "A shimmering golden aura briefly surrounds you.",
+          "A moaning ghost advances towards you, shimmering with a pale light.",
+          "You blink and feel weaker under the cruel light of the sun.",
+          "An ancient fungus smothers the boulders.",
+          "== Smack! And it bleeds! ==",
+          "You feel hot with occasional chills.",
+          "Your armour provides an average protection of 90%.",
+          "Your eyes tingle."}) {
+        QVERIFY2(!parseCombatLine(QString::fromUtf8(line)).has_value(), line);
     }
 }
 
