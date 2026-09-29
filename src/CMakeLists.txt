@@ -352,6 +352,8 @@ set(mmapper_SRCS
     map/RoomFieldVariant.h
     map/RoomFields.cpp
     map/RoomFields.h
+    map/RoomFingerprint.cpp
+    map/RoomFingerprint.h
     map/RoomHandle.cpp
     map/RoomHandle.h
     map/RoomIdSet.cpp

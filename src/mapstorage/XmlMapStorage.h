@@ -25,6 +25,9 @@ class NODISCARD_QOBJECT XmlMapStorage final : public AbstractMapStorage
 {
     Q_OBJECT
 
+    // Exports through virt_saveData(), since saveData() needs a whole MapData.
+    friend class TestMapStorage;
+
 public:
     XmlMapStorage() = delete;
     explicit XmlMapStorage(const AbstractMapStorage::Data &, QObject *parent);
@@ -108,7 +111,9 @@ private:
     // ---------------- save map -------------------
     void saveWorld(QXmlStreamWriter &stream);
     void saveRooms(QXmlStreamWriter &stream, const ImmRoomIdSet &roomList);
-    static void saveRoom(QXmlStreamWriter &stream, const ExternalRawRoom &room);
+    static void saveRoom(QXmlStreamWriter &stream,
+                         const ExternalRawRoom &room,
+                         const QString &fingerprint);
     static void saveRoomLoadFlags(QXmlStreamWriter &stream, RoomLoadFlags fl);
     static void saveRoomMobFlags(QXmlStreamWriter &stream, RoomMobFlags fl);
 

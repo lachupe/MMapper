@@ -460,6 +460,54 @@ set_target_properties(
 )
 add_test(NAME TestMap COMMAND TestMap)
 
+# Map storage: the XML export, its room fingerprints, and reading it back
+set(map_storage_SRCS
+        ../src/mainwindow/UpdateChecker.cpp
+        ../src/mainwindow/UpdateChecker.h
+        ../src/mapfrontend/MapHistory.cpp
+        ../src/mapfrontend/MapHistory.h
+        ../src/mapfrontend/mapfrontend.cpp
+        ../src/mapfrontend/mapfrontend.h
+        ../src/mapstorage/MapDestination.cpp
+        ../src/mapstorage/MapDestination.h
+        ../src/mapstorage/MapSource.cpp
+        ../src/mapstorage/MapSource.h
+        ../src/mapstorage/RawMapData.cpp
+        ../src/mapstorage/RawMapData.h
+        ../src/mapstorage/XmlMapStorage.cpp
+        ../src/mapstorage/XmlMapStorage.h
+        ../src/mapstorage/abstractmapstorage.cpp
+        ../src/mapstorage/abstractmapstorage.h
+        ../src/mapstorage/filesaver.cpp
+        ../src/mapstorage/filesaver.h
+)
+set(TestMapStorage_SRCS TestMapStorage.cpp TestMapStorage.h)
+add_executable(TestMapStorage ${TestMapStorage_SRCS} ${map_storage_SRCS})
+add_dependencies(TestMapStorage mm_test mm_global mm_map)
+target_link_libraries(TestMapStorage
+        mm_map
+        mm_test
+        mm_global
+        Qt6::Gui
+        Qt6::Network
+        Qt6::Test
+        Qt6::Widgets
+        coverage_config)
+set_target_properties(
+        TestMapStorage PROPERTIES
+        CXX_STANDARD 20
+        CXX_STANDARD_REQUIRED ON
+        CXX_EXTENSIONS OFF
+        COMPILE_FLAGS "${WARNING_FLAGS}"
+)
+if(MMAPPER_IS_DEBUG AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    # AbstractMapStorage::saveData() saves from a MapData, and the sanitizer's vptr check wants
+    # MapData's type information for it, which would bring in the whole display. The test never
+    # saves from a MapData.
+    target_compile_options(TestMapStorage PRIVATE -fno-sanitize=vptr)
+endif()
+add_test(NAME TestMapStorage COMMAND TestMapStorage)
+
 # Adventure
 set(adventure_SRCS
         ../src/adventure/AdventureLogModel.cpp

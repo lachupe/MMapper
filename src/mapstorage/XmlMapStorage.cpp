@@ -13,6 +13,7 @@
 #include "../map/DoorFlags.h"
 #include "../map/ExitDirection.h"
 #include "../map/ExitFlags.h"
+#include "../map/RoomFingerprint.h"
 #include "../map/coordinate.h"
 #include "../map/enums.h"
 #include "../map/exit.h"
@@ -759,13 +760,15 @@ void XmlMapStorage::saveRooms(QXmlStreamWriter &stream, const ImmRoomIdSet &room
 
     roomList.for_each([&map, &progressCounter, &stream](const RoomId id) {
         if (auto handle = map.getRoomHandle(id)) {
-            saveRoom(stream, handle.getRawCopyExternal());
+            saveRoom(stream, handle.getRawCopyExternal(), room_fingerprint::compute(handle));
         }
         progressCounter.step();
     });
 }
 
-void XmlMapStorage::saveRoom(QXmlStreamWriter &stream, const ExternalRawRoom &room)
+void XmlMapStorage::saveRoom(QXmlStreamWriter &stream,
+                             const ExternalRawRoom &room,
+                             const QString &fingerprint)
 {
     stream.writeStartElement("room");
 
@@ -774,6 +777,9 @@ void XmlMapStorage::saveRoom(QXmlStreamWriter &stream, const ExternalRawRoom &ro
     const ServerRoomId serverId = room.getServerId();
     saveXmlAttribute(stream, "server_id", serverRoomIdToString(serverId));
     saveXmlAttribute(stream, "name", room.getName().toQString());
+    // Derived, for other programs reading the export (see RoomFingerprint.h); loadRoom()
+    // ignores it, as it ignores any attribute it does not know.
+    saveXmlAttribute(stream, "fingerprint", fingerprint);
     saveXmlElement(stream, "area", room.getArea().toQString());
     saveXmlElement(stream, "align", conv.toString(room.getAlignType()));
     saveXmlElement(stream, "light", conv.toString(room.getLightType()));
