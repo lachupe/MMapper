@@ -25,6 +25,9 @@ NODISCARD bool isWholeState(const GmcpMessageTypeEnum type)
     case GmcpMessageTypeEnum::GROUP_SET:
     case GmcpMessageTypeEnum::ROOM_CHARS_SET:
     case GmcpMessageTypeEnum::ROOM_INFO:
+    // MMapper's own, read off the replies to `stat` and `info`: each reply states them whole.
+    case GmcpMessageTypeEnum::MMAPPER_CHAR_BURDEN:
+    case GmcpMessageTypeEnum::MMAPPER_CHAR_STAT:
         return true;
     default:
         return false;
@@ -38,6 +41,9 @@ NODISCARD bool carriesChangedFields(const GmcpMessageTypeEnum type)
     switch (type) {
     case GmcpMessageTypeEnum::CHAR_STATUSVARS:
     case GmcpMessageTypeEnum::CHAR_VITALS:
+    // `score` states only the pools, `info` the whole sheet: a one-line score must not wipe
+    // out the sheet a late frontend would otherwise be told.
+    case GmcpMessageTypeEnum::MMAPPER_CHAR_SCORE:
         return true;
     default:
         return false;

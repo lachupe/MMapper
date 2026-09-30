@@ -10,6 +10,7 @@
 #include "../map/CommandId.h"
 #include "../map/PromptFlags.h"
 #include "../observer/gameobserver.h"
+#include "CharLines.h"
 #include "CombatLines.h"
 #include "ContainerLines.h"
 #include "ItemLines.h"
@@ -74,6 +75,9 @@ private:
     /// The listings of what the player wears and carries, of their containers, and of what
     /// someone looked at wears. See ItemBlockTracker.
     ItemBlockTracker m_itemTracker;
+    /// MUME's replies to `stat`, `score` and `info`: the character's figures GMCP does not carry.
+    /// See CharLinesTracker.
+    CharLinesTracker m_charTracker;
     ItemCommandTracker m_itemCommands;
     /// When the player's own spell goes off, which MUME marks only by sending the prompt
     /// again. See OwnCastTracker.
@@ -122,4 +126,5 @@ private:
     NODISCARD QString roomKey() const;
     void publishContainerEvents(const std::vector<ContainerEvent> &events);
     void publishItemBlocks(const std::vector<ItemBlock> &blocks);
+    void publishCharReplies(const CharReplies &replies);
 };

@@ -6,6 +6,7 @@
 #include "../clock/mumemoment.h"
 #include "../global/Signal2.h"
 #include "../map/PromptFlags.h"
+#include "../parser/CharLines.h"
 #include "../parser/CombatLines.h"
 #include "../parser/ContainerLines.h"
 #include "../parser/GameStateLines.h"
@@ -85,6 +86,11 @@ public:
     /// fasten a sable pouch on your belt." See parseItemEvent.
     Signal2<ItemEvent> sig2_itemEvent;
     Signal2<ItemCommandObservation> sig2_itemCommand;
+    /// MUME's replies to `stat`, `score` and `info`, and the burden line of `info`, complete.
+    /// See CharLinesTracker.
+    Signal2<CharStat> sig2_charStat;
+    Signal2<CharScore> sig2_charScore;
+    Signal2<CharBurden> sig2_charBurden;
     Signal2<bool> sig2_toggledEchoMode;
     /// Whether a character is in the game changed: a rent, camp rent or quit line, MUME's
     /// account menu or login prompt, or GMCP Char.Name or Room.Info. See GameStateLines. Not
@@ -125,6 +131,9 @@ public:
     void observeContainerEvent(const ContainerEvent &event);
     void observeItemBlock(const ItemBlock &block);
     void observeItemEvent(const ItemEvent &event);
+    void observeCharStat(const CharStat &stat) { sig2_charStat.invoke(stat); }
+    void observeCharScore(const CharScore &score) { sig2_charScore.invoke(score); }
+    void observeCharBurden(const CharBurden &burden) { sig2_charBurden.invoke(burden); }
     void observeToggledEchoMode(bool echo);
     /// What a line or a GMCP message said about the game state; see nextGameState().
     void observeGameState(GameStateEnum seen);

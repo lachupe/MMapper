@@ -103,6 +103,7 @@ MumeXmlParser::MumeXmlParser(MapData &md,
                 m_observer.sig2_itemCommand.invoke(command);
             }
             m_itemTracker.reset();
+            m_charTracker.reset();
         }
     });
     m_observer.sig2_disconnected.connect(m_lifetime, [this]() {
@@ -110,6 +111,7 @@ MumeXmlParser::MumeXmlParser(MapData &md,
             m_observer.sig2_itemCommand.invoke(command);
         }
         m_itemTracker.reset();
+        m_charTracker.reset();
     });
 }
 
@@ -208,11 +210,16 @@ void MumeXmlParser::parse(const TelnetData &data, const bool isGoAhead)
                 m_itemCommands.receiveEvent(*item);
                 m_observer.observeItemEvent(*item);
             }
+            // The character's figures: `stat`'s block, `score`'s line, `info`'s sheet and its
+            // burden line. Read whoever sent the command -- the player, an alias, or a frontend
+            // asking quietly -- and left in the terminal as they are.
+            publishCharReplies(m_charTracker.receiveLine(plain));
         }
     }
     if (data.type == TelnetDataEnum::Prompt) {
         // Every prompt ends a listing, in XML mode and out of it.
         publishItemBlocks(m_itemTracker.receivePrompt());
+        publishCharReplies(m_charTracker.receivePrompt());
     }
 
     // Published after the terminal output of the line that closed them, so a client can
@@ -300,6 +307,19 @@ void MumeXmlParser::publishItemBlocks(const std::vector<ItemBlock> &blocks)
     }
 }
 
+void MumeXmlParser::publishCharReplies(const CharReplies &replies)
+{
+    for (const CharStat &stat : replies.stats) {
+        m_observer.observeCharStat(stat);
+    }
+    for (const CharScore &score : replies.scores) {
+        m_observer.observeCharScore(score);
+    }
+    for (const CharBurden &burden : replies.burdens) {
+        m_observer.observeCharBurden(burden);
+    }
+}
+
 bool MumeXmlParser::element(const QString &line)
 {
     using namespace char_consts;
@@ -334,6 +354,7 @@ bool MumeXmlParser::element(const QString &line)
                     m_roomContentsTracker.reset();
                     m_containerTracker.reset();
                     m_itemTracker.reset();
+                    m_charTracker.reset();
                     for (const auto &command : m_itemCommands.finish(false)) {
                         m_observer.sig2_itemCommand.invoke(command);
                     }

@@ -6,6 +6,7 @@
 #include "../clock/mumemoment.h"
 #include "../global/macros.h"
 #include "../map/RoomHandle.h"
+#include "../parser/CharLines.h"
 #include "../parser/CombatLines.h"
 #include "../parser/ContainerLines.h"
 #include "../parser/GameStateLines.h"
@@ -229,5 +230,34 @@ NODISCARD GmcpMessage makeCharContainer(const ItemBlock &block);
 /// hands-full, two-hands, too-many, too-heavy, cursed, wont-fit, not-carried, not-worn or
 /// cannot. An event, so it is not replayed.
 NODISCARD GmcpMessage makeCharItem(const ItemEvent &event);
+
+/// MMapper.Char.Stat -- MUME's reply to `stat`.
+///
+/// Numbers are JSON numbers, and a figure the reply did not state is left out: `ob`, `db`,
+/// `pb`, `armour` (percent; 0 for "Armour: none."), `wimpy`, `neededXp`, `neededTp` (both
+/// absent at the highest level), `gold`, and `wp` in old wordings. `mood` and `alert` are
+/// MUME's words, lowercase; `condition` lists "hungry", "thirsty", "drunk" when the line says
+/// any. `affects` and `wounds` are always sent: the names after "Affected by:" and the wounds
+/// among them ("a light wound at the head (clean)"), empty when the reply listed none. `text` is
+/// the reply. State: replayed to a frontend that connects later.
+NODISCARD GmcpMessage makeCharStat(const CharStat &stat);
+
+/// MMapper.Char.Score -- MUME's reply to `score` (`reply` "score": the pools only) or to `info`
+/// (`reply` "info": the whole sheet).
+///
+/// Every figure is left out unless the reply stated it: `abilities` (an object of `str`, `int`,
+/// `wis`, `dex`, `con`, `wil`, `per`), `ob`, `db`, `pb`, `armour` (0 for "You are not wearing
+/// any armour."), `hp`, `maxhp`, `mana`, `maxmana`, `mp`, `maxmp`, `mood`, `wimpy` (0 for "You
+/// will fight to the death."), `xp`, `tp`, `renown` (the line less its "(N wp)") and `wp`,
+/// `neededXp`, `neededTp`, `gold`, `silver`, `copper`, `language`, and `swim` and `climb` as
+/// MUME's sentences. `effects` and `wounds` are sent when the sheet was complete: empty when it
+/// had no effects list. State: the fields are merged for a frontend that connects later, so a
+/// one-line `score` updates the pools of the last sheet rather than replacing it.
+NODISCARD GmcpMessage makeCharScore(const CharScore &score);
+
+/// MMapper.Char.Burden -- "Your equipment weighs one hundred fourteen pounds. Heavy, but we will
+/// manage..." from `info`: `pounds` as a number (0 for "nothing"), `word` MUME's comment when
+/// there is one, and `text` the line. State: replayed.
+NODISCARD GmcpMessage makeCharBurden(const CharBurden &burden);
 
 } // namespace frontend_messages

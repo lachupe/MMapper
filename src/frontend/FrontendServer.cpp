@@ -158,6 +158,24 @@ FrontendServer::FrontendServer(GameObserver &observer,
         publish(frontend_messages::makeCharItem(event));
     });
 
+    // State: the character's figures as the last reply to `stat`, `score` or `info` gave them,
+    // replayed through the cache (Score merged, since `score` restates only the pools).
+    m_observer.sig2_charStat.connect(m_lifetime, [this](const CharStat &stat) {
+        const GmcpMessage msg = frontend_messages::makeCharStat(stat);
+        m_replayCache.remember(msg);
+        publish(msg);
+    });
+    m_observer.sig2_charScore.connect(m_lifetime, [this](const CharScore &score) {
+        const GmcpMessage msg = frontend_messages::makeCharScore(score);
+        m_replayCache.remember(msg);
+        publish(msg);
+    });
+    m_observer.sig2_charBurden.connect(m_lifetime, [this](const CharBurden &burden) {
+        const GmcpMessage msg = frontend_messages::makeCharBurden(burden);
+        m_replayCache.remember(msg);
+        publish(msg);
+    });
+
     m_observer.sig2_itemCommand.connect(m_lifetime, [this](const ItemCommandObservation &command) {
         if (command.status == QStringLiteral("pending")
             && command.action != QStringLiteral("equipment")

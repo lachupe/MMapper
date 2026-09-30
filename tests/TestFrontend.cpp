@@ -1048,6 +1048,125 @@ void TestFrontend::charItemTest()
     QVERIFY(subs.wants(msg));
 }
 
+/// MMapper.Char.Stat, .Score and .Burden: each is built from a reply CharLinesTracker read,
+/// with numbers as numbers and what the reply did not state left out, and each is replayed to a
+/// frontend that connects later.
+void TestFrontend::charSheetTest()
+{
+    CharLinesTracker tracker;
+    CharReplies replies;
+    // Real replies from the powwow logs: stolb.balrog.txt's `stat` and `score`, and the burden
+    // and figures of log-2006.03.06-01.08.16.txt's `info`.
+    for (const char *const line :
+         {"OB: 131%, DB: 24%, PB: 0%, Armour: 0%. Wimpy: 111. Mood: wimpy.",
+          "Needed: 1,108,995 xp, 0 tp. Gold: 0. Alert: normal.",
+          "",
+          "Your equipment weighs one hundred fourteen pounds. Heavy, but we will manage...",
+          "Your base abilities are: Str:19 Int:18 Wis:16 Dex:13 Con:14 Wil:14 Per:12.",
+          "Offensive Bonus: 93%, Dodging Bonus: 53%, Parrying Bonus: 93%.",
+          "Your armour provides an average protection of 77%.",
+          "You have 318/318 hit, 81/117 mana, and 135/135 movement points.",
+          "You have scored 49,186,097 experience points and you have 301,832 travel points.",
+          "You have 262 gold coins, 14 silver pennies, and 59 copper pennies.",
+          "",
+          "You are subjected to the following temporary effects:",
+          "- shield",
+          "- a light wound at the head (clean)",
+          ""}) {
+        replies.append(tracker.receiveLine(QString::fromUtf8(line)));
+    }
+    replies.append(tracker.receivePrompt());
+    QCOMPARE(replies.stats.size(), size_t{1});
+    QCOMPARE(replies.scores.size(), size_t{1});
+    QCOMPARE(replies.burdens.size(), size_t{1});
+
+    const GmcpMessage stat = frontend_messages::makeCharStat(replies.stats.front());
+    QCOMPARE(stat.getName().toQString(), QStringLiteral("MMapper.Char.Stat"));
+    QCOMPARE(stat.getType(), GmcpMessageTypeEnum::MMAPPER_CHAR_STAT);
+    const QJsonObject s = payloadOf(stat);
+    QVERIFY(s["ob"].isDouble());
+    QCOMPARE(s["ob"].toInteger(), 131);
+    QCOMPARE(s["db"].toInteger(), 24);
+    QCOMPARE(s["armour"].toInteger(), 0);
+    QCOMPARE(s["wimpy"].toInteger(), 111);
+    QCOMPARE(s["mood"].toString(), QStringLiteral("wimpy"));
+    QCOMPARE(s["alert"].toString(), QStringLiteral("normal"));
+    QCOMPARE(s["neededXp"].toInteger(), 1108995);
+    QCOMPARE(s["neededTp"].toInteger(), 0);
+    QCOMPARE(s["gold"].toInteger(), 0);
+    QVERIFY(s["affects"].isArray());
+    QVERIFY(s["affects"].toArray().isEmpty());
+    QVERIFY(s["wounds"].toArray().isEmpty());
+    QVERIFY(!s.contains("wp"));
+    QVERIFY(!s.contains("condition"));
+
+    const GmcpMessage info = frontend_messages::makeCharScore(replies.scores.front());
+    QCOMPARE(info.getName().toQString(), QStringLiteral("MMapper.Char.Score"));
+    const QJsonObject sc = payloadOf(info);
+    QCOMPARE(sc["reply"].toString(), QStringLiteral("info"));
+    QCOMPARE(sc["abilities"].toObject()["str"].toInteger(), 19);
+    QCOMPARE(sc["abilities"].toObject()["per"].toInteger(), 12);
+    QCOMPARE(sc["xp"].toInteger(), 49186097);
+    QCOMPARE(sc["maxmana"].toInteger(), 117);
+    QCOMPARE(sc["silver"].toInteger(), 14);
+    QCOMPARE(sc["effects"].toArray(), QJsonArray{QStringLiteral("shield")});
+    QCOMPARE(sc["wounds"].toArray(),
+             QJsonArray{QStringLiteral("a light wound at the head (clean)")});
+    // Not stated by this reply, so not sent.
+    QVERIFY(!sc.contains("mood"));
+    QVERIFY(!sc.contains("wimpy"));
+    QVERIFY(!sc.contains("language"));
+    QVERIFY(!sc.contains("neededXp"));
+
+    const GmcpMessage burden = frontend_messages::makeCharBurden(replies.burdens.front());
+    QCOMPARE(burden.toRawBytes(),
+             QByteArray(R"(MMapper.Char.Burden {"pounds":114,"text":"Your equipment weighs one )"
+                        R"(hundred fourteen pounds. Heavy, but we will manage...",)"
+                        R"("word":"Heavy, but we will manage..."})"));
+
+    FrontendSubscriptions subs;
+    QVERIFY(subs.applySupports(parse(R"(Core.Supports.Set [ "MMapper.Char 1" ])")));
+    QVERIFY(subs.wants(stat));
+    QVERIFY(subs.wants(info));
+    QVERIFY(subs.wants(burden));
+
+    // Replayed: Stat and Burden as last sent; Score merged, so that a one-line `score` after
+    // the sheet updates the pools without dropping the sheet's other figures.
+    FrontendReplayCache cache;
+    cache.remember(stat);
+    cache.remember(info);
+    cache.remember(burden);
+    const std::optional<CharScore> pools = parseScoreLine(
+        QStringLiteral("523/523 hits, 53/53 mana, and 155/155 moves."));
+    QVERIFY(pools.has_value());
+    const GmcpMessage brief = frontend_messages::makeCharScore(*pools);
+    QVERIFY(!payloadOf(brief).contains("effects"));
+    cache.remember(brief);
+    QCOMPARE(replayed(cache, GmcpMessageTypeEnum::MMAPPER_CHAR_STAT).object()["ob"].toInteger(),
+             131);
+    QCOMPARE(replayed(cache, GmcpMessageTypeEnum::MMAPPER_CHAR_BURDEN).object()["pounds"].toInteger(),
+             114);
+    const QJsonObject merged = replayed(cache, GmcpMessageTypeEnum::MMAPPER_CHAR_SCORE).object();
+    QCOMPARE(merged["hp"].toInteger(), 523);
+    QCOMPARE(merged["maxmana"].toInteger(), 53);
+    QCOMPARE(merged["xp"].toInteger(), 49186097);
+    QCOMPARE(merged["abilities"].toObject()["str"].toInteger(), 19);
+    QCOMPARE(merged["effects"].toArray(), QJsonArray{QStringLiteral("shield")});
+
+    // A later `stat` replaces the earlier one whole.
+    CharStat later = replies.stats.front();
+    later.ob = 140;
+    later.affects = QStringList{QStringLiteral("strength")};
+    cache.remember(frontend_messages::makeCharStat(later));
+    const QJsonObject again = replayed(cache, GmcpMessageTypeEnum::MMAPPER_CHAR_STAT).object();
+    QCOMPARE(again["ob"].toInteger(), 140);
+    QCOMPARE(again["affects"].toArray(), QJsonArray{QStringLiteral("strength")});
+
+    // A new game session forgets them, as it forgets Char.Vitals.
+    cache.clear();
+    QVERIFY(replayed(cache, GmcpMessageTypeEnum::MMAPPER_CHAR_SCORE).isNull());
+}
+
 void TestFrontend::replayChangedFieldsTest()
 {
     // MUME sends only what changed, so a frontend that connects mid-fight must be given

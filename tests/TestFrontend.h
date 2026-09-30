@@ -40,6 +40,7 @@ private Q_SLOTS:
     static void charInventoryTest();
     static void charContainerTest();
     static void charItemTest();
+    static void charSheetTest();
     static void itemObservationMetadataTest();
     static void replayChangedFieldsTest();
     static void replaySetChangesTest();

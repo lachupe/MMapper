@@ -10,6 +10,8 @@
 #include "../map/roomid.h"
 
 #include <algorithm>
+#include <array>
+#include <optional>
 
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -556,6 +558,101 @@ GmcpMessage makeCharItem(const ItemEvent &event)
     optional("reason", event.reason);
     obj["text"] = event.text;
     return GmcpMessage{GmcpMessageTypeEnum::MMAPPER_CHAR_ITEM, toGmcpJson(obj)};
+}
+
+namespace {
+
+void putNumber(QJsonObject &obj, const char *const key, const std::optional<int64_t> &value)
+{
+    if (value.has_value()) {
+        obj[key] = static_cast<qint64>(*value);
+    }
+}
+
+void putText(QJsonObject &obj, const char *const key, const QString &value)
+{
+    if (!value.isEmpty()) {
+        obj[key] = value;
+    }
+}
+
+} // namespace
+
+GmcpMessage makeCharStat(const CharStat &stat)
+{
+    QJsonObject obj;
+    putNumber(obj, "ob", stat.ob);
+    putNumber(obj, "db", stat.db);
+    putNumber(obj, "pb", stat.pb);
+    putNumber(obj, "armour", stat.armour);
+    putNumber(obj, "wimpy", stat.wimpy);
+    putText(obj, "mood", stat.mood);
+    putText(obj, "alert", stat.alert);
+    putNumber(obj, "neededXp", stat.neededXp);
+    putNumber(obj, "neededTp", stat.neededTp);
+    putNumber(obj, "gold", stat.gold);
+    putNumber(obj, "wp", stat.wp);
+    if (!stat.condition.isEmpty()) {
+        obj["condition"] = QJsonArray::fromStringList(stat.condition);
+    }
+    obj["affects"] = QJsonArray::fromStringList(stat.affects);
+    obj["wounds"] = QJsonArray::fromStringList(stat.wounds);
+    obj["text"] = stat.text;
+    return GmcpMessage{GmcpMessageTypeEnum::MMAPPER_CHAR_STAT, toGmcpJson(obj)};
+}
+
+GmcpMessage makeCharScore(const CharScore &score)
+{
+    static const std::array<const char *, 7>
+        abilityKeys{"str", "int", "wis", "dex", "con", "wil", "per"};
+    QJsonObject obj;
+    putText(obj, "reply", score.reply);
+    QJsonObject abilities;
+    for (size_t i = 0; i < abilityKeys.size(); ++i) {
+        putNumber(abilities, abilityKeys[i], score.abilities[i]);
+    }
+    if (!abilities.isEmpty()) {
+        obj["abilities"] = abilities;
+    }
+    putNumber(obj, "ob", score.ob);
+    putNumber(obj, "db", score.db);
+    putNumber(obj, "pb", score.pb);
+    putNumber(obj, "armour", score.armour);
+    putNumber(obj, "hp", score.hp);
+    putNumber(obj, "maxhp", score.maxhp);
+    putNumber(obj, "mana", score.mana);
+    putNumber(obj, "maxmana", score.maxmana);
+    putNumber(obj, "mp", score.mp);
+    putNumber(obj, "maxmp", score.maxmp);
+    putText(obj, "mood", score.mood);
+    putNumber(obj, "wimpy", score.wimpy);
+    putNumber(obj, "xp", score.xp);
+    putNumber(obj, "tp", score.tp);
+    putText(obj, "renown", score.renown);
+    putNumber(obj, "wp", score.wp);
+    putNumber(obj, "neededXp", score.neededXp);
+    putNumber(obj, "neededTp", score.neededTp);
+    putNumber(obj, "gold", score.gold);
+    putNumber(obj, "silver", score.silver);
+    putNumber(obj, "copper", score.copper);
+    putText(obj, "language", score.language);
+    putText(obj, "swim", score.swim);
+    putText(obj, "climb", score.climb);
+    if (score.effectsKnown) {
+        obj["effects"] = QJsonArray::fromStringList(score.effects);
+        obj["wounds"] = QJsonArray::fromStringList(score.wounds);
+    }
+    obj["text"] = score.text;
+    return GmcpMessage{GmcpMessageTypeEnum::MMAPPER_CHAR_SCORE, toGmcpJson(obj)};
+}
+
+GmcpMessage makeCharBurden(const CharBurden &burden)
+{
+    QJsonObject obj;
+    obj["pounds"] = static_cast<qint64>(burden.pounds);
+    putText(obj, "word", burden.word);
+    obj["text"] = burden.text;
+    return GmcpMessage{GmcpMessageTypeEnum::MMAPPER_CHAR_BURDEN, toGmcpJson(obj)};
 }
 
 GmcpMessage makeCharCommand(const ItemCommandObservation &command)

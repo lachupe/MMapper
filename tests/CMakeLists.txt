@@ -189,6 +189,24 @@ set_target_properties(
 )
 add_test(NAME TestCombatLines COMMAND TestCombatLines)
 
+# The character's figures: stat, score and info
+set(TestCharLines_SRCS TestCharLines.cpp ../src/parser/CharLines.cpp ../src/parser/CharLines.h)
+add_executable(TestCharLines ${TestCharLines_SRCS})
+add_dependencies(TestCharLines mm_test mm_global)
+target_link_libraries(TestCharLines
+        mm_test
+        mm_global
+        Qt6::Test
+        coverage_config)
+set_target_properties(
+  TestCharLines PROPERTIES
+  CXX_STANDARD 20
+  CXX_STANDARD_REQUIRED ON
+  CXX_EXTENSIONS OFF
+  COMPILE_FLAGS "${WARNING_FLAGS}"
+)
+add_test(NAME TestCharLines COMMAND TestCharLines)
+
 # Weather lines, and the ground they describe
 set(TestWeatherLines_SRCS
     TestWeatherLines.cpp
@@ -310,6 +328,8 @@ if(WITH_FRONTEND)
         ../src/frontend/FrontendMessages.h
         ../src/frontend/FrontendReplayCache.cpp
         ../src/frontend/FrontendReplayCache.h
+        ../src/parser/CharLines.cpp
+        ../src/parser/CharLines.h
         ../src/parser/CombatLines.cpp
         ../src/parser/CombatLines.h
         ../src/parser/ContainerLines.cpp
