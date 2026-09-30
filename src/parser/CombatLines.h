@@ -145,6 +145,10 @@ struct NODISCARD CombatEvent final
     QString detail;
     /// The line as it was recognised, twiddlers and a trailing "[Damage:N]" removed.
     QString text;
+    /// Not sent to a frontend. The line is the caster's own view but names no caster ("The
+    /// lightning bolt hits X with full impact."), so actor is left empty: the caster is unknown
+    /// unless the player's own spell is going off, which OwnCastTracker::attribute() knows.
+    bool casterUnnamed = false;
 };
 
 /// The event this line describes, or nothing when it is not a fight line.
@@ -177,20 +181,33 @@ NODISCARD std::optional<CombatEvent> parseCombatLine(const QString &line);
 /// player's own spell is being cast each one is a CAST STEP event, actor "you", with the
 /// character as text, so that a client can advance a ring rather than guess. None come when
 /// the player has the spinner turned off.
+///
+/// The same state says whose spell a line that names no caster is (CombatEvent::casterUnnamed):
+/// the player's while the player's own spell is being cast, and until the prompt after the one
+/// that ended it, since the spell's line may come either side of that prompt; nobody's otherwise.
 class NODISCARD OwnCastTracker final
 {
 private:
     bool m_casting = false;
+    /// The last prompt ended the player's own cast.
+    bool m_released = false;
 
 public:
     /// Every event parseCombatLine() found, in order.
     void receiveEvent(const CombatEvent &event);
+    /// Before receiveEvent(): names the player as the caster of a line that names none, when
+    /// the player's own spell is the one going off.
+    void attribute(CombatEvent &event) const;
     /// A prompt arrived (MUME's <prompt> element, not a twiddler).
     NODISCARD std::optional<CombatEvent> receivePrompt();
     /// A chunk MUME ended with a backspace (TelnetDataEnum::Backspace), as received.
     NODISCARD std::optional<CombatEvent> receiveTwiddler(const QByteArray &chunk) const;
     NODISCARD bool casting() const { return m_casting; }
-    void reset() { m_casting = false; }
+    void reset()
+    {
+        m_casting = false;
+        m_released = false;
+    }
 };
 
 NODISCARD std::string_view to_string_view(CombatKindEnum kind);

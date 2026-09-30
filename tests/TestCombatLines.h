@@ -52,6 +52,7 @@ private Q_SLOTS:
     static void bashRecoveredTest();
     static void castVariantsTest();
     static void attackSpellTest();
+    static void unnamedCasterTest();
     static void fellTest();
     static void affectTest();
     static void harmfulConditionTest();

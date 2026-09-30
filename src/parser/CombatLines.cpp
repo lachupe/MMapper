@@ -159,8 +159,10 @@ const QRegularExpression g_spellHit{QStringLiteral(
 
 /// An attack spell landing, as MUME tells it to the caster, to the one it struck and to the
 /// room, and the killing forms. A named group "a" is the caster and "t" the one struck; where a
-/// line names neither, `yours` and `onYou` say the player is the one. The spell's name is the
-/// event's detail, and the verb the line's own where it has one.
+/// line names neither, `yours` and `onYou` say the player is the one. A line that names no caster
+/// and does not say it is the player's is `unnamed`: its caster is left empty, for
+/// OwnCastTracker::attribute() to fill. The spell's name is the event's detail, and the verb the
+/// line's own where it has one.
 struct NODISCARD SpellLine final
 {
     QRegularExpression pattern;
@@ -168,17 +170,20 @@ struct NODISCARD SpellLine final
     const char *verb;
     bool yours;
     bool onYou;
+    bool unnamed = false;
 };
 
 const SpellLine g_spellLines[] = {
     // Lightning bolt. The caster's line names no caster: "The lightning bolt hits *an Elf* with
     // full impact." follows the player's own "You start to concentrate..." and "Ok.", and is
-    // the only strength the logs show.
+    // the only strength the logs show. Nothing in the line says whose bolt it was, so it is the
+    // player's only while the player's own spell is going off (OwnCastTracker::attribute()).
     {QRegularExpression{QStringLiteral(R"(^The lightning bolt hits (?<t>.+?) with full impact\.$)")},
      "lightning bolt",
      "hit",
-     true,
-     false},
+     false,
+     false,
+     true},
     {QRegularExpression{QStringLiteral(
          R"(^(?<a>.+?) sends a powerful lightning bolt at you, you stagger from the impact\.$)")},
      "lightning bolt",
@@ -326,14 +331,20 @@ const SpellLine g_spellLines[] = {
      "grasp",
      false,
      false},
-    // Chill touch, which the logs show from wights and players alike ('qpurr hajqp').
+    {QRegularExpression{QStringLiteral(R"(^(?<t>.+?) dies as you shock (?:him|her|it)\.$)")},
+     "shocking grasp",
+     "grasp",
+     true,
+     false},
+    // Chill touch, which the logs show from wights and players alike ('qpurr hajqp'); MUME
+    // writes "who suddenly seem less lively" as often as "seems" for some.
     {QRegularExpression{QStringLiteral(R"(^You feel drained of life as (?<a>.+?) touches you\.$)")},
      "chill touch",
      "touch",
      false,
      true},
     {QRegularExpression{
-         QStringLiteral(R"(^(?<a>.+?) chills (?<t>.+?) who suddenly seems less lively\.$)")},
+         QStringLiteral(R"(^(?<a>.+?) chills (?<t>.+?) who suddenly seems? less lively\.$)")},
      "chill touch",
      "touch",
      false,
@@ -374,6 +385,54 @@ const SpellLine g_spellLines[] = {
          R"(^Your magic missile blows the life force away from (?<t>.+?), killing (?:him|her|it)\.$)")},
      "magic missile",
      "hit",
+     true,
+     false},
+    // Magic missile that kills, seen from the room: before g_spellHit, which would take "Y falls
+    // to the ground in a lifeless heap, as X" for the caster.
+    {QRegularExpression{QStringLiteral(
+         R"(^(?<t>.+?) falls to the ground in a lifeless heap, as (?<a>.+?)'s? magic missile hits (?:him|her|it)\.$)")},
+     "magic missile",
+     "hit",
+     false,
+     false},
+    // Call lightning: the caster's line and its killing form, the one struck ("A loud crack of
+    // thunder can be heard as *an Elf* calls down lightning on you.") and killed, and the room's;
+    // the last two only the 2003-2006 logs show.
+    {QRegularExpression{QStringLiteral(
+         R"(^With a crack of thunder, you call down lightning on (?<t>.+?)\.$)")},
+     "call lightning",
+     "",
+     true,
+     false},
+    {QRegularExpression{
+         QStringLiteral(R"(^As you call down lightning, (?<t>.+?) is scorched to death\.$)")},
+     "call lightning",
+     "",
+     true,
+     false},
+    {QRegularExpression{QStringLiteral(
+         R"(^A loud crack of thunder can be heard as (?<a>.+?) calls down lightning on you\.$)")},
+     "call lightning",
+     "",
+     false,
+     true},
+    {QRegularExpression{QStringLiteral(
+         R"(^(?<a>.+?) calls down lightning from the sky, killing you\.$)")},
+     "call lightning",
+     "",
+     false,
+     true},
+    {QRegularExpression{QStringLiteral(
+         R"(^(?<a>.+?) strikes (?<t>.+?) with a mighty bolt of lightning from the sky\.$)")},
+     "call lightning",
+     "",
+     false,
+     false},
+    // Black breath, the shaman's: it strikes all in its path, so no one is its target.
+    {QRegularExpression{QStringLiteral(
+         R"(^Your exhalation of a black wind withers and weakens all in its path\.\.\.$)")},
+     "black breath",
+     "",
      true,
      false},
     // Burning hands that kills; the plain burn is g_burn.
@@ -1025,6 +1084,7 @@ std::optional<CombatEvent> parseCombatLine(const QString &raw)
                                                                      : target);
             event.verb = QString::fromLatin1(spell.verb);
             event.detail = QString::fromLatin1(spell.spell);
+            event.casterUnnamed = spell.unnamed;
             return event;
         }
     }
@@ -1527,12 +1587,21 @@ void OwnCastTracker::receiveEvent(const CombatEvent &event)
     const bool yours = event.actor == QStringLiteral("you");
     if (event.kind == CombatKindEnum::CAST && yours) {
         m_casting = event.phase == CombatPhaseEnum::STARTED;
+        m_released = false;
     } else if (event.kind == CombatKindEnum::DEATH && yours) {
         m_casting = false;
+        m_released = false;
     } else if (event.kind == CombatKindEnum::REFUSED
                && event.detail == QStringLiteral("victim-gone")) {
         // The one the spell was aimed at has gone: it did not go off, whatever the prompt says.
         m_casting = false;
+    }
+}
+
+void OwnCastTracker::attribute(CombatEvent &event) const
+{
+    if (event.casterUnnamed && event.actor.isEmpty() && (m_casting || m_released)) {
+        event.actor = QStringLiteral("you");
     }
 }
 
@@ -1555,6 +1624,9 @@ std::optional<CombatEvent> OwnCastTracker::receiveTwiddler(const QByteArray &chu
 
 std::optional<CombatEvent> OwnCastTracker::receivePrompt()
 {
+    // The spell's own line may come after the prompt that ended the cast, not before it; it is
+    // still the player's until the next prompt.
+    m_released = m_casting;
     if (!m_casting) {
         return std::nullopt;
     }

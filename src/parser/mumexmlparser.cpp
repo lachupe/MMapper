@@ -221,7 +221,8 @@ void MumeXmlParser::parse(const TelnetData &data, const bool isGoAhead)
         // the user sees it, colour removed but not otherwise normalised, so that a name keeps
         // the accents Room.Chars gives it and the two can be matched.
         const QString &plain = chunk.plain;
-        if (const auto combat = parseCombatLine(plain)) {
+        if (auto combat = parseCombatLine(plain)) {
+            m_ownCastTracker.attribute(*combat);
             m_ownCastTracker.receiveEvent(*combat);
             m_observer.observeSentToUserCombat(*combat);
         }

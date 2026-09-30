@@ -5,6 +5,8 @@
 
 #include "../src/parser/CombatLines.h"
 
+#include <tuple>
+
 #include <QtTest/QtTest>
 
 // Every line here is taken from real MUME transcripts in the powwow logs.
@@ -1332,17 +1334,18 @@ void TestCombatLines::attackSpellTest()
 {
     const auto H = BlowOutcomeEnum::HIT;
     checkBlows({
-        // Lightning bolt: the caster's line names no caster, and is the player's.
+        // Lightning bolt: the caster's line names no caster, and is left to OwnCastTracker
+        // (unnamedCasterTest).
         {"The lightning bolt hits *an Elf* with full impact.",
          H,
-         "you",
+         "",
          "*an Elf*",
          "hit",
          "",
          "lightning bolt"},
         {"The lightning bolt hits *a dreadful Orc* (x) with full impact.",
          H,
-         "you",
+         "",
          "*a dreadful Orc*",
          "hit",
          "",
@@ -1522,7 +1525,149 @@ void TestCombatLines::attackSpellTest()
          "burn",
          "",
          "burning hands"},
+        // The magic missile that kills, seen from the room, which used to read as a blow by "A
+        // demon wolf falls to the ground in a lifeless heap, as Kaja" on "it".
+        {"A demon wolf falls to the ground in a lifeless heap, as Kaja's magic missile hits it.",
+         H,
+         "Kaja",
+         "A demon wolf",
+         "hit",
+         "",
+         "magic missile"},
+        // Call lightning, by the player, killing, on the player.
+        {"With a crack of thunder, you call down lightning on Old-Man Willow (k).",
+         H,
+         "you",
+         "Old-Man Willow",
+         "",
+         "",
+         "call lightning"},
+        {"With a crack of thunder, you call down lightning on *Smiles the Mountain Troll*.",
+         H,
+         "you",
+         "*Smiles the Mountain Troll*",
+         "",
+         "",
+         "call lightning"},
+        {"As you call down lightning, *Ghurgor the Orc* is scorched to death.",
+         H,
+         "you",
+         "*Ghurgor the Orc*",
+         "",
+         "",
+         "call lightning"},
+        {"A loud crack of thunder can be heard as *an Elf* calls down lightning on you.",
+         H,
+         "*an Elf*",
+         "you",
+         "",
+         "",
+         "call lightning"},
+        // Black breath strikes all in its path: no target.
+        {"Your exhalation of a black wind withers and weakens all in its path...",
+         H,
+         "you",
+         "",
+         "",
+         "",
+         "black breath"},
     });
+    // Only the 2003-2006 powwow logs have these: call lightning seen from the room and killing
+    // the player, shocking grasp killing, and chill touch's "seem".
+    checkBlows({
+        {"*Quavair the Noldorin Elf* strikes Stolb with a mighty bolt of lightning from the sky.",
+         H,
+         "*Quavair the Noldorin Elf*",
+         "Stolb",
+         "",
+         "",
+         "call lightning"},
+        {"*Pagan the Beorning Man* calls down lightning from the sky, killing you.",
+         H,
+         "*Pagan the Beorning Man*",
+         "you",
+         "",
+         "",
+         "call lightning"},
+        {"A shadow dies as you shock it.", H, "you", "A shadow", "grasp", "", "shocking grasp"},
+        {"*Smitsy the Stoor Hobbit* (buh) dies as you shock him.",
+         H,
+         "you",
+         "*Smitsy the Stoor Hobbit*",
+         "grasp",
+         "",
+         "shocking grasp"},
+        {"Falenor chills *a dreadful Orc* who suddenly seem less lively.",
+         H,
+         "Falenor",
+         "*a dreadful Orc*",
+         "touch",
+         "",
+         "chill touch"},
+    });
+    // Lines with no caster in them never are the player's by themselves.
+    QVERIFY(parsed("The lightning bolt hits *an Elf* with full impact.").casterUnnamed);
+    QVERIFY(!parsed("The impact of your lightning bolt kills *a Half-Elf*.").casterUnnamed);
+    QVERIFY(!parsed("Some debris falls on you from above.").casterUnnamed);
+}
+
+void TestCombatLines::unnamedCasterTest()
+{
+    // What MumeXmlParser does with each line: attribute, then receiveEvent.
+    const auto read = [](OwnCastTracker &tracker, const char *const line) {
+        std::optional<CombatEvent> event = parseCombatLine(QString::fromUtf8(line));
+        if (event.has_value()) {
+            tracker.attribute(*event);
+            tracker.receiveEvent(*event);
+        }
+        return event.value_or(CombatEvent{});
+    };
+    const auto feed = [&read](OwnCastTracker &tracker, const char *const line) {
+        std::ignore = read(tracker, line);
+    };
+    const char *const bolt = "The lightning bolt hits *an Elf* with full impact.";
+
+    // The player's own bolt: "You start to concentrate...", the spinner, "Ok." and the bolt,
+    // then the prompt.
+    OwnCastTracker tracker;
+    QCOMPARE(read(tracker, bolt).actor, QString()); // nobody is casting: unknown
+    feed(tracker, "You start to concentrate...");
+    feed(tracker, "|/-\\|/-\\Ok.");
+    const CombatEvent own = read(tracker, bolt);
+    QCOMPARE(own.actor, QString("you"));
+    QCOMPARE(own.target, QString("*an Elf*"));
+    QCOMPARE(own.detail, QString("lightning bolt"));
+    QVERIFY(tracker.receivePrompt().has_value());
+    // The spell's line just after the prompt that ended the cast is still the player's; after
+    // the next prompt it is nobody's.
+    QCOMPARE(read(tracker, bolt).actor, QString("you"));
+    QVERIFY(!tracker.receivePrompt().has_value());
+    QCOMPARE(read(tracker, bolt).actor, QString());
+
+    // A stored spell recalled is a cast too.
+    feed(tracker, "You quickly recall your stored spell...");
+    QCOMPARE(read(tracker, bolt).actor, QString("you"));
+    QVERIFY(tracker.receivePrompt().has_value());
+
+    // A broken cast releases nothing.
+    QVERIFY(!tracker.receivePrompt().has_value());
+    feed(tracker, "You start to concentrate...");
+    feed(tracker, "Aye! You cannot concentrate any more...");
+    QCOMPARE(read(tracker, bolt).actor, QString());
+    QVERIFY(!tracker.receivePrompt().has_value());
+
+    // Somebody else casting is not the player casting; and a line that names its caster keeps
+    // it, whoever is casting.
+    feed(tracker, "Kazadoe (K) begins some strange incantations...");
+    QCOMPARE(read(tracker, bolt).actor, QString());
+    feed(tracker, "You start to concentrate...");
+    QCOMPARE(read(tracker,
+                  "*an Elf* sends a powerful lightning bolt at you, you stagger from the impact.")
+                 .actor,
+             QString("*an Elf*"));
+    QCOMPARE(read(tracker, "Some debris falls on you from above.").actor, QString());
+    tracker.reset();
+    QCOMPARE(read(tracker, bolt).actor, QString());
 }
 
 void TestCombatLines::fellTest()
