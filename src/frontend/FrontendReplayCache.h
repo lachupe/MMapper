@@ -24,9 +24,10 @@
 /// out. A change that arrives before any Set of its kind is dropped, since there is nothing
 /// it could be a change to.
 ///
-/// Room.UpdateExits is not folded into Room.Info yet: MUME's help does not say whether an exit
-/// it names is restated whole, and no frontend reads it, so a replayed room has its exits as
-/// they were on arrival.
+/// Room.UpdateExits is not folded into Room.Info yet, although mume3d reads it (door_state.gd
+/// takes each exit it names as restated whole, and false for one that has gone, as a secret door
+/// shut again): a replayed room has its exits, and so its doors, as they were on arrival, and a
+/// frontend that attaches late shows them so until the next change (mume3d TODO 6.2).
 ///
 /// Deliberately free of Qt networking types so it can be unit tested on its own.
 class NODISCARD FrontendReplayCache final
