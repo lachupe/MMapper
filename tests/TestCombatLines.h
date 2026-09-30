@@ -56,4 +56,9 @@ private Q_SLOTS:
     static void affectTest();
     static void harmfulConditionTest();
     static void notFix16Test();
+    static void killRefusedTest();
+    static void rescueTest();
+    static void assistTest();
+    static void backstabSetTest();
+    static void spellWordsTest();
 };

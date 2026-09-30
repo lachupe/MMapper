@@ -395,11 +395,13 @@ const QRegularExpression g_fleeFailed{QStringLiteral(
     R"(^(?:PANIC! You (?:couldn't escape|can't quit the fight)!|You try to flee, but cannot!|You failed to escape the fight!|You can't seem to escape (?:the|a clump of) roots!)$)")};
 const QRegularExpression g_escaped{QStringLiteral(R"(^(?<w>.+?) escaped the fight\.$)")};
 // The escape skill, a slower way out of a fight: the player's "You seek to escape...", then
-// "You successfully escaped the fight!"; seen from the room, "*an Orc* seems to avoid the fight."
-// (the escape under way; "*an Orc* escaped the fight." follows) or "X tried to escape but
-// failed."
+// "You successfully escaped the fight!" or "You failed to escape the fight!"; seen from the room,
+// "X tried to escape but failed." (MUME's room line for the attempt is not in the logs, only a
+// client's own "<E S C A P E>", which is never read here).
 const QRegularExpression g_escapeStart{QStringLiteral(R"(^You seek to escape\.\.\.$)")};
 const QRegularExpression g_escapedYou{QStringLiteral(R"(^You successfully escaped the fight!$)")};
+// The room's line for disengage: somebody stops fighting without leaving the room. The help files
+// file it under disengage, not escape (docs/combat-messages.md in mume3d, section 3.8).
 const QRegularExpression g_avoidsFight{QStringLiteral(R"(^(?<w>.+?) seems to avoid the fight\.$)")};
 const QRegularExpression g_escapeFailed{
     QStringLiteral(R"(^(?<w>.+?) tried to escape but failed\.$)")};
@@ -451,6 +453,24 @@ const Refusal g_refusals[] = {
     {QRegularExpression{QStringLiteral(R"(^You unsuccessfully try to break through the ice\.$)")},
      "ice"},
     {QRegularExpression{QStringLiteral(R"(^Your boat cannot enter this place\.$)")}, "boat"},
+    // The refusals of kill and hit, which are not moves and which the path machine does not
+    // read: nobody by the name typed (with the name, "You don't see any *orc* here."), nobody in
+    // sight or reach in a crowded or dark room, a second kill in a fight, and the one typed at
+    // having gone by the time the attack or a spell was to land.
+    {QRegularExpression{QStringLiteral(R"(^Nobody here by that name\.$)")}, "no-target"},
+    {QRegularExpression{QStringLiteral(R"(^You don't see any (?<t>.+?) here\.$)")}, "no-target"},
+    {QRegularExpression{QStringLiteral(
+         R"(^Alas! There was no clear line of sight to (?:him|her|it|them)!$)")},
+     "no-line-of-sight"},
+    {QRegularExpression{QStringLiteral(
+         R"(^Alas! There is no fighting space left to reach (?:him|her|it|them)!$)")},
+     "no-space"},
+    {QRegularExpression{QStringLiteral(R"(^You're already fighting(?: (?:him|her|it|them))?!$)")},
+     "already-fighting"},
+    {QRegularExpression{
+         QStringLiteral(R"(^Alas! You failed to reach (?:him|her|it|them) through the melee\.$)")},
+     "melee"},
+    {QRegularExpression{QStringLiteral(R"(^Your victim has disappeared!$)")}, "victim-gone"},
 };
 
 const QRegularExpression g_bash{QStringLiteral(
@@ -477,8 +497,59 @@ const QRegularExpression g_bashOver{
 // Somebody else getting over a bash: "*an Orc* seems to have recovered his senses."
 const QRegularExpression g_senses{
     QStringLiteral(R"(^(?<w>.+?) seems to have recovered (?:his|her|its) senses\.$)")};
+// A backstab on the player, the killing one too: "Suddenly *an Orc* stabs you in the back, you
+// die."
 const QRegularExpression g_backstab{
-    QStringLiteral(R"(^Suddenly (?<a>.+?) stabs you in the back\.$)")};
+    QStringLiteral(R"(^Suddenly (?<a>.+?) stabs you in the back(?:, you die)?\.$)")};
+// The player's own backstab landing, the one stabbed first: "A hillman-warrior makes a strange
+// sound but is suddenly very silent, as you place a black runed dagger in his back." (the silent
+// one kills); and somebody else's that kills, told to the room.
+const QRegularExpression g_yourBackstab{QStringLiteral(
+    R"(^(?<t>.+?) makes a strange sound(?: but is suddenly very silent)?, as you place .+? in (?:his|her|its) back\.$)")};
+const QRegularExpression g_backstabKill{QStringLiteral(
+    R"(^(?<a>.+?) places .+? in the back of (?<t>.+?), resulting in some strange noises, a lot of blood and a corpse\.$)")};
+// Setting one up: the player's own start, and somebody sneaking behind the player ("An assassin
+// tries to sneak behind you!") or behind somebody else ("Zamdar tries to sneak behind *Malak the
+// Orc*...").
+const QRegularExpression g_backstabStart{
+    QStringLiteral(R"(^You begin to move silently to the back of your victim\.\.\.$)")};
+const QRegularExpression g_sneakBehind{QStringLiteral(
+    R"(^(?<a>.+?) tries to sneak behind (?:(?<you>you)!|(?<t>.+?)\.\.\.)$)")};
+// The victim noticed: detail "sensed" or "caught" (turned on the player).
+const QRegularExpression g_backstabFailed{QStringLiteral(
+    R"(^Oops, your victim (?:(?<sensed>seems to have sensed a danger)|caught you by surprise)!$)")};
+const Refusal g_backstabRefusals[] = {
+    {QRegularExpression{QStringLiteral(R"(^You can't backstab a fighting person, too alert!$)")},
+     "fighting"},
+    {QRegularExpression{QStringLiteral(R"(^Backstab whom\?$)")}, "no-target"},
+    {QRegularExpression{QStringLiteral(
+         R"(^For a successful backstab you need to be wielding a suitable weapon\.$)")},
+     "weapon"},
+};
+
+// Rescue: the rescuer takes the attacker's attention off the one rescued. The rescuer's own line
+// ("Heroically you come to Eve's rescue!"), the one rescued's ("You are rescued by Gildur (g), you
+// are confused!") and the room's ("Kohrn (koh) heroically rescues Malantur (mal)."); the rescuer's
+// failure, and the command refused.
+const QRegularExpression g_rescueYours{
+    QStringLiteral(R"(^Heroically you come to (?<t>.+?)'s? rescue!$)")};
+const QRegularExpression g_rescuedYou{
+    QStringLiteral(R"(^You are rescued by (?<a>.+?), you are confused!$)")};
+const QRegularExpression g_rescues{QStringLiteral(R"(^(?<a>.+?) heroically rescues (?<t>.+?)\.$)")};
+const QRegularExpression g_rescueFailed{QStringLiteral(R"(^You fail the rescue\.$)")};
+const Refusal g_rescueRefusals[] = {
+    {QRegularExpression{QStringLiteral(R"(^Who do you want to rescue\?$)")}, "no-target"},
+    {QRegularExpression{QStringLiteral(R"(^But nobody is fighting (?:him|her|it|them)\?$)")},
+     "not-fighting"},
+};
+
+// Assist: somebody joins a fight on somebody's side, by the assist command or ordered to ("X issues
+// the order 'assist'."): "Tâcö joins Ugúlukk (lead)'s fight.", "A mother eagle (AA) joins your
+// fight.", the player's own "You assist Ugúlukk (lead).", and the command refused.
+const QRegularExpression g_joins{
+    QStringLiteral(R"(^(?<a>.+?) joins (?:(?<you>your)|(?<t>.+?)'s?) fight\.$)")};
+const QRegularExpression g_youAssist{QStringLiteral(R"(^You assist (?<t>.+?)\.$)")};
+const QRegularExpression g_assistRefused{QStringLiteral(R"(^Who do you want to assist\?$)")};
 
 const QRegularExpression g_death{QStringLiteral(
     R"(^(?<w>.+?) (?:is dead! R\.I\.P\.|has drawn (?:his|her|its) last breath! R\.I\.P\.)$)")};
@@ -513,13 +584,63 @@ const QRegularExpression g_incantation{
 // "utters the words 'lightning bolt'", and for a spell of one word "utters the word 'pabraw'".
 const QRegularExpression g_utters{QStringLiteral(R"(^(?<a>.+?) utters the words? '(?<w>[^']+)'$)")};
 
+/// What an observer hears when the caster's language is not one they know: MUME garbles the
+/// spell's name, one fixed form per spell, as many words as the name has. The table is
+/// docs/combat-messages.md section 6.5 in mume3d, inferred from the effect line that follows in
+/// 1,035 logs of 2013-2026; the weakest mappings are cure light (8 of 13 effect lines agree),
+/// portal (3 of 5), blindness (74 of 91) and cure serious (43 of 53). The client-made forms some
+/// players see instead ("<-~~~~ bolt ~~~~->") are not MUME's and are not here.
+struct NODISCARD Incantation final
+{
+    const char *words;
+    const char *spell;
+};
+
+const Incantation g_incantations[] = {
+    {"diesilla barh", "lightning bolt"},
+    {"zabrahpdjatz", "earthquake"},
+    {"qahijf gsfal", "colour spray"},
+    {"eugszr zzur", "dispel evil"},
+    {"yufzbarr", "fireball"},
+    {"mosailla paieg", "burning hands"},
+    {"noselacri", "blindness"},
+    {"judicandus dies", "cure light"},
+    {"pabraw", "harm"},
+    {"braqt eaaf", "block door"},
+    {"judicandus gzfuajg", "cure serious"},
+    {"gpaqtuio ofags", "shocking grasp"},
+    {"bfzahp ay bfugtizgg", "breath of briskness"},
+    {"gwahpzf", "smother"},
+    {"waouq wuggurz", "magic missile"},
+    {"grzzs", "sleep"},
+    {"gaiqhjabral", "sanctuary"},
+    {"pzar", "heal"},
+    {"eabratizgg", "darkness"},
+    {"qfzahz yaae", "create food"},
+    {"qpurr hajqp", "black breath"},
+    {"safhar", "portal"},
+};
+
+/// The spell uttered: the words themselves when the observer understood them, the spell the
+/// incantation stands for when they did not and the table knows it, else the words as heard.
+NODISCARD QString spellUttered(const QString &words)
+{
+    for (const Incantation &incantation : g_incantations) {
+        if (words.compare(QLatin1String(incantation.words), Qt::CaseInsensitive) == 0) {
+            return QString::fromLatin1(incantation.spell);
+        }
+    }
+    return words;
+}
+
 const QRegularExpression g_stunned{
     QStringLiteral(R"(^You are stunned and cannot realize what is going on!$)")};
 const QRegularExpression g_sleepy{QStringLiteral(R"(^You feel sleepy\.$)")};
 const QRegularExpression g_stood{QStringLiteral(R"(^You stand up\.$)")};
-// Thrown down: by an earthquake ("You fall, and hit yourself!"), or by the ground giving way.
-const QRegularExpression g_fell{
-    QStringLiteral(R"(^(?:You fall, and hit yourself|You lose your balance and fall)!$)")};
+// Thrown down: by an earthquake ("You fall, and hit yourself!", which the help files give as the
+// earthquake's line for the one it throws), or by the ground giving way.
+const QRegularExpression g_fell{QStringLiteral(
+    R"(^(?:(?<quake>You fall, and hit yourself)|You lose your balance and fall)!$)")};
 // A thrown pouch of powder.
 const QRegularExpression g_flash{
     QStringLiteral(R"(^An extremely bright flash of light stuns you!$)")};
@@ -887,7 +1008,13 @@ std::optional<CombatEvent> parseCombatLine(const QString &raw)
                                                                 : QStringLiteral("hit");
         return event;
     }
-    if ((m = g_fleeAttempt.match(line)).hasMatch() || (m = g_avoidsFight.match(line)).hasMatch()) {
+    if ((m = g_avoidsFight.match(line)).hasMatch()) {
+        CombatEvent event = make(CombatKindEnum::FLEE, line);
+        event.phase = CombatPhaseEnum::DISENGAGED;
+        event.actor = who(m.captured(u"w"));
+        return event;
+    }
+    if ((m = g_fleeAttempt.match(line)).hasMatch()) {
         CombatEvent event = make(CombatKindEnum::FLEE, line);
         event.phase = m.captured(u"failed").isEmpty() ? CombatPhaseEnum::ATTEMPT
                                                       : CombatPhaseEnum::FAILED;
@@ -941,6 +1068,58 @@ std::optional<CombatEvent> parseCombatLine(const QString &raw)
         CombatEvent event = make(CombatKindEnum::FLEE, line);
         event.phase = CombatPhaseEnum::ESCAPED;
         event.actor = who(m.captured(u"w"));
+        return event;
+    }
+    if ((m = g_rescueYours.match(line)).hasMatch()) {
+        CombatEvent event = make(CombatKindEnum::RESCUE, line);
+        event.actor = QStringLiteral("you");
+        event.target = who(m.captured(u"t"));
+        return event;
+    }
+    if ((m = g_rescuedYou.match(line)).hasMatch()) {
+        CombatEvent event = make(CombatKindEnum::RESCUE, line);
+        event.actor = who(m.captured(u"a"));
+        event.target = QStringLiteral("you");
+        return event;
+    }
+    if ((m = g_rescues.match(line)).hasMatch()) {
+        CombatEvent event = make(CombatKindEnum::RESCUE, line);
+        event.actor = who(m.captured(u"a"));
+        event.target = who(m.captured(u"t"));
+        return event;
+    }
+    if (g_rescueFailed.match(line).hasMatch()) {
+        CombatEvent event = make(CombatKindEnum::RESCUE, line);
+        event.phase = CombatPhaseEnum::FAILED;
+        event.actor = QStringLiteral("you");
+        return event;
+    }
+    for (const Refusal &refusal : g_rescueRefusals) {
+        if (refusal.pattern.match(line).hasMatch()) {
+            CombatEvent event = make(CombatKindEnum::RESCUE, line);
+            event.phase = CombatPhaseEnum::REFUSED;
+            event.actor = QStringLiteral("you");
+            event.detail = QString::fromLatin1(refusal.detail);
+            return event;
+        }
+    }
+    if ((m = g_joins.match(line)).hasMatch()) {
+        CombatEvent event = make(CombatKindEnum::ASSIST, line);
+        event.actor = who(m.captured(u"a"));
+        event.target = side(m, u"you", u"t");
+        return event;
+    }
+    if ((m = g_youAssist.match(line)).hasMatch()) {
+        CombatEvent event = make(CombatKindEnum::ASSIST, line);
+        event.actor = QStringLiteral("you");
+        event.target = who(m.captured(u"t"));
+        return event;
+    }
+    if (g_assistRefused.match(line).hasMatch()) {
+        CombatEvent event = make(CombatKindEnum::ASSIST, line);
+        event.phase = CombatPhaseEnum::REFUSED;
+        event.actor = QStringLiteral("you");
+        event.detail = QStringLiteral("no-target");
         return event;
     }
     for (const Refusal &refusal : g_refusals) {
@@ -1008,6 +1187,48 @@ std::optional<CombatEvent> parseCombatLine(const QString &raw)
         event.actor = who(m.captured(u"a"));
         event.target = QStringLiteral("you");
         return event;
+    }
+    if ((m = g_yourBackstab.match(line)).hasMatch()) {
+        CombatEvent event = make(CombatKindEnum::BACKSTAB, line);
+        event.actor = QStringLiteral("you");
+        event.target = who(m.captured(u"t"));
+        return event;
+    }
+    if ((m = g_backstabKill.match(line)).hasMatch()) {
+        CombatEvent event = make(CombatKindEnum::BACKSTAB, line);
+        event.actor = who(m.captured(u"a"));
+        event.target = who(m.captured(u"t"));
+        return event;
+    }
+    if (g_backstabStart.match(line).hasMatch()) {
+        CombatEvent event = make(CombatKindEnum::BACKSTAB, line);
+        event.phase = CombatPhaseEnum::ATTEMPT;
+        event.actor = QStringLiteral("you");
+        return event;
+    }
+    if ((m = g_sneakBehind.match(line)).hasMatch()) {
+        CombatEvent event = make(CombatKindEnum::BACKSTAB, line);
+        event.phase = CombatPhaseEnum::ATTEMPT;
+        event.actor = who(m.captured(u"a"));
+        event.target = side(m, u"you", u"t");
+        return event;
+    }
+    if ((m = g_backstabFailed.match(line)).hasMatch()) {
+        CombatEvent event = make(CombatKindEnum::BACKSTAB, line);
+        event.phase = CombatPhaseEnum::FAILED;
+        event.actor = QStringLiteral("you");
+        event.detail = m.captured(u"sensed").isEmpty() ? QStringLiteral("caught")
+                                                       : QStringLiteral("sensed");
+        return event;
+    }
+    for (const Refusal &refusal : g_backstabRefusals) {
+        if (refusal.pattern.match(line).hasMatch()) {
+            CombatEvent event = make(CombatKindEnum::BACKSTAB, line);
+            event.phase = CombatPhaseEnum::REFUSED;
+            event.actor = QStringLiteral("you");
+            event.detail = QString::fromLatin1(refusal.detail);
+            return event;
+        }
     }
     if ((m = g_death.match(line)).hasMatch()) {
         CombatEvent event = make(CombatKindEnum::DEATH, line);
@@ -1084,7 +1305,7 @@ std::optional<CombatEvent> parseCombatLine(const QString &raw)
         CombatEvent event = make(CombatKindEnum::CAST, line);
         event.phase = CombatPhaseEnum::DONE;
         event.actor = who(m.captured(u"a"));
-        event.detail = m.captured(u"w");
+        event.detail = spellUttered(m.captured(u"w"));
         return event;
     }
     if (g_stunned.match(line).hasMatch()) {
@@ -1105,10 +1326,13 @@ std::optional<CombatEvent> parseCombatLine(const QString &raw)
         event.actor = QStringLiteral("you");
         return event;
     }
-    if (g_fell.match(line).hasMatch()) {
+    if ((m = g_fell.match(line)).hasMatch()) {
         CombatEvent event = make(CombatKindEnum::SELF, line);
         event.phase = CombatPhaseEnum::FELL;
         event.actor = QStringLiteral("you");
+        if (!m.captured(u"quake").isEmpty()) {
+            event.detail = QStringLiteral("earthquake");
+        }
         return event;
     }
     if (g_flash.match(line).hasMatch()) {
@@ -1163,6 +1387,10 @@ std::string_view to_string_view(const CombatKindEnum kind)
         return "self";
     case CombatKindEnum::AFFECT:
         return "affect";
+    case CombatKindEnum::RESCUE:
+        return "rescue";
+    case CombatKindEnum::ASSIST:
+        return "assist";
     }
     return "unknown";
 }
@@ -1219,6 +1447,8 @@ std::string_view to_string_view(const CombatPhaseEnum phase)
         return "down";
     case CombatPhaseEnum::REFRESH:
         return "refresh";
+    case CombatPhaseEnum::DISENGAGED:
+        return "disengaged";
     }
     return "unknown";
 }
@@ -1229,6 +1459,10 @@ void OwnCastTracker::receiveEvent(const CombatEvent &event)
     if (event.kind == CombatKindEnum::CAST && yours) {
         m_casting = event.phase == CombatPhaseEnum::STARTED;
     } else if (event.kind == CombatKindEnum::DEATH && yours) {
+        m_casting = false;
+    } else if (event.kind == CombatKindEnum::REFUSED
+               && event.detail == QStringLiteral("victim-gone")) {
+        // The one the spell was aimed at has gone: it did not go off, whatever the prompt says.
         m_casting = false;
     }
 }

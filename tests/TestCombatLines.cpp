@@ -225,12 +225,13 @@ void TestCombatLines::castTest()
     QCOMPARE(theirs.actor, QString("Kazadoe"));
     QVERIFY(theirs.target.isEmpty());
 
-    // The words are plain for a spell the listener knows and garbled for one they do not.
+    // The words are plain for a spell the listener knows and garbled for one they do not; the
+    // garbled form is looked up and named.
     const CombatEvent known = parsed("Pampa (P) utters the words 'cure light'");
     QCOMPARE(known.phase, CombatPhaseEnum::DONE);
     QCOMPARE(known.detail, QString("cure light"));
     QCOMPARE(parsed("Budach (B) utters the words 'bfzahp ay bfugtizgg'").detail,
-             QString("bfzahp ay bfugtizgg"));
+             QString("breath of briskness"));
 }
 
 void TestCombatLines::twiddlersTest()
@@ -1195,10 +1196,11 @@ void TestCombatLines::fleeVariantsTest()
         // The escape skill.
         {"You seek to escape...", F, CombatPhaseEnum::ATTEMPT, "you", "", ""},
         {"You successfully escaped the fight!", F, CombatPhaseEnum::ESCAPED, "you", "", ""},
-        {"*an Orc* seems to avoid the fight.", F, CombatPhaseEnum::ATTEMPT, "*an Orc*", "", ""},
+        // Disengage, not the escape: the help files file the room's line under disengage.
+        {"*an Orc* seems to avoid the fight.", F, CombatPhaseEnum::DISENGAGED, "*an Orc*", "", ""},
         {"*a noble Elf* (dead) seems to avoid the fight.",
          F,
-         CombatPhaseEnum::ATTEMPT,
+         CombatPhaseEnum::DISENGAGED,
          "*a noble Elf*",
          "",
          ""},
@@ -1237,7 +1239,7 @@ void TestCombatLines::castVariantsTest()
          CombatPhaseEnum::DONE,
          "*Farrah the Black Númenórean*",
          "",
-         "gwahpzf"},
+         "smother"},
         {"*an Elf* utters the word 'earthquake'",
          C,
          CombatPhaseEnum::DONE,
@@ -1497,6 +1499,9 @@ void TestCombatLines::fellTest()
         QCOMPARE(e.phase, CombatPhaseEnum::FELL);
         QCOMPARE(e.actor, QString("you"));
     }
+    // The earthquake's line for the one it throws says so; the other fall does not.
+    QCOMPARE(parsed("You fall, and hit yourself!").detail, QString("earthquake"));
+    QVERIFY(parsed("You lose your balance and fall!").detail.isEmpty());
     const CombatEvent flash = parsed("An extremely bright flash of light stuns you!");
     QCOMPARE(flash.kind, CombatKindEnum::SELF);
     QCOMPARE(flash.phase, CombatPhaseEnum::STUNNED);
@@ -1629,6 +1634,251 @@ void TestCombatLines::notFix16Test()
           "You feel hot with occasional chills.",
           "Your armour provides an average protection of 90%.",
           "Your eyes tingle."}) {
+        QVERIFY2(!parseCombatLine(QString::fromUtf8(line)).has_value(), line);
+    }
+}
+
+void TestCombatLines::killRefusedTest()
+{
+    // The refusals of kill and hit (help matrix counts in docs/combat-messages.md section 5d,
+    // row 25): none of them a move.
+    const auto R = CombatKindEnum::REFUSED;
+    const auto N = CombatPhaseEnum::NONE;
+    checkEvents({
+        {"Nobody here by that name.", R, N, "you", "", "no-target"},
+        {"You don't see any *orc* here.", R, N, "you", "*orc*", "no-target"},
+        {"You don't see any troll here.", R, N, "you", "troll", "no-target"},
+        {"Alas! There was no clear line of sight to him!", R, N, "you", "", "no-line-of-sight"},
+        {"Alas! There was no clear line of sight to her!", R, N, "you", "", "no-line-of-sight"},
+        {"Alas! There is no fighting space left to reach him!", R, N, "you", "", "no-space"},
+        {"You're already fighting!", R, N, "you", "", "already-fighting"},
+        {"You're already fighting him!", R, N, "you", "", "already-fighting"},
+        {"Alas! You failed to reach him through the melee.", R, N, "you", "", "melee"},
+        {"Your victim has disappeared!", R, N, "you", "", "victim-gone"},
+    });
+
+    // A spell whose target has gone did not go off: the prompt after it is not the cast done.
+    OwnCastTracker tracker;
+    tracker.receiveEvent(parsed("You start to concentrate..."));
+    QVERIFY(tracker.casting());
+    tracker.receiveEvent(parsed("Your victim has disappeared!"));
+    QVERIFY(!tracker.casting());
+    QVERIFY(!tracker.receivePrompt().has_value());
+}
+
+void TestCombatLines::rescueTest()
+{
+    const auto R = CombatKindEnum::RESCUE;
+    const auto N = CombatPhaseEnum::NONE;
+    checkEvents({
+        // The rescuer's own line (28), the one rescued's (58), the room's (99).
+        {"Heroically you come to Eve's rescue!", R, N, "you", "Eve", ""},
+        {"Heroically you come to Aramarth (ara)'s rescue!", R, N, "you", "Aramarth", ""},
+        {"Heroically you come to a mother eagle (BUFF)'s rescue!",
+         R,
+         N,
+         "you",
+         "a mother eagle",
+         ""},
+        {"You are rescued by Glorizmaeg (g), you are confused!", R, N, "Glorizmaeg", "you", ""},
+        {"You are rescued by a mountain troll (aa), you are confused!",
+         R,
+         N,
+         "a mountain troll",
+         "you",
+         ""},
+        {"You are rescued by a thief, you are confused!", R, N, "a thief", "you", ""},
+        {"Kohrn (koh) heroically rescues Malantur (mal).", R, N, "Kohrn", "Malantur", ""},
+        {"*Eiluvial the Eriadorian Man* heroically rescues *Gilhdur the Half-Elf*.",
+         R,
+         N,
+         "*Eiluvial the Eriadorian Man*",
+         "*Gilhdur the Half-Elf*",
+         ""},
+        {"An orc-guard heroically rescues Brolg the orkish shaman.",
+         R,
+         N,
+         "An orc-guard",
+         "Brolg the orkish shaman",
+         ""},
+        // The failure (32) and the refusals (25, 68).
+        {"You fail the rescue.", R, CombatPhaseEnum::FAILED, "you", "", ""},
+        {"Who do you want to rescue?", R, CombatPhaseEnum::REFUSED, "you", "", "no-target"},
+        {"But nobody is fighting him?", R, CombatPhaseEnum::REFUSED, "you", "", "not-fighting"},
+    });
+}
+
+void TestCombatLines::assistTest()
+{
+    const auto A = CombatKindEnum::ASSIST;
+    const auto N = CombatPhaseEnum::NONE;
+    checkEvents({
+        // The room's lines (3,336 and 1,805), the player's own (386) and the refusal (467).
+        {"Tâcö joins Ugúlukk (lead)'s fight.", A, N, "Tâcö", "Ugúlukk", ""},
+        {"An enslaved shadow joins *an Orc*'s fight.", A, N, "An enslaved shadow", "*an Orc*", ""},
+        {"An orc-soldier joins an orc-soldier's fight.",
+         A,
+         N,
+         "An orc-soldier",
+         "an orc-soldier",
+         ""},
+        {"A mother eagle (AA) joins your fight.", A, N, "A mother eagle", "you", ""},
+        {"A lithe orc joins your fight.", A, N, "A lithe orc", "you", ""},
+        {"You assist Ugúlukk (lead).", A, N, "you", "Ugúlukk", ""},
+        {"Who do you want to assist?", A, CombatPhaseEnum::REFUSED, "you", "", "no-target"},
+    });
+    // A client's own wording is not MUME's.
+    QVERIFY(!parseCombatLine(QStringLiteral("A mother eagle (y) [JOINS] your fight.")).has_value()
+            || parseCombatLine(QStringLiteral("A mother eagle (y) [JOINS] your fight."))->kind
+                   != CombatKindEnum::ASSIST);
+}
+
+void TestCombatLines::backstabSetTest()
+{
+    const auto B = CombatKindEnum::BACKSTAB;
+    const auto N = CombatPhaseEnum::NONE;
+    checkEvents({
+        // Landing: on the player (41, the killing one too), the player's own (45 and 20), and
+        // somebody else's killing one told to the room.
+        {"Suddenly *a Hobbit* stabs you in the back.", B, N, "*a Hobbit*", "you", ""},
+        {"Suddenly *an Orc* stabs you in the back, you die.", B, N, "*an Orc*", "you", ""},
+        {"A hillman-warrior makes a strange sound but is suddenly very silent, as you place a "
+         "black runed dagger in his back.",
+         B,
+         N,
+         "you",
+         "A hillman-warrior",
+         ""},
+        {"A dirty uruk makes a strange sound, as you place a nimble blade in his back.",
+         B,
+         N,
+         "you",
+         "A dirty uruk",
+         ""},
+        {"Belish places a sharp thorn in the back of a shadow, resulting in some strange noises, a "
+         "lot of blood and a corpse.",
+         B,
+         N,
+         "Belish",
+         "a shadow",
+         ""},
+        // Setting one up: the player's (287), on the player (45), on somebody else (12).
+        {"You begin to move silently to the back of your victim...",
+         B,
+         CombatPhaseEnum::ATTEMPT,
+         "you",
+         "",
+         ""},
+        {"An assassin tries to sneak behind you!",
+         B,
+         CombatPhaseEnum::ATTEMPT,
+         "An assassin",
+         "you",
+         ""},
+        {"*Dalpha the Black Numenorean* tries to sneak behind you!",
+         B,
+         CombatPhaseEnum::ATTEMPT,
+         "*Dalpha the Black Numenorean*",
+         "you",
+         ""},
+        {"*Dalpha the Black Numenorean* tries to sneak behind a mother eagle (barry)...",
+         B,
+         CombatPhaseEnum::ATTEMPT,
+         "*Dalpha the Black Numenorean*",
+         "a mother eagle",
+         ""},
+        {"Zamdar tries to sneak behind *Mâlak the Orc*...",
+         B,
+         CombatPhaseEnum::ATTEMPT,
+         "Zamdar",
+         "*Mâlak the Orc*",
+         ""},
+        // Noticed (19, 14), refused (15, 184, 4).
+        {"Oops, your victim seems to have sensed a danger!",
+         B,
+         CombatPhaseEnum::FAILED,
+         "you",
+         "",
+         "sensed"},
+        {"Oops, your victim caught you by surprise!",
+         B,
+         CombatPhaseEnum::FAILED,
+         "you",
+         "",
+         "caught"},
+        {"You can't backstab a fighting person, too alert!",
+         B,
+         CombatPhaseEnum::REFUSED,
+         "you",
+         "",
+         "fighting"},
+        {"Backstab whom?", B, CombatPhaseEnum::REFUSED, "you", "", "no-target"},
+        {"For a successful backstab you need to be wielding a suitable weapon.",
+         B,
+         CombatPhaseEnum::REFUSED,
+         "you",
+         "",
+         "weapon"},
+    });
+}
+
+void TestCombatLines::spellWordsTest()
+{
+    // docs/combat-messages.md section 6.5: every incantation of the table names its spell, one
+    // word ("utters the word") or several.
+    const struct
+    {
+        const char *words;
+        const char *spell;
+    } table[] = {
+        {"diesilla barh", "lightning bolt"},
+        {"zabrahpdjatz", "earthquake"},
+        {"qahijf gsfal", "colour spray"},
+        {"eugszr zzur", "dispel evil"},
+        {"yufzbarr", "fireball"},
+        {"mosailla paieg", "burning hands"},
+        {"noselacri", "blindness"},
+        {"judicandus dies", "cure light"},
+        {"pabraw", "harm"},
+        {"braqt eaaf", "block door"},
+        {"judicandus gzfuajg", "cure serious"},
+        {"gpaqtuio ofags", "shocking grasp"},
+        {"bfzahp ay bfugtizgg", "breath of briskness"},
+        {"gwahpzf", "smother"},
+        {"waouq wuggurz", "magic missile"},
+        {"grzzs", "sleep"},
+        {"gaiqhjabral", "sanctuary"},
+        {"pzar", "heal"},
+        {"eabratizgg", "darkness"},
+        {"qfzahz yaae", "create food"},
+        {"qpurr hajqp", "black breath"},
+        {"safhar", "portal"},
+    };
+    for (const auto &row : table) {
+        const QString words = QString::fromLatin1(row.words);
+        const QString line = QStringLiteral("*an Elf* utters the %1 '%2'")
+                                 .arg(words.contains(u' ') ? QStringLiteral("words")
+                                                           : QStringLiteral("word"),
+                                      words);
+        const std::optional<CombatEvent> e = parseCombatLine(line);
+        QVERIFY2(e.has_value(), row.words);
+        QVERIFY2(e->kind == CombatKindEnum::CAST && e->phase == CombatPhaseEnum::DONE, row.words);
+        QCOMPARE(e->actor, QString("*an Elf*"));
+        QCOMPARE(e->detail, QString::fromLatin1(row.spell));
+    }
+    // Words the table does not know, and words understood, stay as they were heard.
+    QCOMPARE(parsed("Pampa (P) utters the words 'lightning bolt'").detail,
+             QString("lightning bolt"));
+    QCOMPARE(parsed("*an Elf* utters the word 'xyzzyq'").detail, QString("xyzzyq"));
+    // A client's own rendering of a cast is not MUME's.
+    for (const char *line : {"*an Elf* utters the words '<-~~~~ bolt ~~~~->'",
+                             "Cast Quick 'Lightning Bolt'",
+                             "(((C-A-S-T-I-N-G)))"}) {
+        const std::optional<CombatEvent> e = parseCombatLine(QString::fromUtf8(line));
+        QVERIFY2(!e.has_value() || e->detail != QStringLiteral("lightning bolt"), line);
+    }
+    // Client-made escape and shatter lines are never patterns.
+    for (const char *line : {"*Kur the Orc* tries to <E S C A P E>.", "-SHATTERS-"}) {
         QVERIFY2(!parseCombatLine(QString::fromUtf8(line)).has_value(), line);
     }
 }

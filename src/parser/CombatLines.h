@@ -32,12 +32,15 @@ enum class NODISCARD CombatKindEnum : uint8_t {
     /// somebody trying to leave the fight, and whether they managed it
     FLEE,
     /// a move MUME refused, with the reason in detail: engaged in a fight, too tired, not on
-    /// one's feet, a mount that will not go, a closed door, no exit
+    /// one's feet, a mount that will not go, a closed door, no exit; or an attack (kill, hit)
+    /// MUME refused: nobody by that name, no line of sight, no room to reach, already fighting,
+    /// the victim gone
     REFUSED,
     /// knocked down by a bash, or bashing someone; a bash dodged, which puts the one who
     /// tried it on the ground instead; and the player getting over being bashed
     BASH,
-    /// stabbed in the back by somebody who was not visible until then
+    /// stabbed in the back by somebody who was not visible until then, or stabbing somebody so;
+    /// and the backstab's start, its failure and its refusal
     BACKSTAB,
     /// a condition line: incapacitated, mortally wounded, stunned; and a harmful state landing
     /// on somebody: blind, poisoned, bleeding, entangled (its end, where MUME tells it, is an
@@ -53,7 +56,11 @@ enum class NODISCARD CombatKindEnum : uint8_t {
     /// a spell or other lasting effect on somebody taking hold, wearing off or being renewed
     /// (armour, shield, sanctuary, bless, strength, ...), or a heal landing; the one it is on
     /// is the actor, and the effect is the detail
-    AFFECT
+    AFFECT,
+    /// somebody stepping in to take a fight off somebody else: the actor rescued the target
+    RESCUE,
+    /// somebody joining a fight on somebody's side: the actor joins the target's fight
+    ASSIST
 };
 
 /// A blow stopped by a block or by somebody stepping in to take it is a PARRY, with detail
@@ -66,13 +73,18 @@ enum class NODISCARD BlowOutcomeEnum : uint8_t { HIT, PARRY, DODGE, MISS };
 /// shot ("X strikes for a weakness in your armour!"), whose outcome is not known yet and is left
 /// at HIT; where it lands is a line of its own. An opening that was held off or turned aside
 /// keeps attempt with its outcome, PARRY or DODGE.
-/// For FLEE: an attempt, a failure, or getting away, the player's or anybody's.
+/// For FLEE: an attempt, a failure, or getting away, the player's or anybody's; disengaged for
+/// somebody leaving the fight without leaving the room ("X seems to avoid the fight.").
 /// For CAST: started, went off, broken (a backfire too), or refused before it started.
 /// For BASH: none for a bash that landed, dodged for one that missed and floored the one who
 /// tried it, recovered for somebody getting over one.
 /// For SELF: stunned, sleepy, stood, fell.
 /// For AFFECT: up when it takes hold (a heal too), down when it wears off, refresh when it is
 /// renewed while still on.
+/// For BACKSTAB: none for a stab that landed, attempt for one being set up (sneaking behind),
+/// failed for one the victim noticed, refused before it began.
+/// For RESCUE: none for a rescue made, failed, or refused before it began. For ASSIST: none, or
+/// refused.
 enum class NODISCARD CombatPhaseEnum : uint8_t {
     NONE,
     ATTEMPT,
@@ -90,7 +102,8 @@ enum class NODISCARD CombatPhaseEnum : uint8_t {
     FELL,
     UP,
     DOWN,
-    REFRESH
+    REFRESH,
+    DISENGAGED
 };
 
 struct NODISCARD CombatEvent final
@@ -113,8 +126,12 @@ struct NODISCARD CombatEvent final
     /// Base form: "shatter", "tickle", "fragment". For a blow a tunic turned aside, the tunic
     /// as MUME named it: "ebony tunic", "tunic".
     QString effect;
-    /// FLEE: the direction fled in. CONDITION: the condition. CAST: the words uttered, the
-    /// spell named, why it was refused, "stored" for a stored spell recalled, "backfire".
+    /// FLEE: the direction fled in. CONDITION: the condition. CAST: the spell, named by the words
+    /// uttered (understood, or the incantation MUME garbles them to for an observer who does not
+    /// know the caster's language, looked up in a table), the words as uttered where the table
+    /// does not know them, the spell named, why it was refused, "stored" for a stored spell
+    /// recalled, "backfire". BACKSTAB, RESCUE, ASSIST: why it failed or was refused. SELF: what
+    /// threw the player down ("earthquake").
     /// REFUSED: why the move was refused, one of the words listed at parseCombatLine(). BLOW:
     /// "block" or "intercept" for how a PARRY was made, "shimmer" for a tunic's DODGE,
     /// "keep-at-bay", "armour-gap" or "fumble", or the spell that struck ("magic missile",
@@ -130,7 +147,8 @@ struct NODISCARD CombatEvent final
 /// thrown, resting, sitting, sleeping, door-closed, no-exit, climb, climb-failed, swim,
 /// swim-failed, deep-water, cannot-ride, ice, boat. They are the refusals MMapper's path
 /// machine already recognises (MumeXmlParserBase::initActionMap), so that what drops a move
-/// from the path is what a client is told about.
+/// from the path is what a client is told about. A refused attack's is one of: no-target,
+/// no-line-of-sight, no-space, already-fighting, melee, victim-gone; none of these is a move.
 NODISCARD std::optional<CombatEvent> parseCombatLine(const QString &line);
 
 /// When the player's own spell goes off.
