@@ -61,4 +61,6 @@ private Q_SLOTS:
     static void assistTest();
     static void backstabSetTest();
     static void spellWordsTest();
+    static void fightRefusedTest();
+    static void rangedTest();
 };

@@ -129,6 +129,18 @@ const QRegularExpression g_armourGap{QStringLiteral(
 const QRegularExpression g_fumble{QStringLiteral(
     R"(^(?:Ooops! (?<you>You) fumble\.\.\. and hit yourself HARD!|(?<a>.+?) fumbles and hits (?:himself|herself|itself) HARD\.)$)")};
 
+// A missile weapon made ready (docs/combat-messages.md in mume3d, sections 3.11 and 5d row 37);
+// the shot itself is an ordinary blow with the verb "shoot" ("You strongly shoot the sage's body
+// and tickle it."). Aimed at the player: "A dark orkish archer is aiming a vicious bow at you."
+// (the logs show no such line for somebody else as the target); a bow readied, seen from the
+// room, at nobody named: "*Buford the Orc* nocks a missile in a black horn shortbow."; the
+// player's own crossbow loaded: "You load a metal-cased bolt into your crossbow."
+const QRegularExpression g_aiming{QStringLiteral(R"(^(?<a>.+?) is aiming (?<w>.+?) at you\.$)")};
+const QRegularExpression g_nocks{QStringLiteral(R"(^(?<a>.+?) nocks a missile in (?<w>.+?)\.$)")};
+const QRegularExpression g_load{QStringLiteral(R"(^You load .+? into your (?<w>.+?)\.$)")};
+// "a vicious bow" to "vicious bow": a weapon named as MUME named it, without its article.
+const QRegularExpression g_article{QStringLiteral(R"(^(?:a|an|the) )")};
+
 // Attack spells that land, in the forms that name both sides: burning hands ("You burn *an
 // Elf*.", "*an Elf* burns you.", "Auluua (Au) burns *Thralk the Orc*."), magic missile and
 // fireball ("Your fireball hits a shadow with full force, causing an immediate death."). The
@@ -471,6 +483,21 @@ const Refusal g_refusals[] = {
          QStringLiteral(R"(^Alas! You failed to reach (?:him|her|it|them) through the melee\.$)")},
      "melee"},
     {QRegularExpression{QStringLiteral(R"(^Your victim has disappeared!$)")}, "victim-gone"},
+    // What a fight rules out: a command that cannot be used in one (the help matrix files it
+    // under kill and hit; the commands typed before it in the logs are scan, score and order),
+    // and "stand" typed while fighting, which already counts as standing.
+    {QRegularExpression{QStringLiteral(R"(^You can't do that while fighting\.$)")},
+     "while-fighting"},
+    {QRegularExpression{QStringLiteral(R"(^Do you not consider fighting as standing\?$)")},
+     "already-standing"},
+    // The refusals of disengage: not in a fight at all, and nobody fighting the player to
+    // disengage from. The help matrix files both as refusals; no log shows what follows them.
+    {QRegularExpression{QStringLiteral(R"(^You are not fighting\.$)")}, "not-fighting"},
+    {QRegularExpression{QStringLiteral(R"(^Nobody was fighting you\.$)")}, "nobody-fighting-you"},
+    // Shoot's refusal to load a loaded crossbow: "But your crossbow is already loaded!", with
+    // the weapon as MUME named it.
+    {QRegularExpression{QStringLiteral(R"(^But your (?<t>.+?) is already loaded!$)")},
+     "already-loaded"},
 };
 
 const QRegularExpression g_bash{QStringLiteral(
@@ -573,6 +600,14 @@ const QRegularExpression g_concentrationBroken{QStringLiteral(
 // Before any concentration began: "resting" when MUME says why, otherwise no detail.
 const QRegularExpression g_castRefused{QStringLiteral(
     R"(^(?:You can't concentrate enough while (?<why>resting)\.|Impossible! You can't concentrate enough!?\.|You can't concentrate enough\.|Alas, not enough (?<mana>mana) flows through you\.\.\.)$)")};
+// The framing refusals of cast (docs/combat-messages.md in mume3d, section 5d row 30): a spell
+// that needs a target typed without one, and a character who knows no spell. The logs have the
+// first as "... cast UPon?" four times in 69, from MUME itself, so "upon" is read in any case.
+const Refusal g_castFraming[] = {
+    {QRegularExpression{QStringLiteral(R"(^What should the spell be cast (?i:upon)\?$)")},
+     "no-target"},
+    {QRegularExpression{QStringLiteral(R"(^Try learning some spells first!$)")}, "no-spells"},
+};
 // A spell that went wrong on its caster: "You have a sudden lapse of memory... Your spell
 // backfired! You feel drained.", "*X*'s spell backfires, and he squeals in surprise!"
 const QRegularExpression g_backfire{QStringLiteral(
@@ -954,6 +989,29 @@ std::optional<CombatEvent> parseCombatLine(const QString &raw)
         event.detail = QStringLiteral("fumble");
         return event;
     }
+    // A missile weapon made ready: an opening whose shot, if it comes, is a line of its own; the
+    // weapon in effect, as the tunic is.
+    {
+        const auto readied = [&line, &m](const QString &actor,
+                                         const QString &target,
+                                         const QString &how) {
+            CombatEvent event = blow(BlowOutcomeEnum::HIT, line, actor, target);
+            event.phase = CombatPhaseEnum::ATTEMPT;
+            event.verb = QStringLiteral("shoot");
+            event.effect = m.captured(u"w").remove(g_article);
+            event.detail = how;
+            return event;
+        };
+        if ((m = g_aiming.match(line)).hasMatch()) {
+            return readied(who(m.captured(u"a")), QStringLiteral("you"), QStringLiteral("aim"));
+        }
+        if ((m = g_nocks.match(line)).hasMatch()) {
+            return readied(who(m.captured(u"a")), QString(), QStringLiteral("nock"));
+        }
+        if ((m = g_load.match(line)).hasMatch()) {
+            return readied(QStringLiteral("you"), QString(), QStringLiteral("load"));
+        }
+    }
     // Before g_burn, which would read "X reaches out for Y and burns her to death." as a burn of
     // "her to death".
     for (const SpellLine &spell : g_spellLines) {
@@ -1294,6 +1352,15 @@ std::optional<CombatEvent> parseCombatLine(const QString &raw)
         event.actor = QStringLiteral("you");
         event.detail = m.captured(u"why").isEmpty() ? m.captured(u"mana") : m.captured(u"why");
         return event;
+    }
+    for (const Refusal &refusal : g_castFraming) {
+        if (refusal.pattern.match(line).hasMatch()) {
+            CombatEvent event = make(CombatKindEnum::CAST, line);
+            event.phase = CombatPhaseEnum::REFUSED;
+            event.actor = QStringLiteral("you");
+            event.detail = QString::fromLatin1(refusal.detail);
+            return event;
+        }
     }
     if ((m = g_incantation.match(line)).hasMatch()) {
         CombatEvent event = make(CombatKindEnum::CAST, line);

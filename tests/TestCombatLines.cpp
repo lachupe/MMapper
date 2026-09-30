@@ -1883,4 +1883,105 @@ void TestCombatLines::spellWordsTest()
     }
 }
 
+void TestCombatLines::fightRefusedTest()
+{
+    // docs/combat-messages.md section 5d rows 25, 28 and 30 and section 6.4, with the help
+    // matrix's counts: what a fight rules out, disengage's refusals and the framing refusals of
+    // cast. None of them a move.
+    const auto R = CombatKindEnum::REFUSED;
+    const auto C = CombatKindEnum::CAST;
+    const auto N = CombatPhaseEnum::NONE;
+    const auto X = CombatPhaseEnum::REFUSED;
+    checkEvents({
+        {"You can't do that while fighting.", R, N, "you", "", "while-fighting"},
+        {"Do you not consider fighting as standing?", R, N, "you", "", "already-standing"},
+        {"You are not fighting.", R, N, "you", "", "not-fighting"},
+        {"Nobody was fighting you.", R, N, "you", "", "nobody-fighting-you"},
+        {"What should the spell be cast upon?", C, X, "you", "", "no-target"},
+        {"What should the spell be cast UPon?", C, X, "you", "", "no-target"},
+        {"Try learning some spells first!", C, X, "you", "", "no-spells"},
+    });
+    // Twiddlers in front come off; a typed command glued in front is left alone (TODO FIX.16,
+    // glue), so it is not read.
+    QCOMPARE(parsed("|/You can't do that while fighting.").detail, QString("while-fighting"));
+    QVERIFY(!parseCombatLine(QStringLiteral("scYou can't do that while fighting.")).has_value());
+
+    // A refused cast never started: the next prompt is not the player's cast done.
+    OwnCastTracker tracker;
+    tracker.receiveEvent(parsed("What should the spell be cast upon?"));
+    QVERIFY(!tracker.casting());
+    QVERIFY(!tracker.receivePrompt().has_value());
+}
+
+void TestCombatLines::rangedTest()
+{
+    // docs/combat-messages.md sections 3.11, 5d row 37 and 6.4 (shoot): a missile weapon made
+    // ready is a blow attempt with the verb shoot, outcome not known (hit), the weapon in effect.
+    const auto aimed = parsed("A dark orkish archer is aiming a vicious bow at you.");
+    QCOMPARE(aimed.kind, CombatKindEnum::BLOW);
+    QCOMPARE(aimed.phase, CombatPhaseEnum::ATTEMPT);
+    QCOMPARE(aimed.outcome, BlowOutcomeEnum::HIT);
+    QCOMPARE(aimed.actor, QString("A dark orkish archer"));
+    QCOMPARE(aimed.target, QString("you"));
+    QCOMPARE(aimed.verb, QString("shoot"));
+    QCOMPARE(aimed.effect, QString("vicious bow"));
+    QCOMPARE(aimed.detail, QString("aim"));
+
+    for (const char *line : {"You load a metal-cased bolt into your crossbow.",
+                             "You load a bolt into your crossbow.",
+                             "You load a blackened bolt into your crossbow."}) {
+        const CombatEvent e = parsed(line);
+        QVERIFY2(e.kind == CombatKindEnum::BLOW && e.phase == CombatPhaseEnum::ATTEMPT, line);
+        QCOMPARE(e.actor, QString("you"));
+        QCOMPARE(e.target, QString());
+        QCOMPARE(e.verb, QString("shoot"));
+        QCOMPARE(e.effect, QString("crossbow"));
+        QCOMPARE(e.detail, QString("load"));
+    }
+
+    const struct
+    {
+        const char *line;
+        const char *actor;
+        const char *weapon;
+    } nocks[] = {
+        {"A dark orkish archer nocks a missile in an orkish shortbow.",
+         "A dark orkish archer",
+         "orkish shortbow"},
+        {"*Buford the Orc* nocks a missile in a black horn shortbow.",
+         "*Buford the Orc*",
+         "black horn shortbow"},
+        {"*Variant the Orc* (x) nocks a missile in an embellished longbow.",
+         "*Variant the Orc*",
+         "embellished longbow"},
+        {"Demure nocks a missile in an embellished longbow.", "Demure", "embellished longbow"},
+    };
+    for (const auto &row : nocks) {
+        const CombatEvent e = parsed(row.line);
+        QVERIFY2(e.kind == CombatKindEnum::BLOW && e.phase == CombatPhaseEnum::ATTEMPT, row.line);
+        QCOMPARE(e.actor, QString::fromUtf8(row.actor));
+        QCOMPARE(e.target, QString());
+        QCOMPARE(e.verb, QString("shoot"));
+        QCOMPARE(e.effect, QString::fromUtf8(row.weapon));
+        QCOMPARE(e.detail, QString("nock"));
+    }
+
+    // Loading a loaded one is refused, the weapon as what was in the way.
+    checkEvents({
+        {"But your crossbow is already loaded!",
+         CombatKindEnum::REFUSED,
+         CombatPhaseEnum::NONE,
+         "you",
+         "crossbow",
+         "already-loaded"},
+    });
+
+    // The shot itself stays an ordinary blow.
+    const CombatEvent shot = parsed("You strongly shoot the sage (k)'s body and tickle it.");
+    QCOMPARE(shot.kind, CombatKindEnum::BLOW);
+    QCOMPARE(shot.phase, CombatPhaseEnum::NONE);
+    QCOMPARE(shot.verb, QString("shoot"));
+    QCOMPARE(shot.target, QString("the sage"));
+}
+
 QTEST_MAIN(TestCombatLines)

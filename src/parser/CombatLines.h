@@ -34,7 +34,8 @@ enum class NODISCARD CombatKindEnum : uint8_t {
     /// a move MUME refused, with the reason in detail: engaged in a fight, too tired, not on
     /// one's feet, a mount that will not go, a closed door, no exit; or an attack (kill, hit)
     /// MUME refused: nobody by that name, no line of sight, no room to reach, already fighting,
-    /// the victim gone
+    /// the victim gone; a command a fight rules out; disengage with no fight to leave; a loaded
+    /// crossbow loaded again
     REFUSED,
     /// knocked down by a bash, or bashing someone; a bash dodged, which puts the one who
     /// tried it on the ground instead; and the player getting over being bashed
@@ -70,8 +71,9 @@ enum class NODISCARD BlowOutcomeEnum : uint8_t { HIT, PARRY, DODGE, MISS };
 
 /// For BLOW: none for a blow that was struck, attempt for the swing that opens a fight ("You
 /// approach X, trying to pound him.", "X quickly approaches, trying to hit you.") or a called
-/// shot ("X strikes for a weakness in your armour!"), whose outcome is not known yet and is left
-/// at HIT; where it lands is a line of its own. An opening that was held off or turned aside
+/// shot ("X strikes for a weakness in your armour!"), or a missile weapon made ready (aimed,
+/// nocked, loaded), whose outcome is not known yet and is left at HIT; where it lands is a line
+/// of its own. An opening that was held off or turned aside
 /// keeps attempt with its outcome, PARRY or DODGE.
 /// For FLEE: an attempt, a failure, or getting away, the player's or anybody's; disengaged for
 /// somebody leaving the fight without leaving the room ("X seems to avoid the fight.").
@@ -124,7 +126,8 @@ struct NODISCARD CombatEvent final
     /// After the part: "hard", "very hard", "extremely hard".
     QString severity;
     /// Base form: "shatter", "tickle", "fragment". For a blow a tunic turned aside, the tunic
-    /// as MUME named it: "ebony tunic", "tunic".
+    /// as MUME named it: "ebony tunic", "tunic". For a missile weapon made ready, the weapon
+    /// without its article: "vicious bow", "crossbow".
     QString effect;
     /// FLEE: the direction fled in. CONDITION: the condition. CAST: the spell, named by the words
     /// uttered (understood, or the incantation MUME garbles them to for an observer who does not
@@ -134,7 +137,8 @@ struct NODISCARD CombatEvent final
     /// threw the player down ("earthquake").
     /// REFUSED: why the move was refused, one of the words listed at parseCombatLine(). BLOW:
     /// "block" or "intercept" for how a PARRY was made, "shimmer" for a tunic's DODGE,
-    /// "keep-at-bay", "armour-gap" or "fumble", or the spell that struck ("magic missile",
+    /// "keep-at-bay", "armour-gap" or "fumble", "aim", "nock" or "load" for a missile weapon made
+    /// ready, or the spell that struck ("magic missile",
     /// "lightning bolt", ...); empty otherwise. AFFECT: the effect ("armour", "heal", ...).
     QString detail;
     /// The line as it was recognised, twiddlers and a trailing "[Damage:N]" removed.
@@ -149,6 +153,10 @@ struct NODISCARD CombatEvent final
 /// machine already recognises (MumeXmlParserBase::initActionMap), so that what drops a move
 /// from the path is what a client is told about. A refused attack's is one of: no-target,
 /// no-line-of-sight, no-space, already-fighting, melee, victim-gone; none of these is a move.
+/// Nor are these: while-fighting (a command a fight rules out), already-standing ("stand" typed
+/// while fighting), not-fighting and nobody-fighting-you (disengage with nothing to leave),
+/// already-loaded (a loaded crossbow, the weapon as target). A refused cast's detail is resting,
+/// mana, no-target ("What should the spell be cast upon?"), no-spells, or empty.
 NODISCARD std::optional<CombatEvent> parseCombatLine(const QString &line);
 
 /// When the player's own spell goes off.
