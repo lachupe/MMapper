@@ -81,3 +81,15 @@ bool FrontendSubscriptions::wants(const GmcpMessage &msg) const
         return false;
     }
 }
+
+bool FrontendSubscriptions::subscribes(const std::string_view module) const
+{
+    try {
+        return m_modules.find(GmcpModule{std::string{module}}) != m_modules.end();
+    } catch (const std::exception &ex) {
+        qWarning() << "[frontend] cannot resolve module"
+                   << QString::fromUtf8(module.data(), static_cast<qsizetype>(module.size()))
+                   << "because:" << ex.what();
+        return false;
+    }
+}

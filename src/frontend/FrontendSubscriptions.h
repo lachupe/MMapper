@@ -6,6 +6,8 @@
 #include "../proxy/GmcpMessage.h"
 #include "../proxy/GmcpModule.h"
 
+#include <string_view>
+
 #include <QString>
 
 /// Tracks which GMCP modules a single connected frontend has subscribed to.
@@ -31,6 +33,10 @@ public:
     /// the same rule UserTelnet::onGmcpToUser uses. "MMapper.Map.Position" therefore
     /// belongs to "MMapper.Map", and "Char.Vitals" to "Char".
     NODISCARD bool wants(const GmcpMessage &msg) const;
+
+    /// True if the frontend subscribed to `module` itself ("MMapper.View"), whatever version.
+    /// Module names are case insensitive.
+    NODISCARD bool subscribes(std::string_view module) const;
 
     /// False for GMCP from MUME that no frontend receives, whatever it subscribed to.
     ///

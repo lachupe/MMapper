@@ -11,6 +11,7 @@
 #include "../observer/gameobserver.h"
 #include "../proxy/connectionlistener.h"
 #include "FrontendMessages.h"
+#include "TradeMessages.h"
 
 #include <algorithm>
 #include <chrono>
@@ -21,6 +22,8 @@
 #include <QDateTime>
 #include <QDebug>
 #include <QHostAddress>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QUuid>
 #include <QWebSocket>
 #include <QWebSocketServer>
@@ -52,7 +55,20 @@ FrontendServer::FrontendServer(GameObserver &observer,
     , m_observer{observer}
     , m_mapData{mapData}
     , m_listener{listener}
+    , m_trade{observer,
+              [this](const QString &line) { m_session.sendLine(line); },
+              [this](const GmcpMessage &msg) { publish(msg); }}
 {
+    // The viewer setting is in MMapper.Session.State.
+    m_trade.setViewerChanged([this]() { publishSessionState(); });
+    m_tradeTimer.setInterval(1000);
+    connect(&m_tradeTimer, &QTimer::timeout, this, [this]() {
+        m_trade.expire();
+        if (!m_trade.busy()) {
+            m_tradeTimer.stop();
+        }
+    });
+
     // Whatever map MainWindow has by now counts as loaded; a map loaded later calls onMapLoaded().
     m_mapIdentity.loaded(m_mapData.getCurrentMap(), m_mapData.getFileName());
     m_sessionStateTimer.setSingleShot(true);
@@ -184,6 +200,37 @@ FrontendServer::FrontendServer(GameObserver &observer,
         publish(msg);
     });
 
+    // MUME's replies at shops, guilds and inns, and to `trop`: events, except the general practice
+    // table, which is the character's own skills and is replayed as last sent.
+    m_observer.sig2_shopList.connect(m_lifetime, [this](const ShopList &list) {
+        publish(frontend_messages::makeShopList(list));
+    });
+    m_observer.sig2_shopDeal.connect(m_lifetime, [this](const ShopDeal &deal) {
+        publish(frontend_messages::makeShopDeal(deal));
+    });
+    m_observer.sig2_guildTeacher.connect(m_lifetime, [this](const GuildTeacher &teacher) {
+        publish(frontend_messages::makeGuildTeacher(teacher));
+    });
+    m_observer.sig2_guildPractised.connect(m_lifetime, [this](const GuildPractised &practised) {
+        publish(frontend_messages::makeGuildPractised(practised));
+    });
+    m_observer.sig2_charSkills.connect(m_lifetime, [this](const CharSkills &skills) {
+        const GmcpMessage msg = frontend_messages::makeCharSkills(skills);
+        m_replayCache.remember(msg);
+        publish(msg);
+    });
+    m_observer.sig2_innOffer.connect(m_lifetime, [this](const InnOffer &offer) {
+        publish(frontend_messages::makeInnOffer(offer));
+    });
+    m_observer.sig2_charTrophies.connect(m_lifetime, [this](const CharTrophies &trophies) {
+        publish(frontend_messages::makeCharTrophies(trophies));
+    });
+    // A text MUME showed through its viewer, which the driving frontend claimed (the proxy then
+    // opens no window of its own). An event, not replayed.
+    m_observer.sig2_viewText.connect(m_lifetime, [this](const ViewText &view) {
+        publish(frontend_messages::makeViewText(view));
+    });
+
     m_observer.sig2_itemCommand.connect(m_lifetime, [this](const ItemCommandObservation &command) {
         if (command.status == QStringLiteral("pending")
             && command.action != QStringLiteral("equipment")
@@ -294,6 +341,7 @@ void FrontendServer::onDisconnected(QWebSocket *const socket)
         releaseSession();
     }
     utils::erase_if(m_clients, [socket](const Client &c) { return c.socket == socket; });
+    updateViewerClaim();
     log(QString("Frontend disconnected (%1 remaining)").arg(m_clients.size()));
     socket->deleteLater();
 
@@ -353,6 +401,7 @@ void FrontendServer::onTextMessage(QWebSocket *const socket, const QString &fram
     }
 
     if (client->subscriptions.applySupports(msg)) {
+        updateViewerClaim();
         // Subscribing is what makes a frontend usable, so bring it up to date immediately
         // rather than making it wait for the next thing to happen in the game.
         replayTo(*client);
@@ -371,6 +420,11 @@ void FrontendServer::onTextMessage(QWebSocket *const socket, const QString &fram
         return;
     }
 
+    if (msg.isMMapperTradeRequest() || msg.isMMapperTradeCancel()) {
+        handleTrade(*client, msg);
+        return;
+    }
+
     sendTo(*client,
            frontend_messages::makeError("unsupported",
                                         QString("'%1' is not accepted by this endpoint")
@@ -386,6 +440,8 @@ bool FrontendServer::tryTakeSession(const Client &client)
         return false; // A telnet or built-in client owns the session.
     }
     m_driver = client.socket;
+    m_trade.setDriving(true);
+    updateViewerClaim();
     log(QString("Frontend '%1' is driving the session").arg(client.name));
     return true;
 }
@@ -396,6 +452,9 @@ void FrontendServer::releaseSession()
         return;
     }
     m_driver = nullptr;
+    // Nothing more can be sent for an operation; it stops where it is.
+    m_trade.setDriving(false);
+    updateViewerClaim();
     // Closing the session ends the MUME connection, exactly as closing a telnet client does.
     m_session.detach();
     log("Frontend released the session");
@@ -407,7 +466,8 @@ GmcpMessage FrontendServer::sessionStateFor(const Client &client) const
                                                m_mapIdentity.get(),
                                                m_echo,
                                                m_driver != nullptr && m_driver == client.socket,
-                                               m_observer.getGameState());
+                                               m_observer.getGameState(),
+                                               m_trade.viewerState());
 }
 
 void FrontendServer::handleInput(Client &client, const GmcpMessage &msg)
@@ -437,7 +497,76 @@ void FrontendServer::handleInput(Client &client, const GmcpMessage &msg)
     // Routed through the normal downstream path, so mapper commands, movement tracking and
     // logging see it exactly as they see input from the built-in client. The text itself is
     // never logged here: it may be a password.
+    //
+    // The player's line always goes at once; a trade operation holding MUME's pager answers it
+    // with `q` first, and stops.
+    m_trade.beforePlayerLine(optText.value());
     m_session.sendLine(optText.value());
+}
+
+void FrontendServer::handleTrade(Client &client, const GmcpMessage &msg)
+{
+    const auto &optJson = msg.getJson();
+    const QJsonDocument doc = optJson.has_value() ? QJsonDocument::fromJson(optJson->toQByteArray())
+                                                  : QJsonDocument{};
+    const QJsonObject payload = doc.object();
+    const QJsonValue idValue = payload.value("id");
+    const QString id = idValue.toString();
+    if (!doc.isObject() || !idValue.isString() || id.isEmpty()
+        || id.size() > TradeOperations::MAX_ID_CHARS) {
+        sendTo(client,
+               frontend_messages::makeError("invalid-trade",
+                                            QString("'%1' needs an object payload with an 'id' "
+                                                    "string")
+                                                .arg(msg.getName().toQString())));
+        return;
+    }
+
+    const bool driving = m_driver != nullptr && m_driver == client.socket;
+    if (!driving) {
+        // Told to the observer alone: the operations everyone sees are the driving frontend's.
+        if (msg.isMMapperTradeRequest()) {
+            TradeOperationState refused;
+            refused.id = id;
+            refused.action = payload.value("action").toString();
+            refused.status = TradeStatusEnum::REFUSED;
+            refused.reason = QStringLiteral("observing");
+            sendTo(client, makeTradeOperation(refused));
+        } else {
+            sendTo(client,
+                   frontend_messages::makeError("read-only",
+                                                "Another client owns the session; this "
+                                                "connection may only observe it"));
+        }
+        return;
+    }
+
+    if (msg.isMMapperTradeCancel()) {
+        m_trade.cancel(id);
+        return;
+    }
+
+    TradeOperations::Context context;
+    context.driving = true;
+    context.connected = m_upstreamConnected;
+    context.echo = m_echo;
+    context.game = m_observer.getGameState();
+    m_trade.request(payload, context);
+    if (m_trade.busy() && !m_tradeTimer.isActive()) {
+        m_tradeTimer.start();
+    }
+}
+
+void FrontendServer::updateViewerClaim()
+{
+    const bool claimed = std::any_of(m_clients.begin(), m_clients.end(), [this](const Client &c) {
+        return claimsViewer(c.subscriptions, m_driver != nullptr && c.socket == m_driver);
+    });
+    if (claimed != m_observer.isViewerClaimed()) {
+        log(claimed ? "The driving frontend claims MUME's viewer"
+                    : "MUME's viewer is no longer claimed");
+    }
+    m_observer.setViewerClaimed(claimed);
 }
 
 void FrontendServer::publish(const GmcpMessage &msg)

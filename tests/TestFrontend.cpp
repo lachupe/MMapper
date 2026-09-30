@@ -227,6 +227,18 @@ void TestFrontend::sessionStateTest()
     QCOMPARE(payloadOf(connected)["upstream"].toString(), QStringLiteral("connected"));
     QCOMPARE(payloadOf(connected)["mapLoaded"].toBool(), true);
     QCOMPARE(payloadOf(connected)["itemCommands"].toInt(), 6);
+    // Trade operations are offered, and MUME's viewer setting is not known until MMapper or
+    // the player sets it.
+    QCOMPARE(payloadOf(connected)["trade"].toInt(), 1);
+    QCOMPARE(payloadOf(connected)["viewer"].toString(), QStringLiteral("unknown"));
+    QCOMPARE(payloadOf(frontend_messages::makeSessionState(true,
+                                                           arda,
+                                                           true,
+                                                           true,
+                                                           GameStateEnum::PLAYING,
+                                                           QStringLiteral("external")))["viewer"]
+                 .toString(),
+             QStringLiteral("external"));
 
     // The map is named, so that a frontend reading an export of its own can tell whether that
     // is of this map, and whether this map has changed since.

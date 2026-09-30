@@ -11,6 +11,7 @@
 #include "FrontendReplayCache.h"
 #include "FrontendSession.h"
 #include "FrontendSubscriptions.h"
+#include "TradeOperations.h"
 
 #include <cstdint>
 #include <list>
@@ -50,8 +51,10 @@ class QWebSocketServer;
 /// MUME.Client, which are never relayed (FrontendSubscriptions::isRelayable). MMapper's own
 /// additions live under MMapper.Combat, MMapper.Char, MMapper.Map, MMapper.Room, MMapper.Session,
 /// MMapper.Terminal, MMapper.Time, MMapper.Weather and MMapper.Xml. The one package a frontend
-/// sends besides Core.Hello and Core.Supports is MMapper.Input.Command, and only the driving
-/// frontend may send it.
+/// sends besides Core.Hello and Core.Supports are MMapper.Input.Command and MMapper.Trade.Request
+/// and .Cancel, and only the driving frontend may send them. A trade request is run by
+/// TradeOperations, which holds the conversation with MUME and publishes MMapper.Trade.Operation;
+/// MUME's viewer is claimed while the driving frontend subscribes to MMapper.View.
 ///
 /// Subscribing brings a frontend up to date: its MMapper.Session.State, then the state MUME
 /// has described so far (see FrontendReplayCache), the game clock and the mapped position.
@@ -64,8 +67,9 @@ class QWebSocketServer;
 /// of "malformed" (the frame names no package), "invalid-supports" (a Core.Supports payload
 /// that is missing or is not an array; entries in the array that are not strings are skipped
 /// instead), "unsupported" (a package frontends may not send),
-/// "read-only" (input from a frontend that is observing) and "invalid-command" (an
-/// MMapper.Input.Command without a `text` string). Like every package it only reaches a
+/// "read-only" (input from a frontend that is observing), "invalid-command" (an
+/// MMapper.Input.Command without a `text` string) and "invalid-trade" (an MMapper.Trade.Request
+/// or .Cancel without an `id` string). Like every package it only reaches a
 /// frontend subscribed to its module, MMapper.Session. Only an oversized frame closes the
 /// connection.
 class NODISCARD_QOBJECT FrontendServer final : public QObject
@@ -91,6 +95,11 @@ private:
     FrontendSession m_session;
     /// The frontend holding m_session, or null when none is driving.
     QWebSocket *m_driver = nullptr;
+
+    /// Runs MMapper.Trade.Request through m_session, and keeps MUME's viewer setting.
+    TradeOperations m_trade;
+    /// Every second while an operation runs: its step's time may be up.
+    QTimer m_tradeTimer;
 
     /// What MUME has said about the current state, with every change since folded in,
     /// replayed to a frontend that connects mid-session so that it does not have to wait
@@ -209,6 +218,10 @@ private:
     void releaseSession();
     NODISCARD GmcpMessage sessionStateFor(const Client &client) const;
     void handleInput(Client &client, const GmcpMessage &msg);
+    /// MMapper.Trade.Request and .Cancel.
+    void handleTrade(Client &client, const GmcpMessage &msg);
+    /// Works out again whether the driving frontend claims MUME's viewer (claimsViewer()).
+    void updateViewerClaim();
     void publishSessionState();
     /// Publishes MMapper.Session.State once the map's announcement interval allows: on the next
     /// turn of the event loop, or when the interval is over. Changes made meanwhile ride along.

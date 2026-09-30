@@ -822,6 +822,14 @@ void Proxy::allocMpiFilter()
         }
         void virt_onViewMessage(const QString &title, const QString &body) final
         {
+            // Both of MUME's routes for a viewed text (GMCP MUME.Client.View and MPI) end here.
+            // While the driving frontend has claimed the viewer, the text goes to it as
+            // MMapper.View.Text instead, and MMapper opens no window of its own.
+            GameObserver &observer = getProxy().getGameObserver();
+            if (observer.isViewerClaimed()) {
+                observer.observeViewText(ViewText{title, body});
+                return;
+            }
             notifyUser("a", "Viewer", title);
             getRemoteEdit().slot_remoteView(title, body);
         }

@@ -68,11 +68,16 @@ struct NODISCARD MapIdentity final
 /// "quit", "menu" (MUME's account menu or login prompt, no rent or quit seen before it) or
 /// "unknown" (nothing seen yet, or MUME not connected). MUME goes back to its menu after a rent
 /// or a quit with the connection open, so `upstream` alone cannot say the character has gone.
+///
+/// `trade` is the version of the trade operations MMapper.Trade.Request runs (TradeOperations),
+/// 1 today. `viewer` is MUME's `change viewer` setting as far as MMapper knows it: "external",
+/// "simple", "off" or "unknown" (TradeOperations::viewerState()).
 NODISCARD GmcpMessage makeSessionState(bool upstreamConnected,
                                        const MapIdentity &map,
                                        bool echo,
                                        bool driving,
-                                       GameStateEnum game = GameStateEnum::UNKNOWN);
+                                       GameStateEnum game = GameStateEnum::UNKNOWN,
+                                       const QString &viewer = QStringLiteral("unknown"));
 
 /// MMapper.Session.Error — a protocol error reported to one frontend.
 ///

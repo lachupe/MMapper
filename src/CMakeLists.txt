@@ -691,6 +691,8 @@ if(WITH_FRONTEND)
         frontend/FrontendSubscriptions.h
         frontend/TradeMessages.cpp
         frontend/TradeMessages.h
+        frontend/TradeOperations.cpp
+        frontend/TradeOperations.h
     )
 endif()
 

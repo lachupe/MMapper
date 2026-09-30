@@ -213,10 +213,13 @@ GmcpMessage makeSessionState(const bool upstreamConnected,
                              const MapIdentity &map,
                              const bool echo,
                              const bool driving,
-                             const GameStateEnum game)
+                             const GameStateEnum game,
+                             const QString &viewer)
 {
     QJsonObject obj;
     obj["itemCommands"] = 6;
+    obj["trade"] = 1;
+    obj["viewer"] = viewer;
     obj["upstream"] = upstreamConnected ? QStringLiteral("connected")
                                         : QStringLiteral("disconnected");
     obj["mapLoaded"] = map.rooms != 0;

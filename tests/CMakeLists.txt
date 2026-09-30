@@ -396,6 +396,34 @@ if(WITH_FRONTEND)
       COMPILE_FLAGS "${WARNING_FLAGS}"
     )
     add_test(NAME TestFrontend COMMAND TestFrontend)
+
+    # Trade operations: the steps, the pager answers and the viewer, against a scripted MUME
+    set(TestTradeOperations_SRCS
+        TestTradeOperations.cpp
+        ../src/frontend/FrontendSubscriptions.cpp
+        ../src/frontend/FrontendSubscriptions.h
+        ../src/frontend/TradeOperations.cpp
+        ../src/frontend/TradeOperations.h
+        ../src/proxy/GmcpModule.cpp
+        ../src/proxy/GmcpModule.h
+        ../src/proxy/GmcpUtils.cpp
+        ../src/proxy/GmcpUtils.h
+        )
+    add_executable(TestTradeOperations ${TestTradeOperations_SRCS})
+    add_dependencies(TestTradeOperations mm_test mm_global)
+    target_link_libraries(TestTradeOperations
+            mm_test
+            mm_global
+            Qt6::Test
+            coverage_config)
+    set_target_properties(
+      TestTradeOperations PROPERTIES
+      CXX_STANDARD 20
+      CXX_STANDARD_REQUIRED ON
+      CXX_EXTENSIONS OFF
+      COMPILE_FLAGS "${WARNING_FLAGS}"
+    )
+    add_test(NAME TestTradeOperations COMMAND TestTradeOperations)
 endif()
 
 # MapScroller is a plain, rendering-independent QObject (see
