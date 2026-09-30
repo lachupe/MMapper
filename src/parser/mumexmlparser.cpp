@@ -227,6 +227,13 @@ void MumeXmlParser::parse(const TelnetData &data, const bool isGoAhead)
             publishCharReplies(m_charTracker.receiveLine(plain));
         }
     }
+    if (data.type == TelnetDataEnum::Backspace && m_ownCastTracker.casting()) {
+        // A turn of the spinner while the player's own spell is being cast. It is still a
+        // twiddler, not a prompt: nothing else here treats it differently.
+        if (const auto step = m_ownCastTracker.receiveTwiddler(data.line.getQByteArray())) {
+            m_observer.observeSentToUserCombat(*step);
+        }
+    }
     if (data.type == TelnetDataEnum::Prompt) {
         // Every prompt ends a listing, in XML mode and out of it.
         publishItemBlocks(m_itemTracker.receivePrompt());

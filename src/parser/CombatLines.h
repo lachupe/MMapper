@@ -77,7 +77,8 @@ enum class NODISCARD BlowOutcomeEnum : uint8_t { HIT, PARRY, DODGE, MISS };
 /// keeps attempt with its outcome, PARRY or DODGE.
 /// For FLEE: an attempt, a failure, or getting away, the player's or anybody's; disengaged for
 /// somebody leaving the fight without leaving the room ("X seems to avoid the fight.").
-/// For CAST: started, went off, broken (a backfire too), or refused before it started.
+/// For CAST: started, went off, broken (a backfire too), or refused before it started; step for
+/// each turn of the spinner while the player's own spell is being cast (see OwnCastTracker).
 /// For BASH: none for a bash that landed, dodged for one that missed and floored the one who
 /// tried it, recovered for somebody getting over one.
 /// For SELF: stunned, sleepy, stood, fell.
@@ -105,7 +106,8 @@ enum class NODISCARD CombatPhaseEnum : uint8_t {
     UP,
     DOWN,
     REFRESH,
-    DISENGAGED
+    DISENGAGED,
+    STEP
 };
 
 struct NODISCARD CombatEvent final
@@ -169,6 +171,12 @@ NODISCARD std::optional<CombatEvent> parseCombatLine(const QString &line);
 /// comes back once the action is over. So the first prompt after the player started to
 /// concentrate, with no broken or refused line in between, is the spell going off, and this
 /// turns it into a CAST DONE event with actor "you" and empty text.
+///
+/// The spinner itself is one character of `\|/-` and a backspace, a chunk of its own about
+/// every quarter second ("prompt \^H", "prompt |^H", ... in the powwow movies). While the
+/// player's own spell is being cast each one is a CAST STEP event, actor "you", with the
+/// character as text, so that a client can advance a ring rather than guess. None come when
+/// the player has the spinner turned off.
 class NODISCARD OwnCastTracker final
 {
 private:
@@ -179,6 +187,8 @@ public:
     void receiveEvent(const CombatEvent &event);
     /// A prompt arrived (MUME's <prompt> element, not a twiddler).
     NODISCARD std::optional<CombatEvent> receivePrompt();
+    /// A chunk MUME ended with a backspace (TelnetDataEnum::Backspace), as received.
+    NODISCARD std::optional<CombatEvent> receiveTwiddler(const QByteArray &chunk) const;
     NODISCARD bool casting() const { return m_casting; }
     void reset() { m_casting = false; }
 };

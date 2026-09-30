@@ -351,6 +351,40 @@ void TestCombatLines::ownCastTrackerTest()
     feed(tracker, "You start to concentrate...");
     tracker.reset();
     QVERIFY(!tracker.receivePrompt().has_value());
+
+    // The spinner, as powwow/logs/gaar_roflmao.mov:1528-1545 recorded a cure serious: "You start
+    // to concentrate...", then the chunks "\\\b", "|\b", "/\b", "-\b", ... about 250 ms
+    // apart, then the spell's line and the prompt. Each chunk is a step while the spell is cast.
+    QVERIFY(!tracker.receiveTwiddler(QByteArray("\\\b")).has_value()); // not casting
+    feed(tracker, "You start to concentrate...");
+    int steps = 0;
+    for (const char *const chunk : {"\\\b", "|\b", "/\b", "-\b", "\\\b", "|\b", "/\b"}) {
+        const std::optional<CombatEvent> step = tracker.receiveTwiddler(QByteArray(chunk));
+        QVERIFY(step.has_value());
+        QCOMPARE(step->kind, CombatKindEnum::CAST);
+        QCOMPARE(step->phase, CombatPhaseEnum::STEP);
+        QCOMPARE(step->actor, QString("you"));
+        QCOMPARE(step->text, QString(QLatin1Char(chunk[0])));
+        ++steps;
+    }
+    QCOMPARE(steps, 7);
+    QCOMPARE(to_string_view(CombatPhaseEnum::STEP), std::string_view{"step"});
+    // Anything else ending in a backspace is not a turn of the spinner, and none of it ends
+    // the cast: only the prompt does.
+    QVERIFY(!tracker.receiveTwiddler(QByteArray("\b")).has_value());
+    QVERIFY(!tracker.receiveTwiddler(QByteArray("x\b")).has_value());
+    QVERIFY(!tracker.receiveTwiddler(QByteArray("|/\b")).has_value());
+    QVERIFY(!tracker.receiveTwiddler(QByteArray("|")).has_value());
+    QVERIFY(tracker.casting());
+    feed(tracker, "You begin to see scars fade away and a feeling of health comes over you.");
+    QVERIFY(tracker.receivePrompt().has_value());
+    QVERIFY(!tracker.receiveTwiddler(QByteArray("-\b")).has_value());
+
+    // Broken: the spinner after it is no step.
+    feed(tracker, "You start to concentrate...");
+    QVERIFY(tracker.receiveTwiddler(QByteArray("|\b")).has_value());
+    feed(tracker, "You were not able to keep your concentration while moving.");
+    QVERIFY(!tracker.receiveTwiddler(QByteArray("/\b")).has_value());
 }
 
 void TestCombatLines::bashVariantsTest()

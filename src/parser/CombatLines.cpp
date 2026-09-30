@@ -1516,6 +1516,8 @@ std::string_view to_string_view(const CombatPhaseEnum phase)
         return "refresh";
     case CombatPhaseEnum::DISENGAGED:
         return "disengaged";
+    case CombatPhaseEnum::STEP:
+        return "step";
     }
     return "unknown";
 }
@@ -1532,6 +1534,23 @@ void OwnCastTracker::receiveEvent(const CombatEvent &event)
         // The one the spell was aimed at has gone: it did not go off, whatever the prompt says.
         m_casting = false;
     }
+}
+
+std::optional<CombatEvent> OwnCastTracker::receiveTwiddler(const QByteArray &chunk) const
+{
+    if (!m_casting || chunk.size() != 2 || chunk.at(1) != '\b') {
+        return std::nullopt;
+    }
+    const char c = chunk.at(0);
+    if (c != '\\' && c != '|' && c != '/' && c != '-') {
+        return std::nullopt;
+    }
+    CombatEvent event;
+    event.kind = CombatKindEnum::CAST;
+    event.phase = CombatPhaseEnum::STEP;
+    event.actor = QStringLiteral("you");
+    event.text = QString(QLatin1Char(c));
+    return event;
 }
 
 std::optional<CombatEvent> OwnCastTracker::receivePrompt()
