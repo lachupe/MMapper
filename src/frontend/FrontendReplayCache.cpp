@@ -27,6 +27,7 @@ NODISCARD bool isWholeState(const GmcpMessageTypeEnum type)
     case GmcpMessageTypeEnum::ROOM_INFO:
     // MMapper's own, read off the replies to `stat` and `info`: each reply states them whole.
     case GmcpMessageTypeEnum::MMAPPER_CHAR_BURDEN:
+    case GmcpMessageTypeEnum::MMAPPER_CHAR_LEVEL:
     case GmcpMessageTypeEnum::MMAPPER_CHAR_STAT:
         return true;
     default:

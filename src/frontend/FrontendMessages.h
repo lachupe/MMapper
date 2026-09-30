@@ -260,4 +260,11 @@ NODISCARD GmcpMessage makeCharScore(const CharScore &score);
 /// there is one, and `text` the line. State: replayed.
 NODISCARD GmcpMessage makeCharBurden(const CharBurden &burden);
 
+/// MMapper.Char.Level -- the reply to CHAR_LEVEL_REQUEST (`info MMXP %l %x %X %t %T`), which a
+/// frontend sends itself: `level`, `xp`, `neededXp` (experience still needed for the next
+/// level), `tp` and `neededTp` (travel points still needed; a character levels only when both
+/// are met), and `text` the line as MUME sent it. A figure MUME did not print as a number is
+/// left out. The line is not shown in the terminal. State: replayed as last sent.
+NODISCARD GmcpMessage makeCharLevel(const CharLevel &level);
+
 } // namespace frontend_messages

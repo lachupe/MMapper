@@ -91,6 +91,8 @@ public:
     Signal2<CharStat> sig2_charStat;
     Signal2<CharScore> sig2_charScore;
     Signal2<CharBurden> sig2_charBurden;
+    /// The reply to CHAR_LEVEL_REQUEST, which is kept out of the terminal. See parseCharLevelLine.
+    Signal2<CharLevel> sig2_charLevel;
     Signal2<bool> sig2_toggledEchoMode;
     /// Whether a character is in the game changed: a rent, camp rent or quit line, MUME's
     /// account menu or login prompt, or GMCP Char.Name or Room.Info. See GameStateLines. Not
@@ -134,6 +136,7 @@ public:
     void observeCharStat(const CharStat &stat) { sig2_charStat.invoke(stat); }
     void observeCharScore(const CharScore &score) { sig2_charScore.invoke(score); }
     void observeCharBurden(const CharBurden &burden) { sig2_charBurden.invoke(burden); }
+    void observeCharLevel(const CharLevel &level) { sig2_charLevel.invoke(level); }
     void observeToggledEchoMode(bool echo);
     /// What a line or a GMCP message said about the game state; see nextGameState().
     void observeGameState(GameStateEnum seen);

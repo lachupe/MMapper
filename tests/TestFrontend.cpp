@@ -1167,6 +1167,42 @@ void TestFrontend::charSheetTest()
     QVERIFY(replayed(cache, GmcpMessageTypeEnum::MMAPPER_CHAR_SCORE).isNull());
 }
 
+void TestFrontend::charLevelTest()
+{
+    const std::optional<CharLevel> level = parseCharLevelLine(
+        QStringLiteral("MMXP 56 45,370,716 1,029,284 271,013 0"));
+    QVERIFY(level.has_value());
+    const GmcpMessage msg = frontend_messages::makeCharLevel(*level);
+    QCOMPARE(msg.getType(), GmcpMessageTypeEnum::MMAPPER_CHAR_LEVEL);
+    QCOMPARE(msg.toRawBytes(),
+             QByteArray(R"(MMapper.Char.Level {"level":56,"neededTp":0,"neededXp":1029284,)"
+                        R"("text":"MMXP 56 45,370,716 1,029,284 271,013 0","tp":271013,)"
+                        R"("xp":45370716})"));
+
+    // A figure MUME did not print as a number is left out.
+    const std::optional<CharLevel> top = parseCharLevelLine(
+        QStringLiteral("MMXP 100 158000000 none 288600 none"));
+    QVERIFY(top.has_value());
+    const QJsonObject t = payloadOf(frontend_messages::makeCharLevel(*top));
+    QVERIFY(!t.contains("neededXp"));
+    QVERIFY(!t.contains("neededTp"));
+    QCOMPARE(t["xp"].toInteger(), 158000000);
+
+    FrontendSubscriptions subs;
+    QVERIFY(subs.applySupports(parse(R"(Core.Supports.Set [ "MMapper.Char 1" ])")));
+    QVERIFY(subs.wants(msg));
+
+    // Replayed as last sent.
+    FrontendReplayCache cache;
+    cache.remember(msg);
+    cache.remember(frontend_messages::makeCharLevel(*top));
+    const QJsonObject replay = replayed(cache, GmcpMessageTypeEnum::MMAPPER_CHAR_LEVEL).object();
+    QCOMPARE(replay["level"].toInteger(), 100);
+    QVERIFY(!replay.contains("neededXp"));
+    cache.clear();
+    QVERIFY(replayed(cache, GmcpMessageTypeEnum::MMAPPER_CHAR_LEVEL).isNull());
+}
+
 void TestFrontend::replayChangedFieldsTest()
 {
     // MUME sends only what changed, so a frontend that connects mid-fight must be given

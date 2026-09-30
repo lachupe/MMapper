@@ -123,6 +123,34 @@ struct NODISCARD CharBurden final
     QString text;
 };
 
+/// The line MMapper reads the level and the experience and travel points from, asked of MUME
+/// with `info`'s format keys: %l level, %x experience, %X experience to level, %t travel points,
+/// %T travel points to level. The reply is one line, "MMXP 12 34567 890 1234 56" (with
+/// thousand separators when the player's setting, or a %, in the format, turns them on).
+/// A frontend sends this command as it is (MMapper.Input.Command); MMapper publishes the reply
+/// as MMapper.Char.Level and keeps it out of the terminal.
+inline constexpr const char *const CHAR_LEVEL_REQUEST = "info MMXP %l %x %X %t %T";
+
+/// The reply to CHAR_LEVEL_REQUEST. MUME's `info` format has no key for the experience at which
+/// the current level began, only for what the next one needs.
+struct NODISCARD CharLevel final
+{
+    int64_t level = 0;
+    std::optional<int64_t> xp;
+    /// Experience still needed for the next level (%X); what MUME prints once there is none
+    /// left to gain is not known, so a figure that is not a number is left unset.
+    std::optional<int64_t> neededXp;
+    std::optional<int64_t> tp;
+    /// Travel points still needed for the next level (%T). A character levels only when both
+    /// are met.
+    std::optional<int64_t> neededTp;
+    QString text;
+};
+
+/// The reply to CHAR_LEVEL_REQUEST ("MMXP 12 34,567 890 1234 56"), or nullopt when `line` is
+/// not one. The level must be a number; the other four are left unset when they are not.
+NODISCARD std::optional<CharLevel> parseCharLevelLine(const QString &line);
+
 /// "one hundred twenty-one" as 121, or nullopt when the words are not a number.
 NODISCARD std::optional<int64_t> parseNumberWords(const QString &words);
 

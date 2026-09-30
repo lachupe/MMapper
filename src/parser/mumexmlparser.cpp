@@ -170,6 +170,17 @@ void MumeXmlParser::parse(const TelnetData &data, const bool isGoAhead)
         m_xmlTracker.receiveText(m_tempCharacters);
         m_tempCharacters.clear();
     }
+    // The reply to CHAR_LEVEL_REQUEST, which a frontend asks for on its own account: published
+    // as MMapper.Char.Level and kept out of the terminal, as if MUME had not sent the line, so
+    // nothing below reads it either.
+    if (!isGoAhead && m_lineToUser.contains(QStringLiteral("MMXP "))) {
+        QString plain = m_lineToUser;
+        ParserUtils::removeAnsiMarksInPlace(plain);
+        if (const auto level = parseCharLevelLine(plain)) {
+            m_observer.observeCharLevel(*level);
+            m_lineToUser.clear();
+        }
+    }
     if (!m_lineToUser.isEmpty()) {
         sendToUser(SendToUserSourceEnum::FromMud, m_lineToUser, isGoAhead);
 

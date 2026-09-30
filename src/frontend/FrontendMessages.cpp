@@ -655,6 +655,18 @@ GmcpMessage makeCharBurden(const CharBurden &burden)
     return GmcpMessage{GmcpMessageTypeEnum::MMAPPER_CHAR_BURDEN, toGmcpJson(obj)};
 }
 
+GmcpMessage makeCharLevel(const CharLevel &level)
+{
+    QJsonObject obj;
+    obj["level"] = static_cast<qint64>(level.level);
+    putNumber(obj, "xp", level.xp);
+    putNumber(obj, "neededXp", level.neededXp);
+    putNumber(obj, "tp", level.tp);
+    putNumber(obj, "neededTp", level.neededTp);
+    obj["text"] = level.text;
+    return GmcpMessage{GmcpMessageTypeEnum::MMAPPER_CHAR_LEVEL, toGmcpJson(obj)};
+}
+
 GmcpMessage makeCharCommand(const ItemCommandObservation &command)
 {
     QJsonObject obj;

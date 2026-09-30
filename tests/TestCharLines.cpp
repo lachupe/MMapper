@@ -700,6 +700,72 @@ void TestCharLines::notCharTest()
     QVERIFY(!swim.scores.front().effectsKnown);
 }
 
+void TestCharLines::levelLineTest()
+{
+    // CHAR_LEVEL_REQUEST is MMapper's own format, so no log has its reply. That `info`'s format
+    // keys print a bare number is from powwow/logs/archives/log-2006.02.06-18.58.18.txt:183090
+    // ("info %t" answered "46523"); the figures are those of the sheet in
+    // powwow/logs/archives/log-2005.12.22-02.05.51.txt (level 56, "You have scored 45,370,716
+    // experience points and you have 271,013 travel points.", "You need 1,029,284 exp. points and
+    // 0 travel points to reach the next level.").
+    QCOMPARE(QString(CHAR_LEVEL_REQUEST), QString("info MMXP %l %x %X %t %T"));
+    const std::optional<CharLevel> bare = parseCharLevelLine("MMXP 56 45370716 1029284 271013 0");
+    QVERIFY(bare.has_value());
+    QCOMPARE(bare->level, int64_t{56});
+    QCOMPARE(bare->xp, std::optional<int64_t>{45370716});
+    QCOMPARE(bare->neededXp, std::optional<int64_t>{1029284});
+    QCOMPARE(bare->tp, std::optional<int64_t>{271013});
+    QCOMPARE(bare->neededTp, std::optional<int64_t>{0});
+    QCOMPARE(bare->text, QString("MMXP 56 45370716 1029284 271013 0"));
+
+    // Thousand separators (the player's setting, or %,), colour, a line ending and padding.
+    const std::optional<CharLevel> commas = parseCharLevelLine(
+        "\x1b[32mMMXP  56 45,370,716 1,029,284 271,013 0\x1b[0m\r\n");
+    QVERIFY(commas.has_value());
+    QCOMPARE(commas->level, int64_t{56});
+    QCOMPARE(commas->xp, std::optional<int64_t>{45370716});
+    QCOMPARE(commas->neededXp, std::optional<int64_t>{1029284});
+    QCOMPARE(commas->tp, std::optional<int64_t>{271013});
+
+    // Enough experience but travel points short: both figures are kept as MUME printed them.
+    const std::optional<CharLevel> tpShort = parseCharLevelLine("MMXP 25 7200000 0 40100 1900");
+    QVERIFY(tpShort.has_value());
+    QCOMPARE(tpShort->neededXp, std::optional<int64_t>{0});
+    QCOMPARE(tpShort->neededTp, std::optional<int64_t>{1900});
+    QVERIFY(parseCharLevelLine("MMXP 25 7200000 -5 40100 1900")->neededXp == int64_t{-5});
+
+    // What MUME prints at the highest level is unknown: a word is left unset, not zero.
+    const std::optional<CharLevel> top = parseCharLevelLine("MMXP 100 158000000 none 288600 none");
+    QVERIFY(top.has_value());
+    QVERIFY(!top->neededXp.has_value());
+    QVERIFY(!top->neededTp.has_value());
+    QCOMPARE(top->xp, std::optional<int64_t>{158000000});
+
+    // Not the line.
+    QVERIFY(!parseCharLevelLine("MMXP").has_value());
+    QVERIFY(!parseCharLevelLine("MMXP 56 45370716 1029284 271013").has_value());
+    QVERIFY(!parseCharLevelLine("MMXP 56 45370716 1029284 271013 0 7").has_value());
+    QVERIFY(!parseCharLevelLine("MMXP level 45370716 1029284 271013 0").has_value());
+    QVERIFY(!parseCharLevelLine("Bob says 'MMXP 56 1 2 3 4'").has_value());
+    QVERIFY(!parseCharLevelLine("46523").has_value());
+
+    // The stat and info readers take nothing from it, and it does not end or spoil a sheet
+    // that is open around it.
+    CharLinesTracker tracker;
+    QVERIFY(tracker.receiveLine("MMXP 56 45370716 1029284 271013 0").empty());
+    QVERIFY(tracker.receivePrompt().empty());
+    QVERIFY(tracker.receiveLine("Offensive Bonus: 93%, Dodging Bonus: 53%, Parrying Bonus: 93%.")
+                .empty());
+    QVERIFY(tracker.receiveLine("MMXP 56 45370716 1029284 271013 0").empty());
+    QVERIFY(tracker.receiveLine("Your armour provides an average protection of 77%.").empty());
+    const CharReplies sheet = tracker.receivePrompt();
+    QCOMPARE(sheet.scores.size(), size_t{1});
+    QCOMPARE(sheet.scores.front().ob, std::optional<int64_t>{93});
+    QCOMPARE(sheet.scores.front().armour, std::optional<int64_t>{77});
+    QVERIFY(!sheet.scores.front().xp.has_value());
+    QVERIFY(!sheet.scores.front().text.contains("MMXP"));
+}
+
 void TestCharLines::resetTest()
 {
     CharLinesTracker tracker;

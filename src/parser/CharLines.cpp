@@ -202,6 +202,13 @@ const QRegularExpression g_effects{
     QStringLiteral(R"(^You are subjected to the following temporary effects:)")};
 const QRegularExpression g_renownWp{QStringLiteral(R"(\s*\((-?[\d,]+) wps?\))")};
 
+// -- the level line ------------------------------------------------------------------------
+
+// CHAR_LEVEL_REQUEST's reply: the marker and five figures, which MUME prints with thousand
+// separators when they are on ("34,567") and, at the highest level, perhaps not as numbers.
+const QRegularExpression g_levelLine{
+    QStringLiteral(R"(^MMXP (\d[\d,]*) (\S+) (\S+) (\S+) (\S+)$)")};
+
 NODISCARD bool isWeakSheetLine(const QString &text)
 {
     return g_coins.match(text).hasMatch()
@@ -322,6 +329,30 @@ std::optional<CharScore> parseScoreLine(const QString &line)
     return score;
 }
 
+std::optional<CharLevel> parseCharLevelLine(const QString &line)
+{
+    const QString text = cleaned(line);
+    if (!text.startsWith(QStringLiteral("MMXP "))) {
+        return std::nullopt;
+    }
+    const QRegularExpressionMatch m = g_levelLine.match(text);
+    if (!m.hasMatch()) {
+        return std::nullopt;
+    }
+    const std::optional<int64_t> level = captured(m, 1);
+    if (!level.has_value()) {
+        return std::nullopt;
+    }
+    CharLevel result;
+    result.level = *level;
+    result.xp = captured(m, 2);
+    result.neededXp = captured(m, 3);
+    result.tp = captured(m, 4);
+    result.neededTp = captured(m, 5);
+    result.text = text;
+    return result;
+}
+
 void CharReplies::append(CharReplies &&other)
 {
     for (auto &stat : other.stats) {
@@ -341,6 +372,12 @@ CharReplies CharLinesTracker::receiveLine(const QString &line)
 {
     CharReplies out;
     const QString text = cleaned(line);
+
+    // MumeXmlParser takes the level line out before it gets here; should one arrive anyway it
+    // belongs to no reply, and does not count against an open sheet.
+    if (text.startsWith(QStringLiteral("MMXP ")) && parseCharLevelLine(text).has_value()) {
+        return out;
+    }
 
     if (m_stat.has_value()) {
         if (acceptStat(text)) {

@@ -29,6 +29,7 @@ private Q_SLOTS:
     static void infoHighestLevelTest();
     static void burdenTest();
     static void numberWordsTest();
+    static void levelLineTest();
     static void notCharTest();
     static void resetTest();
 };

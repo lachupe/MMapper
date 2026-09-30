@@ -176,6 +176,14 @@ FrontendServer::FrontendServer(GameObserver &observer,
         publish(msg);
     });
 
+    // State: the level, experience and travel points, as the last reply to CHAR_LEVEL_REQUEST
+    // gave them.
+    m_observer.sig2_charLevel.connect(m_lifetime, [this](const CharLevel &level) {
+        const GmcpMessage msg = frontend_messages::makeCharLevel(level);
+        m_replayCache.remember(msg);
+        publish(msg);
+    });
+
     m_observer.sig2_itemCommand.connect(m_lifetime, [this](const ItemCommandObservation &command) {
         if (command.status == QStringLiteral("pending")
             && command.action != QStringLiteral("equipment")
