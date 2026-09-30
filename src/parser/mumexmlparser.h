@@ -10,6 +10,7 @@
 #include "../map/CommandId.h"
 #include "../map/PromptFlags.h"
 #include "../observer/gameobserver.h"
+#include "AccountLines.h"
 #include "CharLines.h"
 #include "CombatLines.h"
 #include "ContainerLines.h"
@@ -79,6 +80,8 @@ private:
     /// MUME's replies to `stat`, `score` and `info`: the character's figures GMCP does not carry.
     /// See CharLinesTracker.
     CharLinesTracker m_charTracker;
+    /// See AccountLinesTracker.
+    AccountLinesTracker m_accountTracker;
     ItemCommandTracker m_itemCommands;
     /// MUME's replies at shops, guilds and inns and to `trop`, and the pager, which is told
     /// from the real prompt here for every reader. See TradeReaders.
@@ -133,4 +136,5 @@ private:
     void publishContainerEvents(const std::vector<ContainerEvent> &events);
     void publishItemBlocks(const std::vector<ItemBlock> &blocks);
     void publishCharReplies(const CharReplies &replies);
+    void publishAccountReplies(const AccountReplies &replies);
 };

@@ -6,6 +6,7 @@
 #include "../clock/mumemoment.h"
 #include "../global/macros.h"
 #include "../map/RoomHandle.h"
+#include "../parser/AccountLines.h"
 #include "../parser/CharLines.h"
 #include "../parser/CombatLines.h"
 #include "../parser/ContainerLines.h"
@@ -271,5 +272,21 @@ NODISCARD GmcpMessage makeCharBurden(const CharBurden &burden);
 /// are met), and `text` the line as MUME sent it. A figure MUME did not print as a number is
 /// left out. The line is not shown in the terminal. State: replayed as last sent.
 NODISCARD GmcpMessage makeCharLevel(const CharLevel &level);
+
+/// MMapper.Account.Menu -- MUME's account menu: `commands`, each {`name` (the command word,
+/// lowercase), `usage` ("Play <name>"), `help`}, in the menu's order, and `sorts`, the sort
+/// orders `list` takes where the menu names them. State: replayed as last sent, and kept when
+/// the game state changes (it is what MUME's menu offers while no character plays).
+NODISCARD GmcpMessage makeAccountMenu(const AccountMenu &menu);
+
+/// MMapper.Account.Chars -- MUME's reply to `list [<sort>]`: `account` and `chars`, each
+/// {`name`, `race`, `lvl`, `class`, `level`, `logon`, `playing`, `area`, `rent`, `delete`}, in
+/// the reply's order. The host column is never sent. An empty column is left out. State:
+/// replayed as last sent, and kept when the game state changes.
+NODISCARD GmcpMessage makeAccountChars(const AccountChars &chars);
+
+/// MMapper.Account.Reply -- a one-line answer of the menu: `kind` "wait" (`seconds` before the
+/// character may log in) or "unknown" (`command` MUME did not know), and `text`. Event.
+NODISCARD GmcpMessage makeAccountReply(const AccountReply &reply);
 
 } // namespace frontend_messages

@@ -47,6 +47,11 @@ public:
     /// For a new game session, which invalidates everything learned in the previous one.
     void clear() { m_messages.clear(); }
 
+    /// For a character leaving the game with the connection open (a rent, a quit, the menu):
+    /// forgets everything but the account's menu and characters, which describe the account,
+    /// not the character.
+    void clearGame();
+
 private:
     void store(const GmcpMessage &msg);
     void mergeFields(const GmcpMessage &msg);

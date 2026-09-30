@@ -100,8 +100,9 @@ FrontendServer::FrontendServer(GameObserver &observer,
         if (state != GameStateEnum::PLAYING) {
             // Rented, quit or at the menu: what MUME said of the character, the room and what
             // was carried is not the state of anything now, and must not be replayed to a
-            // frontend that connects while MUME waits at its menu.
-            m_replayCache.clear();
+            // frontend that connects while MUME waits at its menu. The account's menu and
+            // characters stay: they are what MUME's menu shows.
+            m_replayCache.clearGame();
             m_groundState.reset();
             m_roomContents.reset();
             m_charEquipment.reset();
@@ -172,6 +173,22 @@ FrontendServer::FrontendServer(GameObserver &observer,
         }
         // An event: one reply that moved one thing. The next listing is the state.
         publish(frontend_messages::makeCharItem(event));
+    });
+
+    // State: MUME's account menu and the account's characters, as last printed; kept while no
+    // character plays, which is when a frontend wants them. The one-line answers are events.
+    m_observer.sig2_accountMenu.connect(m_lifetime, [this](const AccountMenu &menu) {
+        const GmcpMessage msg = frontend_messages::makeAccountMenu(menu);
+        m_replayCache.remember(msg);
+        publish(msg);
+    });
+    m_observer.sig2_accountChars.connect(m_lifetime, [this](const AccountChars &chars) {
+        const GmcpMessage msg = frontend_messages::makeAccountChars(chars);
+        m_replayCache.remember(msg);
+        publish(msg);
+    });
+    m_observer.sig2_accountReply.connect(m_lifetime, [this](const AccountReply &reply) {
+        publish(frontend_messages::makeAccountReply(reply));
     });
 
     // State: the character's figures as the last reply to `stat`, `score` or `info` gave them,

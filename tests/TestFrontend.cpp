@@ -19,6 +19,7 @@
 #include "../src/map/mmapper2room.h"
 #include "../src/map/roomid.h"
 #include "../src/observer/gameobserver.h"
+#include "../src/parser/AccountLines.h"
 #include "../src/parser/ContainerLines.h"
 #include "../src/parser/GameStateLines.h"
 #include "../src/parser/ItemLines.h"
@@ -1213,6 +1214,76 @@ void TestFrontend::charLevelTest()
     QVERIFY(!replay.contains("neededXp"));
     cache.clear();
     QVERIFY(replayed(cache, GmcpMessageTypeEnum::MMAPPER_CHAR_LEVEL).isNull());
+}
+
+void TestFrontend::accountTest()
+{
+    // powwow/logs/moria.gjurza.mov:31-37, hosts replaced.
+    AccountLinesTracker tracker;
+    AccountReplies out;
+    for (const char *const line :
+         {"Characters in account \"dmitry\"",
+          "Name         Rce Lvl   Logon Area     Rent    Delete Host",
+          "Porien            Mc  8 days Valinor    free   never secret-host.example",
+          "Rumata       dwa W63 28 days Rivendl    free retired secret-host.example",
+          ""}) {
+        out.append(tracker.receiveLine(QString::fromUtf8(line)));
+    }
+    QCOMPARE(out.lists.size(), size_t{1});
+    const GmcpMessage chars = frontend_messages::makeAccountChars(out.lists.front());
+    QCOMPARE(chars.getType(), GmcpMessageTypeEnum::MMAPPER_ACCOUNT_CHARS);
+    QCOMPARE(chars.toRawBytes(),
+             QByteArray(R"(MMapper.Account.Chars {"account":"dmitry","chars":[)"
+                        R"({"area":"Valinor","delete":"never","logon":"8 days","lvl":"Mc",)"
+                        R"("name":"Porien","playing":false,"rent":"free"},)"
+                        R"({"area":"Rivendl","class":"W","delete":"retired","level":63,)"
+                        R"("logon":"28 days","lvl":"W63","name":"Rumata","playing":false,)"
+                        R"("race":"dwa","rent":"free"}]})"));
+    QVERIFY(!chars.toRawBytes().contains("secret-host"));
+
+    AccountMenu menu;
+    AccountMenuCommand play;
+    play.name = QStringLiteral("play");
+    play.usage = QStringLiteral("Play <name>");
+    play.help = QStringLiteral("Log the character <name> into MUME");
+    menu.commands.push_back(play);
+    menu.sorts = QStringList{QStringLiteral("side"), QStringLiteral("race")};
+    const GmcpMessage menuMsg = frontend_messages::makeAccountMenu(menu);
+    QCOMPARE(menuMsg.toRawBytes(),
+             QByteArray(R"(MMapper.Account.Menu {"commands":[{"help":"Log the character <name> )"
+                        R"(into MUME","name":"play","usage":"Play <name>"}],)"
+                        R"("sorts":["side","race"]})"));
+
+    const auto wait = parseAccountReplyLine(
+        QStringLiteral("You must wait  6 mins before you can log in this character!"));
+    QVERIFY(wait.has_value());
+    const QJsonObject w = payloadOf(frontend_messages::makeAccountReply(*wait));
+    QCOMPARE(w["kind"].toString(), QStringLiteral("wait"));
+    QCOMPARE(w["seconds"].toInteger(), 360);
+
+    FrontendSubscriptions subs;
+    QVERIFY(subs.applySupports(parse(R"(Core.Supports.Set [ "MMapper.Account 1" ])")));
+    QVERIFY(subs.wants(chars));
+    QVERIFY(subs.wants(menuMsg));
+
+    // Replayed as last sent, and kept when the character leaves the game; a new connection
+    // forgets them.
+    FrontendReplayCache cache;
+    cache.remember(chars);
+    cache.remember(menuMsg);
+    cache.remember(frontend_messages::makeAccountReply(*wait));
+    cache.remember(GmcpMessage::fromRawBytes(QByteArray{R"(Char.Name {"name":"Rumata"})"}));
+    cache.clearGame();
+    QVERIFY(replayed(cache, GmcpMessageTypeEnum::CHAR_NAME).isNull());
+    QCOMPARE(replayed(cache, GmcpMessageTypeEnum::MMAPPER_ACCOUNT_CHARS)
+                 .object()["chars"]
+                 .toArray()
+                 .size(),
+             2);
+    QVERIFY(!replayed(cache, GmcpMessageTypeEnum::MMAPPER_ACCOUNT_MENU).isNull());
+    QVERIFY(replayed(cache, GmcpMessageTypeEnum::MMAPPER_ACCOUNT_REPLY).isNull());
+    cache.clear();
+    QVERIFY(replayed(cache, GmcpMessageTypeEnum::MMAPPER_ACCOUNT_CHARS).isNull());
 }
 
 void TestFrontend::replayChangedFieldsTest()

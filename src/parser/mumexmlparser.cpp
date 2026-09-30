@@ -118,6 +118,7 @@ MumeXmlParser::MumeXmlParser(MapData &md,
         }
         m_itemTracker.reset();
         m_charTracker.reset();
+        m_accountTracker.reset();
         m_tradeReaders.reset();
     });
 }
@@ -229,6 +230,10 @@ void MumeXmlParser::parse(const TelnetData &data, const bool isGoAhead)
         if (const auto gameState = parseGameStateLine(plain)) {
             m_observer.observeGameState(*gameState);
         }
+        // The account menu, `list`'s characters and the menu's refusals. The `Account> ` prompt
+        // comes as a line or glued to the next, so this reads every chunk, GO-AHEAD or not;
+        // the rows are columns, so the line is not trimmed.
+        publishAccountReplies(m_accountTracker.receiveLine(plain));
         // Replies to the player's container commands: "Ok.", "*click*", a listing. A prompt
         // is not one, and ends the reply being gathered instead (below).
         if (!isGoAhead) {
@@ -263,6 +268,7 @@ void MumeXmlParser::parse(const TelnetData &data, const bool isGoAhead)
         publishItemBlocks(m_itemTracker.receivePrompt());
         publishCharReplies(m_charTracker.receivePrompt());
         m_tradeReaders.receivePrompt();
+        publishAccountReplies(m_accountTracker.receivePrompt());
     }
 
     // Published after the terminal output of the line that closed them, so a client can
@@ -350,6 +356,19 @@ void MumeXmlParser::publishItemBlocks(const std::vector<ItemBlock> &blocks)
     for (const ItemBlock &block : blocks) {
         m_itemCommands.receiveBlock(block);
         m_observer.observeItemBlock(block);
+    }
+}
+
+void MumeXmlParser::publishAccountReplies(const AccountReplies &replies)
+{
+    for (const AccountMenu &menu : replies.menus) {
+        m_observer.observeAccountMenu(menu);
+    }
+    for (const AccountChars &chars : replies.lists) {
+        m_observer.observeAccountChars(chars);
+    }
+    for (const AccountReply &reply : replies.replies) {
+        m_observer.observeAccountReply(reply);
     }
 }
 

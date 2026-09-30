@@ -189,6 +189,28 @@ set_target_properties(
 )
 add_test(NAME TestCombatLines COMMAND TestCombatLines)
 
+# The account menu and its list of characters
+set(TestAccountLines_SRCS
+    TestAccountLines.cpp
+    ../src/parser/AccountLines.cpp
+    ../src/parser/AccountLines.h
+    )
+add_executable(TestAccountLines ${TestAccountLines_SRCS})
+add_dependencies(TestAccountLines mm_test mm_global)
+target_link_libraries(TestAccountLines
+        mm_test
+        mm_global
+        Qt6::Test
+        coverage_config)
+set_target_properties(
+  TestAccountLines PROPERTIES
+  CXX_STANDARD 20
+  CXX_STANDARD_REQUIRED ON
+  CXX_EXTENSIONS OFF
+  COMPILE_FLAGS "${WARNING_FLAGS}"
+)
+add_test(NAME TestAccountLines COMMAND TestAccountLines)
+
 # The character's figures: stat, score and info
 set(TestCharLines_SRCS TestCharLines.cpp ../src/parser/CharLines.cpp ../src/parser/CharLines.h)
 add_executable(TestCharLines ${TestCharLines_SRCS})
@@ -354,6 +376,8 @@ if(WITH_FRONTEND)
         ../src/frontend/FrontendMessages.h
         ../src/frontend/FrontendReplayCache.cpp
         ../src/frontend/FrontendReplayCache.h
+        ../src/parser/AccountLines.cpp
+        ../src/parser/AccountLines.h
         ../src/parser/CharLines.cpp
         ../src/parser/CharLines.h
         ../src/parser/CombatLines.cpp

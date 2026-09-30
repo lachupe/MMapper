@@ -581,6 +581,57 @@ void putText(QJsonObject &obj, const char *const key, const QString &value)
 
 } // namespace
 
+GmcpMessage makeAccountMenu(const AccountMenu &menu)
+{
+    QJsonArray commands;
+    for (const AccountMenuCommand &command : menu.commands) {
+        QJsonObject c;
+        c["name"] = command.name;
+        c["usage"] = command.usage;
+        putText(c, "help", command.help);
+        commands.append(c);
+    }
+    QJsonObject obj;
+    obj["commands"] = commands;
+    if (!menu.sorts.isEmpty()) {
+        obj["sorts"] = QJsonArray::fromStringList(menu.sorts);
+    }
+    return GmcpMessage{GmcpMessageTypeEnum::MMAPPER_ACCOUNT_MENU, toGmcpJson(obj)};
+}
+
+GmcpMessage makeAccountChars(const AccountChars &chars)
+{
+    QJsonArray rows;
+    for (const AccountChar &row : chars.chars) {
+        QJsonObject c;
+        c["name"] = row.name;
+        putText(c, "race", row.race);
+        c["lvl"] = row.lvl;
+        putText(c, "class", row.cls);
+        putNumber(c, "level", row.level);
+        putText(c, "logon", row.logon);
+        c["playing"] = row.playing;
+        putText(c, "area", row.area);
+        putText(c, "rent", row.rent);
+        putText(c, "delete", row.deletion);
+        rows.append(c);
+    }
+    QJsonObject obj;
+    putText(obj, "account", chars.account);
+    obj["chars"] = rows;
+    return GmcpMessage{GmcpMessageTypeEnum::MMAPPER_ACCOUNT_CHARS, toGmcpJson(obj)};
+}
+
+GmcpMessage makeAccountReply(const AccountReply &reply)
+{
+    QJsonObject obj;
+    obj["kind"] = QString::fromUtf8(accountReplyKindName(reply.kind));
+    putNumber(obj, "seconds", reply.seconds);
+    putText(obj, "command", reply.command);
+    obj["text"] = reply.text;
+    return GmcpMessage{GmcpMessageTypeEnum::MMAPPER_ACCOUNT_REPLY, toGmcpJson(obj)};
+}
+
 GmcpMessage makeCharStat(const CharStat &stat)
 {
     QJsonObject obj;

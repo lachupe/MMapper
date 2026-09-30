@@ -6,6 +6,7 @@
 #include "../clock/mumemoment.h"
 #include "../global/Signal2.h"
 #include "../map/PromptFlags.h"
+#include "../parser/AccountLines.h"
 #include "../parser/CharLines.h"
 #include "../parser/CombatLines.h"
 #include "../parser/ContainerLines.h"
@@ -94,6 +95,11 @@ public:
     Signal2<CharBurden> sig2_charBurden;
     /// The reply to CHAR_LEVEL_REQUEST, which is kept out of the terminal. See parseCharLevelLine.
     Signal2<CharLevel> sig2_charLevel;
+    /// MUME's account menu, its `list` of characters and its one-line answers. See
+    /// AccountLinesTracker.
+    Signal2<AccountMenu> sig2_accountMenu;
+    Signal2<AccountChars> sig2_accountChars;
+    Signal2<AccountReply> sig2_accountReply;
     /// MUME's replies at shops, guilds and inns, and to `trop`, complete. See TradeLinesTracker.
     /// The tables and deals come at the real prompt that ends them, before sig2_realPrompt; a
     /// practised line at once, an inn quote once its "You have enough money" line came.
@@ -158,6 +164,9 @@ public:
     void observeCharScore(const CharScore &score) { sig2_charScore.invoke(score); }
     void observeCharBurden(const CharBurden &burden) { sig2_charBurden.invoke(burden); }
     void observeCharLevel(const CharLevel &level) { sig2_charLevel.invoke(level); }
+    void observeAccountMenu(const AccountMenu &menu) { sig2_accountMenu.invoke(menu); }
+    void observeAccountChars(const AccountChars &chars) { sig2_accountChars.invoke(chars); }
+    void observeAccountReply(const AccountReply &reply) { sig2_accountReply.invoke(reply); }
     void observeShopList(const ShopList &list) { sig2_shopList.invoke(list); }
     void observeShopDeal(const ShopDeal &deal) { sig2_shopDeal.invoke(deal); }
     void observeGuildTeacher(const GuildTeacher &teacher) { sig2_guildTeacher.invoke(teacher); }

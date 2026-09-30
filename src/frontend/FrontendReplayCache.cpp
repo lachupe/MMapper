@@ -28,6 +28,9 @@ NODISCARD bool isWholeState(const GmcpMessageTypeEnum type)
     // MMapper's own, read off the replies to `stat` and `info`: each reply states them whole.
     case GmcpMessageTypeEnum::MMAPPER_CHAR_BURDEN:
     case GmcpMessageTypeEnum::MMAPPER_CHAR_LEVEL:
+    // The account menu and `list`'s characters: each printing is the whole of it.
+    case GmcpMessageTypeEnum::MMAPPER_ACCOUNT_CHARS:
+    case GmcpMessageTypeEnum::MMAPPER_ACCOUNT_MENU:
     // The general practice table, read off `prac` away from a guild: each reply lists it whole.
     case GmcpMessageTypeEnum::MMAPPER_CHAR_SKILLS:
     case GmcpMessageTypeEnum::MMAPPER_CHAR_STAT:
@@ -100,6 +103,19 @@ void FrontendReplayCache::remember(const GmcpMessage &msg)
         mergeFields(msg);
     } else if (isWholeState(type)) {
         store(msg);
+    }
+}
+
+void FrontendReplayCache::clearGame()
+{
+    for (auto it = m_messages.begin(); it != m_messages.end();) {
+        const GmcpMessageTypeEnum type = it->first;
+        if (type == GmcpMessageTypeEnum::MMAPPER_ACCOUNT_CHARS
+            || type == GmcpMessageTypeEnum::MMAPPER_ACCOUNT_MENU) {
+            ++it;
+        } else {
+            it = m_messages.erase(it);
+        }
     }
 }
 
