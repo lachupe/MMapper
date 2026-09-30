@@ -15,5 +15,24 @@ public:
     ~TestTradeLines() override = default;
 
 private Q_SLOTS:
-    static void interfaceTest();
+    static void pagerLineTest();
+    static void classifyChunkTest();
+    static void moneyTest();
+    static void shopListTest();
+    static void shopListEmptyAndForeignTest();
+    static void shopListPagedTest();
+    static void shopDealTest();
+    static void shopClosedAndNotDealsTest();
+    static void guildTeacherTest();
+    static void guildTeacherOldFormTest();
+    static void guildTeacherPagedTest();
+    static void practisedTest();
+    static void charSkillsTest();
+    static void charSkillsPagedTest();
+    static void innOfferTest();
+    static void trophiesTest();
+    static void trophiesPagedTest();
+    static void readersOrderTest();
+    static void messagesTest();
+    static void resetTest();
 };
