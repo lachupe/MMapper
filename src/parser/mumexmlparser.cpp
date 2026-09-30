@@ -75,6 +75,7 @@ MumeXmlParser::MumeXmlParser(MapData &md,
                              AbstractParserOutputs &outputs,
                              ParserCommonData &parserCommonData)
     : MumeXmlParserBase{parent, mc, md, group, hm, proxyGmcp, outputs, parserCommonData}
+    , m_tradeReaders{observer}
     , m_observer{observer}
 {
     // Every line on its way to MUME, from MMapper's own client and from a frontend's
@@ -82,6 +83,10 @@ MumeXmlParser::MumeXmlParser(MapData &md,
     // with the command that caused them. Lines typed while MUME has echo off, such as a
     // password, are not reported here.
     m_observer.sig2_sentToMudString.connect(m_lifetime, [this](const QString &line) {
+        // The line after a pager answers it (Return, "q"), whoever sent it: no command.
+        if (!m_tradeReaders.receiveCommand(line)) {
+            return;
+        }
         m_containerTracker.receiveCommand(line);
         m_itemTracker.receiveCommand(line);
         if (const auto command = m_itemCommands.receiveCommand(line,
@@ -104,6 +109,7 @@ MumeXmlParser::MumeXmlParser(MapData &md,
             }
             m_itemTracker.reset();
             m_charTracker.reset();
+            m_tradeReaders.reset();
         }
     });
     m_observer.sig2_disconnected.connect(m_lifetime, [this]() {
@@ -112,6 +118,7 @@ MumeXmlParser::MumeXmlParser(MapData &md,
         }
         m_itemTracker.reset();
         m_charTracker.reset();
+        m_tradeReaders.reset();
     });
 }
 
@@ -121,10 +128,16 @@ void MumeXmlParser::slot_parseNewMudInput(const TelnetData &data)
 {
     const bool isPromptOrTwiddlers = data.type == TelnetDataEnum::Prompt
                                      || data.type == TelnetDataEnum::Backspace;
+    // The pager line comes on a GA too, but it is no prompt: the one MMapper repeats after its
+    // own messages stays the last real one.
+    const QString previousPrompt = m_commonData.lastPrompt;
     if (isPromptOrTwiddlers) {
         m_commonData.lastPrompt = QString::fromUtf8(data.line.getQByteArray());
     }
     parse(data, isPromptOrTwiddlers);
+    if (m_chunkIsPager) {
+        m_commonData.lastPrompt = previousPrompt;
+    }
 }
 
 void MumeXmlParser::parse(const TelnetData &data, const bool isGoAhead)
@@ -181,6 +194,16 @@ void MumeXmlParser::parse(const TelnetData &data, const bool isGoAhead)
             m_lineToUser.clear();
         }
     }
+    // What the chunk is, decided once for every reader: a line, MUME's pager line (on a GA, but
+    // no prompt: it must not close replies or finish commands), the real prompt, or a twiddler.
+    // A pager glued to the front of a line when no GA came is taken off the line here.
+    QString chunkText = m_lineToUser;
+    ParserUtils::removeAnsiMarksInPlace(chunkText);
+    const MudChunk chunk = m_tradeReaders.beginChunk(data.type == TelnetDataEnum::Prompt,
+                                                     data.type == TelnetDataEnum::Backspace,
+                                                     chunkText);
+    const bool isRealPrompt = chunk.kind == MudChunkKindEnum::PROMPT;
+    m_chunkIsPager = chunk.kind == MudChunkKindEnum::PAGER;
     if (!m_lineToUser.isEmpty()) {
         sendToUser(SendToUserSourceEnum::FromMud, m_lineToUser, isGoAhead);
 
@@ -196,8 +219,7 @@ void MumeXmlParser::parse(const TelnetData &data, const bool isGoAhead)
         // feed a client's combat log and the participants they name. Read from the line as
         // the user sees it, colour removed but not otherwise normalised, so that a name keeps
         // the accents Room.Chars gives it and the two can be matched.
-        QString plain = m_lineToUser;
-        ParserUtils::removeAnsiMarksInPlace(plain);
+        const QString &plain = chunk.plain;
         if (const auto combat = parseCombatLine(plain)) {
             m_ownCastTracker.receiveEvent(*combat);
             m_observer.observeSentToUserCombat(*combat);
@@ -225,6 +247,8 @@ void MumeXmlParser::parse(const TelnetData &data, const bool isGoAhead)
             // burden line. Read whoever sent the command -- the player, an alias, or a frontend
             // asking quietly -- and left in the terminal as they are.
             publishCharReplies(m_charTracker.receiveLine(plain));
+            // Shops, guilds, inns and trophies, read the same way.
+            m_tradeReaders.receiveLine(plain);
         }
     }
     if (data.type == TelnetDataEnum::Backspace && m_ownCastTracker.casting()) {
@@ -234,10 +258,11 @@ void MumeXmlParser::parse(const TelnetData &data, const bool isGoAhead)
             m_observer.observeSentToUserCombat(*step);
         }
     }
-    if (data.type == TelnetDataEnum::Prompt) {
-        // Every prompt ends a listing, in XML mode and out of it.
+    if (isRealPrompt) {
+        // Every prompt ends a listing, in XML mode and out of it; the pager line does not.
         publishItemBlocks(m_itemTracker.receivePrompt());
         publishCharReplies(m_charTracker.receivePrompt());
+        m_tradeReaders.receivePrompt();
     }
 
     // Published after the terminal output of the line that closed them, so a client can
@@ -260,7 +285,7 @@ void MumeXmlParser::parse(const TelnetData &data, const bool isGoAhead)
         // The objects in the room, complete at the prompt that ends its display, like the
         // ground above. A prompt also ends any container reply being gathered, which goes
         // first, so that what it said is in the room's objects.
-        if (xml.tag == XmlTagEnum::PROMPT) {
+        if (xml.tag == XmlTagEnum::PROMPT && !m_chunkIsPager) {
             publishContainerEvents(
                 m_containerTracker.receivePrompt(QDateTime::currentSecsSinceEpoch()));
             // The prompt coming back is the only sign the player's own spell went off.
@@ -277,7 +302,8 @@ void MumeXmlParser::parse(const TelnetData &data, const bool isGoAhead)
             std::ignore = m_containerTracker.takeChanged();
             m_itemCommands.receiveRoom(contents->seen);
             m_observer.observeRoomContents(*contents);
-        } else if (xml.tag == XmlTagEnum::PROMPT && m_containerTracker.takeChanged()) {
+        } else if (xml.tag == XmlTagEnum::PROMPT && !m_chunkIsPager
+                   && m_containerTracker.takeChanged()) {
             // A reply changed what is known about a container here: the room's objects are
             // published again, so that a frontend that subscribes later is told.
             RoomContentsSnapshot changed = m_containerTracker.current();
@@ -285,12 +311,14 @@ void MumeXmlParser::parse(const TelnetData &data, const bool isGoAhead)
             m_observer.observeRoomContents(changed);
         }
     }
-    if (data.type == TelnetDataEnum::Prompt) {
+    if (isRealPrompt) {
         // Finish after all listings and room snapshots at this prompt have been published.
         for (const auto &command : m_itemCommands.finish(true)) {
             m_observer.sig2_itemCommand.invoke(command);
         }
     }
+    // Last of all: sig2_realPrompt, once every reader of this prompt has published.
+    m_tradeReaders.endChunk();
 }
 
 QString MumeXmlParser::roomKey() const
@@ -373,6 +401,7 @@ bool MumeXmlParser::element(const QString &line)
                     m_containerTracker.reset();
                     m_itemTracker.reset();
                     m_charTracker.reset();
+                    m_tradeReaders.reset();
                     for (const auto &command : m_itemCommands.finish(false)) {
                         m_observer.sig2_itemCommand.invoke(command);
                     }

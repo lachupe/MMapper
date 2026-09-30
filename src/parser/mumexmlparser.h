@@ -16,6 +16,7 @@
 #include "ItemLines.h"
 #include "LineFlags.h"
 #include "RoomContents.h"
+#include "TradeLines.h"
 #include "WeatherLines.h"
 #include "XmlElementTracker.h"
 #include "abstractparser.h"
@@ -79,6 +80,11 @@ private:
     /// See CharLinesTracker.
     CharLinesTracker m_charTracker;
     ItemCommandTracker m_itemCommands;
+    /// MUME's replies at shops, guilds and inns and to `trop`, and the pager, which is told
+    /// from the real prompt here for every reader. See TradeReaders.
+    TradeReaders m_tradeReaders;
+    /// The chunk being parsed was the pager line, not a prompt.
+    bool m_chunkIsPager = false;
     /// When the player's own spell goes off, which MUME marks only by sending the prompt
     /// again. See OwnCastTracker.
     OwnCastTracker m_ownCastTracker;
