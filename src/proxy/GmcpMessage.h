@@ -84,8 +84,16 @@ class ParseEvent;
     X(MMAPPER_CHAR_BURDEN, MMapperCharBurden, "mmapper.char.burden", "MMapper.Char.Burden") \
     X(MMAPPER_CHAR_LEVEL, MMapperCharLevel, "mmapper.char.level", "MMapper.Char.Level") \
     X(MMAPPER_CHAR_SCORE, MMapperCharScore, "mmapper.char.score", "MMapper.Char.Score") \
+    X(MMAPPER_CHAR_SKILLS, MMapperCharSkills, "mmapper.char.skills", "MMapper.Char.Skills") \
     X(MMAPPER_CHAR_STAT, MMapperCharStat, "mmapper.char.stat", "MMapper.Char.Stat") \
+    X(MMAPPER_CHAR_TROPHIES, MMapperCharTrophies, "mmapper.char.trophies", "MMapper.Char.Trophies") \
     X(MMAPPER_COMBAT_EVENT, MMapperCombatEvent, "mmapper.combat.event", "MMapper.Combat.Event") \
+    X(MMAPPER_GUILD_PRACTISED, \
+      MMapperGuildPractised, \
+      "mmapper.guild.practised", \
+      "MMapper.Guild.Practised") \
+    X(MMAPPER_GUILD_TEACHER, MMapperGuildTeacher, "mmapper.guild.teacher", "MMapper.Guild.Teacher") \
+    X(MMAPPER_INN_OFFER, MMapperInnOffer, "mmapper.inn.offer", "MMapper.Inn.Offer") \
     X(MMAPPER_INPUT_COMMAND, MMapperInputCommand, "mmapper.input.command", "MMapper.Input.Command") \
     X(MMAPPER_MAP_POSITION, MMapperMapPosition, "mmapper.map.position", "MMapper.Map.Position") \
     X(MMAPPER_ROOM_CONTAINER, \
@@ -95,11 +103,20 @@ class ParseEvent;
     X(MMAPPER_ROOM_CONTENTS, MMapperRoomContents, "mmapper.room.contents", "MMapper.Room.Contents") \
     X(MMAPPER_SESSION_ERROR, MMapperSessionError, "mmapper.session.error", "MMapper.Session.Error") \
     X(MMAPPER_SESSION_STATE, MMapperSessionState, "mmapper.session.state", "MMapper.Session.State") \
+    X(MMAPPER_SHOP_DEAL, MMapperShopDeal, "mmapper.shop.deal", "MMapper.Shop.Deal") \
+    X(MMAPPER_SHOP_LIST, MMapperShopList, "mmapper.shop.list", "MMapper.Shop.List") \
     X(MMAPPER_TERMINAL_OUTPUT, \
       MMapperTerminalOutput, \
       "mmapper.terminal.output", \
       "MMapper.Terminal.Output") \
     X(MMAPPER_TIME_STATE, MMapperTimeState, "mmapper.time.state", "MMapper.Time.State") \
+    X(MMAPPER_TRADE_CANCEL, MMapperTradeCancel, "mmapper.trade.cancel", "MMapper.Trade.Cancel") \
+    X(MMAPPER_TRADE_OPERATION, \
+      MMapperTradeOperation, \
+      "mmapper.trade.operation", \
+      "MMapper.Trade.Operation") \
+    X(MMAPPER_TRADE_REQUEST, MMapperTradeRequest, "mmapper.trade.request", "MMapper.Trade.Request") \
+    X(MMAPPER_VIEW_TEXT, MMapperViewText, "mmapper.view.text", "MMapper.View.Text") \
     X(MMAPPER_WEATHER_EVENT, MMapperWeatherEvent, "mmapper.weather.event", "MMapper.Weather.Event") \
     X(MMAPPER_WEATHER_GROUND, \
       MMapperWeatherGround, \
@@ -118,7 +135,7 @@ enum class NODISCARD GmcpMessageTypeEnum {
 #define X_COUNT(...) +1
 static constexpr const size_t NUM_GMCP_MESSAGES = XFOREACH_GMCP_MESSAGE_TYPE(X_COUNT);
 #undef X_COUNT
-static_assert(NUM_GMCP_MESSAGES == 62);
+static_assert(NUM_GMCP_MESSAGES == 73);
 DEFINE_ENUM_COUNT(GmcpMessageTypeEnum, NUM_GMCP_MESSAGES)
 
 namespace tags {

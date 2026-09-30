@@ -13,6 +13,7 @@
 #include "../parser/ItemLines.h"
 #include "../parser/RoomContents.h"
 #include "../parser/SendToUserSourceEnum.h"
+#include "../parser/TradeLines.h"
 #include "../parser/WeatherLines.h"
 #include "../parser/XmlElement.h"
 #include "../proxy/GmcpMessage.h"
@@ -93,6 +94,25 @@ public:
     Signal2<CharBurden> sig2_charBurden;
     /// The reply to CHAR_LEVEL_REQUEST, which is kept out of the terminal. See parseCharLevelLine.
     Signal2<CharLevel> sig2_charLevel;
+    /// MUME's replies at shops, guilds and inns, and to `trop`, complete. See TradeLinesTracker.
+    /// The tables and deals come at the real prompt that ends them, before sig2_realPrompt; a
+    /// practised line at once, an inn quote once its "You have enough money" line came.
+    Signal2<ShopList> sig2_shopList;
+    Signal2<ShopDeal> sig2_shopDeal;
+    Signal2<GuildTeacher> sig2_guildTeacher;
+    Signal2<GuildPractised> sig2_guildPractised;
+    Signal2<CharSkills> sig2_charSkills;
+    Signal2<InnOffer> sig2_innOffer;
+    Signal2<CharTrophies> sig2_charTrophies;
+    /// Every pager line MUME sends, whoever's reply it cuts. The parser treats it as no prompt:
+    /// replies stay open, the last prompt is kept, and the next line sent is its answer.
+    Signal2<PagerLine> sig2_pager;
+    /// A real prompt (a GA chunk that is not the pager), emitted after every reader of that
+    /// prompt has published what it completed.
+    Signal2<> sig2_realPrompt;
+    /// A text MUME showed through its viewer, published instead of MMapper's own window while a
+    /// frontend has claimed the viewer. See setViewerClaimed().
+    Signal2<ViewText> sig2_viewText;
     Signal2<bool> sig2_toggledEchoMode;
     /// Whether a character is in the game changed: a rent, camp rent or quit line, MUME's
     /// account menu or login prompt, or GMCP Char.Name or Room.Info. See GameStateLines. Not
@@ -117,6 +137,7 @@ private:
     PromptWeatherEnum m_weather = PromptWeatherEnum::NICE;
     PromptFogEnum m_fog = PromptFogEnum::NO_FOG;
     GameStateEnum m_gameState = GameStateEnum::UNKNOWN;
+    bool m_viewerClaimed = false;
 
 public:
     void observeConnected();
@@ -137,6 +158,22 @@ public:
     void observeCharScore(const CharScore &score) { sig2_charScore.invoke(score); }
     void observeCharBurden(const CharBurden &burden) { sig2_charBurden.invoke(burden); }
     void observeCharLevel(const CharLevel &level) { sig2_charLevel.invoke(level); }
+    void observeShopList(const ShopList &list) { sig2_shopList.invoke(list); }
+    void observeShopDeal(const ShopDeal &deal) { sig2_shopDeal.invoke(deal); }
+    void observeGuildTeacher(const GuildTeacher &teacher) { sig2_guildTeacher.invoke(teacher); }
+    void observeGuildPractised(const GuildPractised &practised)
+    {
+        sig2_guildPractised.invoke(practised);
+    }
+    void observeCharSkills(const CharSkills &skills) { sig2_charSkills.invoke(skills); }
+    void observeInnOffer(const InnOffer &offer) { sig2_innOffer.invoke(offer); }
+    void observeCharTrophies(const CharTrophies &trophies) { sig2_charTrophies.invoke(trophies); }
+    void observePager(const PagerLine &pager) { sig2_pager.invoke(pager); }
+    void observeRealPrompt() { sig2_realPrompt.invoke(); }
+    void observeViewText(const ViewText &view) { sig2_viewText.invoke(view); }
+    /// Whether a frontend has claimed MUME's viewer: viewed texts then go out as sig2_viewText
+    /// and MMapper opens no window of its own for them.
+    void setViewerClaimed(const bool claimed) { m_viewerClaimed = claimed; }
     void observeToggledEchoMode(bool echo);
     /// What a line or a GMCP message said about the game state; see nextGameState().
     void observeGameState(GameStateEnum seen);
@@ -159,4 +196,5 @@ public:
     NODISCARD PromptWeatherEnum getWeather() const { return m_weather; }
     NODISCARD PromptFogEnum getFog() const { return m_fog; }
     NODISCARD GameStateEnum getGameState() const { return m_gameState; }
+    NODISCARD bool isViewerClaimed() const { return m_viewerClaimed; }
 };

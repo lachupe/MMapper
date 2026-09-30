@@ -28,6 +28,8 @@ NODISCARD bool isWholeState(const GmcpMessageTypeEnum type)
     // MMapper's own, read off the replies to `stat` and `info`: each reply states them whole.
     case GmcpMessageTypeEnum::MMAPPER_CHAR_BURDEN:
     case GmcpMessageTypeEnum::MMAPPER_CHAR_LEVEL:
+    // The general practice table, read off `prac` away from a guild: each reply lists it whole.
+    case GmcpMessageTypeEnum::MMAPPER_CHAR_SKILLS:
     case GmcpMessageTypeEnum::MMAPPER_CHAR_STAT:
         return true;
     default:

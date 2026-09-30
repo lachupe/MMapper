@@ -529,6 +529,8 @@ set(mmapper_SRCS
     parser/RoomContents.cpp
     parser/RoomContents.h
     parser/SendToUserSourceEnum.h
+    parser/TradeLines.cpp
+    parser/TradeLines.h
     parser/WeatherLines.cpp
     parser/WeatherLines.h
     parser/XmlElement.cpp
@@ -687,6 +689,8 @@ if(WITH_FRONTEND)
         frontend/FrontendSession.h
         frontend/FrontendSubscriptions.cpp
         frontend/FrontendSubscriptions.h
+        frontend/TradeMessages.cpp
+        frontend/TradeMessages.h
     )
 endif()
 

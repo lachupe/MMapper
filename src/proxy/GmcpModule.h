@@ -27,12 +27,17 @@
     /* MMapper-specific modules; these are never forwarded upstream to MUME. */ \
     X(MMAPPER_CHAR, MMapperChar, "mmapper.char", "MMapper.Char") \
     X(MMAPPER_COMBAT, MMapperCombat, "mmapper.combat", "MMapper.Combat") \
+    X(MMAPPER_GUILD, MMapperGuild, "mmapper.guild", "MMapper.Guild") \
+    X(MMAPPER_INN, MMapperInn, "mmapper.inn", "MMapper.Inn") \
     X(MMAPPER_INPUT, MMapperInput, "mmapper.input", "MMapper.Input") \
     X(MMAPPER_MAP, MMapperMap, "mmapper.map", "MMapper.Map") \
     X(MMAPPER_ROOM, MMapperRoom, "mmapper.room", "MMapper.Room") \
     X(MMAPPER_SESSION, MMapperSession, "mmapper.session", "MMapper.Session") \
+    X(MMAPPER_SHOP, MMapperShop, "mmapper.shop", "MMapper.Shop") \
     X(MMAPPER_TERMINAL, MMapperTerminal, "mmapper.terminal", "MMapper.Terminal") \
     X(MMAPPER_TIME, MMapperTime, "mmapper.time", "MMapper.Time") \
+    X(MMAPPER_TRADE, MMapperTrade, "mmapper.trade", "MMapper.Trade") \
+    X(MMAPPER_VIEW, MMapperView, "mmapper.view", "MMapper.View") \
     X(MMAPPER_WEATHER, MMapperWeather, "mmapper.weather", "MMapper.Weather") \
     X(MMAPPER_XML, MMapperXml, "mmapper.xml", "MMapper.Xml") \
     /* define gmcp module types above */
@@ -47,7 +52,7 @@ enum class NODISCARD GmcpModuleTypeEnum : uint8_t {
 #define X_COUNT(...) +1
 static constexpr const size_t NUM_GMCP_MODULES = XFOREACH_GMCP_MODULE_TYPE(X_COUNT);
 #undef X_COUNT
-static_assert(NUM_GMCP_MODULES == 20);
+static_assert(NUM_GMCP_MODULES == 25);
 static_assert(NUM_GMCP_MODULES == enums::to_underlying(GmcpModuleTypeEnum::UNKNOWN));
 DEFINE_ENUM_COUNT(GmcpModuleTypeEnum, NUM_GMCP_MODULES)
 

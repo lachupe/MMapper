@@ -207,6 +207,32 @@ set_target_properties(
 )
 add_test(NAME TestCharLines COMMAND TestCharLines)
 
+# Shops, guilds, inns and trophies, the money in them, and MUME's pager
+set(TestTradeLines_SRCS
+    TestTradeLines.cpp
+    ../src/frontend/TradeMessages.cpp
+    ../src/frontend/TradeMessages.h
+    ../src/parser/CharLines.cpp
+    ../src/parser/CharLines.h
+    ../src/parser/TradeLines.cpp
+    ../src/parser/TradeLines.h
+    )
+add_executable(TestTradeLines ${TestTradeLines_SRCS})
+add_dependencies(TestTradeLines mm_test mm_global)
+target_link_libraries(TestTradeLines
+        mm_test
+        mm_global
+        Qt6::Test
+        coverage_config)
+set_target_properties(
+  TestTradeLines PROPERTIES
+  CXX_STANDARD 20
+  CXX_STANDARD_REQUIRED ON
+  CXX_EXTENSIONS OFF
+  COMPILE_FLAGS "${WARNING_FLAGS}"
+)
+add_test(NAME TestTradeLines COMMAND TestTradeLines)
+
 # Weather lines, and the ground they describe
 set(TestWeatherLines_SRCS
     TestWeatherLines.cpp
