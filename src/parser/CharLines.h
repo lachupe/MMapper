@@ -26,8 +26,10 @@
 ///   "Needed: 1,136,776 xp, 0 tp. Gold: 103. Alert: normal." (at the highest level only "Gold:
 ///   519. Alert: normal."), then "Affected by:" and one "- name" per affect, up to the blank line;
 /// - `score` is one line, "523/523 hits, 53/53 mana, and 155/155 moves.";
-/// - `info` is the whole sheet: race, age, rank, "Your equipment weighs ... pounds. Heavy, but we
-///   will manage...", the abilities, "Offensive Bonus: ...", the armour, the pools, the mood and
+/// - `info` is the whole sheet: sex and race, age, time played, rank and level, height and
+///   weight, perception and alertness, the alignment sentence, where the character is welcome,
+///   "Your equipment weighs ... pounds. Heavy, but we will manage...", the abilities,
+///   "Offensive Bonus: ...", the armour, the pools, the mood and
 ///   wimpy, experience and travel points, the renown line, what the next level needs, the
 ///   coins, the language, swimming and climbing, and "You are subjected to the following
 ///   temporary effects:" with its list.
@@ -110,6 +112,46 @@ struct NODISCARD CharScore final
     /// True when the sheet had its effects list, or ended without one: `effects` and `wounds`
     /// are then the whole truth, even when empty.
     bool effectsKnown = false;
+
+    // The head of the sheet, each left empty or unset when its line was missing or in a
+    // wording not known. None of them counts as a figure: a sheet of these alone is not
+    // published.
+    /// "male", "female", "neuter" and "Eriadorian", "Black Numenorean", "Tarkhnarb Orc" from
+    /// "You are a male Eriadorian.".
+    QString sex;
+    QString race;
+    /// "You are 19 years and 6 months old."; older sheets add the days.
+    std::optional<int64_t> ageYears;
+    std::optional<int64_t> ageMonths;
+    std::optional<int64_t> ageDays;
+    /// MUME's words from "You have played 4 hours (real time). Session: 10 mins.": "4 hours",
+    /// "21 days and 14 hours", and "10 mins".
+    QString played;
+    QString session;
+    /// "This ranks you as Idwar the Man Adventurer (level 2).": the first word, the rest ("the
+    /// Man Adventurer", "VI", empty when there is none) and the level.
+    QString name;
+    QString title;
+    std::optional<int64_t> level;
+    /// MUME's words: "five feet nine", "eleven stone and eleven pounds".
+    QString height;
+    QString weight;
+    /// "Perception: vision 40, hearing -31, smell -60. Alertness: normal."
+    std::optional<int64_t> vision;
+    std::optional<int64_t> hearing;
+    std::optional<int64_t> smell;
+    /// "normal", "paranoid": MUME's word, lowercase, as CharStat's `alert`.
+    QString alertness;
+    /// The alignment sentence, whole: "You are a well-meaning person, always glad to help your
+    /// friends.", "You are totally corrupted by the Evilness of Morgoth!".
+    QString alignment;
+    /// The places of "You are welcome in Bree, Fornost, the Grey Havens, Rivendell, and the Blue
+    /// Mountains.", in MUME's order and words ("the Blue Mountains").
+    QStringList welcome;
+    /// "You are not known for any acts of war.", whole; empty for any other renown line. The
+    /// sentence is in `renown` too when it follows the experience line, as it always has been.
+    QString war;
+
     QString text;
 };
 
@@ -210,6 +252,8 @@ private:
     QStringList m_sheetLines;
     bool m_sheetInEffects = false;
     bool m_sheetAfterScored = false;
+    /// The line before was the perception line: the alignment sentence comes next.
+    bool m_sheetAfterPerception = false;
     bool m_sheetHasFigure = false;
     int m_sheetStrangers = 0;
 

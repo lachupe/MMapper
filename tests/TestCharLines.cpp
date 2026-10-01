@@ -618,6 +618,248 @@ void TestCharLines::infoHighestLevelTest()
     QCOMPARE(safe.scores.front().language, QString("Sindarin"));
 }
 
+void TestCharLines::infoLiveTest()
+{
+    // The reply to `info` on 2026-10-02 (a level 2 character), whole and in MUME's order; not
+    // from the powwow logs.
+    const CharReplies r = feed(
+        {"You are a male Eriadorian.",
+         "You are 19 years and 6 months old.",
+         "You have played 4 hours (real time). Session: 10 mins.",
+         "This ranks you as Idwar the Man Adventurer (level 2).",
+         "You are five feet nine and weigh eleven stone and eleven pounds.",
+         "Perception: vision 40, hearing -31, smell -60. Alertness: normal.",
+         "You are a well-meaning person, always glad to help your friends.",
+         "You are welcome in Fornost.",
+         "Your equipment weighs forty-nine pounds. A tad uncomfortable, but no problem.",
+         "Your base abilities are: Str:18 Int:11 Wis:9 Dex:17 Con:16 Wil:15 Per:15.",
+         "Offensive Bonus: 20%, Dodging Bonus: -24%, Parrying Bonus: 26%.",
+         "Your armour provides an average protection of 19%.",
+         "You have 52/52 hit, 64/64 mana, and 126/126 movement points.",
+         "Your mood is wimpy. You will flee if your hit points go below 13.",
+         "You have scored 1,478 experience points and you have 241 travel points.",
+         "You are not known for any acts of war.",
+         "You need 1,522 exp. points and 59 travel points to reach the next level.",
+         "You have 3 silver pennies and 70 copper pennies.",
+         "You are speaking Westron.",
+         PROMPT});
+    QCOMPARE(r.burdens.size(), size_t{1});
+    QCOMPARE(r.burdens.front().pounds, int64_t{49});
+    QCOMPARE(r.burdens.front().word, QString("A tad uncomfortable, but no problem."));
+    QVERIFY(r.stats.empty());
+    QCOMPARE(r.wimpies.size(), size_t{1});
+    QCOMPARE(r.wimpies.front().wimpy, int64_t{13});
+    QCOMPARE(r.scores.size(), size_t{1});
+    const CharScore &s = r.scores.front();
+    QCOMPARE(s.reply, QString("info"));
+
+    // The head of the sheet.
+    QCOMPARE(s.sex, QString("male"));
+    QCOMPARE(s.race, QString("Eriadorian"));
+    QCOMPARE(s.ageYears, std::optional<int64_t>{19});
+    QCOMPARE(s.ageMonths, std::optional<int64_t>{6});
+    QVERIFY(!s.ageDays.has_value());
+    QCOMPARE(s.played, QString("4 hours"));
+    QCOMPARE(s.session, QString("10 mins"));
+    QCOMPARE(s.name, QString("Idwar"));
+    QCOMPARE(s.title, QString("the Man Adventurer"));
+    QCOMPARE(s.level, std::optional<int64_t>{2});
+    QCOMPARE(s.height, QString("five feet nine"));
+    QCOMPARE(s.weight, QString("eleven stone and eleven pounds"));
+    QCOMPARE(s.vision, std::optional<int64_t>{40});
+    QCOMPARE(s.hearing, std::optional<int64_t>{-31});
+    QCOMPARE(s.smell, std::optional<int64_t>{-60});
+    QCOMPARE(s.alertness, QString("normal"));
+    QCOMPARE(s.alignment,
+             QString("You are a well-meaning person, always glad to help your friends."));
+    QCOMPARE(s.welcome, list({"Fornost"}));
+
+    // The figures, as before.
+    QCOMPARE(s.abilities[0], std::optional<int64_t>{18});
+    QCOMPARE(s.abilities[1], std::optional<int64_t>{11});
+    QCOMPARE(s.abilities[2], std::optional<int64_t>{9});
+    QCOMPARE(s.abilities[3], std::optional<int64_t>{17});
+    QCOMPARE(s.abilities[4], std::optional<int64_t>{16});
+    QCOMPARE(s.abilities[5], std::optional<int64_t>{15});
+    QCOMPARE(s.abilities[6], std::optional<int64_t>{15});
+    QCOMPARE(s.ob, std::optional<int64_t>{20});
+    QCOMPARE(s.db, std::optional<int64_t>{-24});
+    QCOMPARE(s.pb, std::optional<int64_t>{26});
+    QCOMPARE(s.armour, std::optional<int64_t>{19});
+    QCOMPARE(s.hp, std::optional<int64_t>{52});
+    QCOMPARE(s.maxhp, std::optional<int64_t>{52});
+    QCOMPARE(s.mana, std::optional<int64_t>{64});
+    QCOMPARE(s.maxmana, std::optional<int64_t>{64});
+    QCOMPARE(s.mp, std::optional<int64_t>{126});
+    QCOMPARE(s.maxmp, std::optional<int64_t>{126});
+    QCOMPARE(s.mood, QString("wimpy"));
+    QCOMPARE(s.wimpy, std::optional<int64_t>{13});
+    QCOMPARE(s.xp, std::optional<int64_t>{1478});
+    QCOMPARE(s.tp, std::optional<int64_t>{241});
+    // The sentence is `war`, and `renown` as it always was.
+    QCOMPARE(s.war, QString("You are not known for any acts of war."));
+    QCOMPARE(s.renown, QString("You are not known for any acts of war."));
+    QVERIFY(!s.wp.has_value());
+    QCOMPARE(s.neededXp, std::optional<int64_t>{1522});
+    QCOMPARE(s.neededTp, std::optional<int64_t>{59});
+    QVERIFY(!s.gold.has_value());
+    QCOMPARE(s.silver, std::optional<int64_t>{3});
+    QCOMPARE(s.copper, std::optional<int64_t>{70});
+    QCOMPARE(s.language, QString("Westron"));
+    QVERIFY(s.swim.isEmpty());
+    QVERIFY(s.climb.isEmpty());
+    QVERIFY(s.effectsKnown);
+    QVERIFY(s.effects.isEmpty());
+    QVERIFY(s.wounds.isEmpty());
+    QVERIFY(s.text.startsWith("You are a male Eriadorian."));
+    QVERIFY(s.text.endsWith("You are speaking Westron."));
+    QCOMPARE(s.text.split(QLatin1Char('\n')).size(), qsizetype{19});
+}
+
+void TestCharLines::infoHeadLinesTest()
+{
+    // The head's lines state no figure, so each is fed with one that does.
+    const char *const FIGURE = "Offensive Bonus: 93%, Dodging Bonus: 53%, Parrying Bonus: 93%.";
+
+    // Perception: the live line with its figures changed, and powwow/logs/luke/logs/space.txt's
+    // old wording, which names no alertness.
+    {
+        const CharReplies r = feed(
+            {"Perception: vision -5, hearing -31, smell -60. Alertness: paranoid.", FIGURE, PROMPT});
+        QCOMPARE(r.scores.size(), size_t{1});
+        QCOMPARE(r.scores.front().vision, std::optional<int64_t>{-5});
+        QCOMPARE(r.scores.front().hearing, std::optional<int64_t>{-31});
+        QCOMPARE(r.scores.front().smell, std::optional<int64_t>{-60});
+        QCOMPARE(r.scores.front().alertness, QString("paranoid"));
+        const CharReplies old = feed(
+            {"Perception: vision 0 hearing -24 smelling -24.", FIGURE, PROMPT});
+        QCOMPARE(old.scores.size(), size_t{1});
+        QCOMPARE(old.scores.front().vision, std::optional<int64_t>{0});
+        QCOMPARE(old.scores.front().hearing, std::optional<int64_t>{-24});
+        QCOMPARE(old.scores.front().smell, std::optional<int64_t>{-24});
+        QVERIFY(old.scores.front().alertness.isEmpty());
+    }
+
+    // The alignment sentence: the live one, and the logs' two with their old spellings.
+    for (const char *const line :
+         {"You are a well-meaning person, always glad to help your friends.",
+          "You must have been sent to Arda to free it from the sorrows that weigh upon it.",
+          "You must have been sent on Arda to free it from the sorrows that weigh on it !",
+          "You are totally corrupted by the Evilness of Morgoth!",
+          "You are totally corrupted by the Evilness of Morgoth !"}) {
+        const CharReplies r = feed({line, FIGURE, PROMPT});
+        QVERIFY2(r.scores.size() == 1, line);
+        QCOMPARE(r.scores.front().alignment, QString(line));
+    }
+    {
+        // A wording not seen (this one is made up) is taken by its place after the perception
+        // line, and only there: elsewhere it is none of the sheet's own.
+        const char *const unseen = "You are a force for good in these lands.";
+        const CharReplies placed = feed(
+            {"Perception: vision 40, hearing 6, smell -21. Alertness: normal.",
+             unseen,
+             FIGURE,
+             PROMPT});
+        QCOMPARE(placed.scores.size(), size_t{1});
+        QCOMPARE(placed.scores.front().alignment, QString(unseen));
+        const CharReplies stray = feed({FIGURE, unseen, PROMPT});
+        QCOMPARE(stray.scores.size(), size_t{1});
+        QVERIFY(stray.scores.front().alignment.isEmpty());
+        QVERIFY(stray.scores.front().text.endsWith(QString(unseen)));
+        // Other "You are ..." lines stay what they were.
+        const CharReplies other = feed({"You are speaking Westron.", PROMPT});
+        QCOMPARE(other.scores.size(), size_t{1});
+        QVERIFY(other.scores.front().alignment.isEmpty());
+        QCOMPARE(other.scores.front().language, QString("Westron"));
+    }
+
+    // Welcome: two lines add up (the second is made up; MUME prints one), and the logs' list
+    // with and without the comma before "and".
+    {
+        const CharReplies two = feed({"You are welcome in Fornost.",
+                                      "You are welcome in Bree and the Grey Havens.",
+                                      FIGURE,
+                                      PROMPT});
+        QCOMPARE(two.scores.size(), size_t{1});
+        QCOMPARE(two.scores.front().welcome, list({"Fornost", "Bree", "the Grey Havens"}));
+        const CharReplies many = feed(
+            {"You are welcome in Bree, Fornost, the Grey Havens, Rivendell, and the Blue "
+             "Mountains.",
+             FIGURE,
+             PROMPT});
+        QCOMPARE(many.scores.front().welcome,
+                 list({"Bree", "Fornost", "the Grey Havens", "Rivendell", "the Blue Mountains"}));
+        const CharReplies noComma = feed(
+            {"You are welcome in Bree, Fornost, the Grey Havens, Rivendell and the Blue Mountains.",
+             FIGURE,
+             PROMPT});
+        QCOMPARE(noComma.scores.front().welcome,
+                 list({"Bree", "Fornost", "the Grey Havens", "Rivendell", "the Blue Mountains"}));
+    }
+
+    // Lines of powwow/logs/archives/log-2006.03.06-01.08.16.txt and stolb.balrog.txt put
+    // together: days in the age, a longer time played, a title that is no "the ...", and a
+    // rank with no title at all (the logs' "This ranks you as Sardar  (level 26).").
+    {
+        const CharReplies r = feed(
+            {"You are a male Tarkhnarb Orc.",
+             "You are 55 years, 11 months and 29 days old.",
+             "You have played 2 months, 21 days and 17 hours (real time). Session: 1 min.",
+             "This ranks you as Ennor VI (level 58).",
+             "You are four feet eight and weigh fourteen stone and three pounds.",
+             FIGURE,
+             PROMPT});
+        QCOMPARE(r.scores.size(), size_t{1});
+        const CharScore &s = r.scores.front();
+        QCOMPARE(s.sex, QString("male"));
+        QCOMPARE(s.race, QString("Tarkhnarb Orc"));
+        QCOMPARE(s.ageYears, std::optional<int64_t>{55});
+        QCOMPARE(s.ageMonths, std::optional<int64_t>{11});
+        QCOMPARE(s.ageDays, std::optional<int64_t>{29});
+        QCOMPARE(s.played, QString("2 months, 21 days and 17 hours"));
+        QCOMPARE(s.session, QString("1 min"));
+        QCOMPARE(s.name, QString("Ennor"));
+        QCOMPARE(s.title, QString("VI"));
+        QCOMPARE(s.level, std::optional<int64_t>{58});
+        QCOMPARE(s.height, QString("four feet eight"));
+        QCOMPARE(s.weight, QString("fourteen stone and three pounds"));
+        QVERIFY(s.alignment.isEmpty());
+        QVERIFY(s.welcome.isEmpty());
+        QVERIFY(!s.vision.has_value());
+
+        const CharReplies bare = feed({"You have played 7 days and 19 hours (real time).",
+                                       "This ranks you as Sardar  (level 26).",
+                                       FIGURE,
+                                       PROMPT});
+        QCOMPARE(bare.scores.size(), size_t{1});
+        QCOMPARE(bare.scores.front().played, QString("7 days and 19 hours"));
+        QVERIFY(bare.scores.front().session.isEmpty());
+        QCOMPARE(bare.scores.front().name, QString("Sardar"));
+        QVERIFY(bare.scores.front().title.isEmpty());
+        QCOMPARE(bare.scores.front().level, std::optional<int64_t>{26});
+    }
+
+    // `war` is the one sentence, wherever it stands; another renown line leaves it empty.
+    {
+        const CharReplies alone = feed({"You are not known for any acts of war.", FIGURE, PROMPT});
+        QCOMPARE(alone.scores.size(), size_t{1});
+        QCOMPARE(alone.scores.front().war, QString("You are not known for any acts of war."));
+        QVERIFY(alone.scores.front().renown.isEmpty());
+        const CharReplies fought = feed(
+            {"You have scored 20,968,620 experience points and you have 98,081 travel points.",
+             "You have fought a few battles for the forces of the Dark Lord (3 wp).",
+             PROMPT});
+        QCOMPARE(fought.scores.size(), size_t{1});
+        QVERIFY(fought.scores.front().war.isEmpty());
+        QCOMPARE(fought.scores.front().renown,
+                 QString("You have fought a few battles for the forces of the Dark Lord."));
+        QCOMPARE(fought.scores.front().wp, std::optional<int64_t>{3});
+    }
+
+    // The head alone is no sheet to publish, as before.
+    QVERIFY(feed({"You are a male Dwarf.", "You are welcome in Tharbad.", PROMPT}).scores.empty());
+}
+
 void TestCharLines::burdenTest()
 {
     // Each of MUME's words for a burden, in lines from the logs. The word goes by the weight

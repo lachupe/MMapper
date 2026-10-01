@@ -27,6 +27,8 @@ private Q_SLOTS:
     static void infoMissingArmourTest();
     static void infoOldWordingTest();
     static void infoHighestLevelTest();
+    static void infoLiveTest();
+    static void infoHeadLinesTest();
     static void burdenTest();
     static void numberWordsTest();
     static void levelLineTest();

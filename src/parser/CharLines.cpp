@@ -15,7 +15,7 @@ namespace {
 /// Bounds a reply that never closes: `info` is about 25 lines and a long affects list 30.
 constexpr int MAX_REPLY_LINES = 200;
 /// Lines that are none of the sheet's own before it is taken to have ended without a prompt:
-/// the alignment line ("You are totally corrupted by the Evilness of Morgoth!") is one.
+/// an old sheet's "You are a citizen of: GoblinTown" is one.
 constexpr int MAX_SHEET_STRANGERS = 8;
 
 NODISCARD QString cleaned(const QString &line)
@@ -164,7 +164,8 @@ const QRegularExpression g_burden{
 const QRegularExpression g_burdenOld{
     QStringLiteral(R"(^You are carrying ([\d,]+) pounds? of equipment\.(?: (.+))?$)")};
 
-// The sheet's lines that carry nothing the packages want, known so that they keep it open.
+// The lines at the head of the sheet, which state no figure: known so that they keep it open,
+// in whatever wording; readSheetInfo() reads the wordings it knows.
 const std::array
     g_sheetInfoOnly{QRegularExpression{
                         QStringLiteral(R"(^You are an? (?:male|female|neuter) .+\.$)")},
@@ -175,6 +176,44 @@ const std::array
                     QRegularExpression{QStringLiteral(R"(^Perception: vision)")},
                     QRegularExpression{QStringLiteral(R"(^You are (?:not )?welcome in )")},
                     QRegularExpression{QStringLiteral(R"(^You have reached the highest level\.)")}};
+
+// What those lines state. "You are a male Black Numenorean."
+const QRegularExpression g_sexRace{
+    QStringLiteral(R"(^You are an? (male|female|neuter) (.+)\.$)")};
+// "You are 19 years and 6 months old.", "You are 55 years, 11 months and 29 days old."
+const QRegularExpression g_age{QStringLiteral(R"(^You are ([\d,]+) years?\b)")};
+const QRegularExpression g_agePart{QStringLiteral(R"(\b([\d,]+) (month|day)s?\b)")};
+// "You have played 4 hours (real time). Session: 10 mins."; old sheets have no session.
+const QRegularExpression g_played{QStringLiteral(R"(^You have played (.+?) \(real time\))")};
+const QRegularExpression g_session{QStringLiteral(R"(\(real time\)\.? Session: (.+?)\.?$)")};
+// "This ranks you as Idwar the Man Adventurer (level 2).", "... as Ennor VI (level 58).",
+// "... as Sardar (level 26).": the name is the first word, the title whatever follows it.
+const QRegularExpression g_rank{
+    QStringLiteral(R"(^This ranks you as (\S+)(?: (.+?))? ?\(level (\d+)\)\.$)")};
+// "You are five feet nine and weigh eleven stone and eleven pounds."
+const QRegularExpression g_heightWeight{
+    QStringLiteral(R"(^You are ([a-z]+ feet\b[a-z -]*?) and weigh ([a-z -]+)\.$)")};
+// "Perception: vision 40, hearing -31, smell -60. Alertness: normal."; an old wording is
+// "Perception: vision 0 hearing -24 smelling -24."
+const QRegularExpression g_perception{QStringLiteral(
+    R"(^Perception: vision (-?\d+),? hearing (-?\d+),? smell(?:ing)? (-?\d+)\.)")};
+const QRegularExpression g_alertness{QStringLiteral(R"(\bAlertness: ([^.]+)\.)")};
+// "You are welcome in Bree, Fornost, the Grey Havens, Rivendell, and the Blue Mountains."
+const QRegularExpression g_welcome{QStringLiteral(R"(^You are welcome in (.+)\.$)")};
+const QRegularExpression g_welcomeSeparator{QStringLiteral(R"(,? and |, )")};
+
+// The alignment sentence, in the wordings seen: the live sheet's "You are a well-meaning
+// person, always glad to help your friends." and the logs' two extremes (with "on Arda", "weigh
+// on it !" and "Morgoth !" in old ones). Any other wording is taken by its place, straight
+// after the perception line.
+const std::array
+    g_alignments{QRegularExpression{QStringLiteral(R"(^You are an? [A-Za-z' -]+ person[,.!])")},
+                 QRegularExpression{QStringLiteral(
+                     R"(^You are totally corrupted by the Evilness of Morgoth ?!$)")},
+                 QRegularExpression{QStringLiteral(
+                     R"(^You must have been sent (?:to|on) Arda to free it from the sorrows that weigh (?:up)?on it ?[.!]$)")}};
+// The renown line of a character without war points; `war` is this sentence only.
+const QRegularExpression g_war{QStringLiteral(R"(^You are not known for any acts of war\.$)")};
 
 const QRegularExpression g_abilities{QStringLiteral(R"(^Your (?:base )?abilities are: )")};
 const QRegularExpression g_ability{QStringLiteral(R"(\b(Str|Int|Wis|Dex|Con|Wil|Per): *(-?\d+))")};
@@ -230,6 +269,78 @@ NODISCARD bool isSheetInfoOnly(const QString &text)
         }
     }
     return false;
+}
+
+NODISCARD bool isAlignment(const QString &text)
+{
+    for (const QRegularExpression &re : g_alignments) {
+        if (re.match(text).hasMatch()) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/// Reads what a line of g_sheetInfoOnly states. A wording none of these knows gives nothing,
+/// and still keeps the sheet open.
+void readSheetInfo(const QString &text, CharScore &sheet)
+{
+    if (const auto m = g_sexRace.match(text); m.hasMatch()) {
+        sheet.sex = m.captured(1);
+        sheet.race = m.captured(2).trimmed();
+        return;
+    }
+    if (const auto m = g_age.match(text); m.hasMatch()) {
+        sheet.ageYears = captured(m, 1);
+        auto it = g_agePart.globalMatch(text);
+        while (it.hasNext()) {
+            const QRegularExpressionMatch part = it.next();
+            if (part.captured(2) == QStringLiteral("month")) {
+                sheet.ageMonths = captured(part, 1);
+            } else {
+                sheet.ageDays = captured(part, 1);
+            }
+        }
+        return;
+    }
+    if (const auto m = g_played.match(text); m.hasMatch()) {
+        sheet.played = m.captured(1).trimmed();
+        if (const auto session = g_session.match(text); session.hasMatch()) {
+            sheet.session = session.captured(1).trimmed();
+        }
+        return;
+    }
+    if (const auto m = g_rank.match(text); m.hasMatch()) {
+        sheet.name = m.captured(1);
+        sheet.title = m.captured(2).trimmed();
+        sheet.level = captured(m, 3);
+        return;
+    }
+    if (const auto m = g_heightWeight.match(text); m.hasMatch()) {
+        sheet.height = m.captured(1).trimmed();
+        sheet.weight = m.captured(2).trimmed();
+        return;
+    }
+    if (text.startsWith(QStringLiteral("Perception:"))) {
+        if (const auto m = g_perception.match(text); m.hasMatch()) {
+            sheet.vision = captured(m, 1);
+            sheet.hearing = captured(m, 2);
+            sheet.smell = captured(m, 3);
+        }
+        if (const auto alert = g_alertness.match(text); alert.hasMatch()) {
+            sheet.alertness = alert.captured(1).trimmed().toLower();
+        }
+        return;
+    }
+    if (const auto m = g_welcome.match(text); m.hasMatch()) {
+        const QStringList places = m.captured(1).split(g_welcomeSeparator, Qt::SkipEmptyParts);
+        for (const QString &place : places) {
+            const QString name = place.trimmed();
+            if (!name.isEmpty() && !sheet.welcome.contains(name)) {
+                sheet.welcome.append(name);
+            }
+        }
+    }
 }
 
 } // namespace
@@ -475,6 +586,7 @@ CharReplies CharLinesTracker::receiveLine(const QString &line)
     m_sheetLines.clear();
     m_sheetInEffects = false;
     m_sheetAfterScored = false;
+    m_sheetAfterPerception = false;
     m_sheetHasFigure = false;
     m_sheetStrangers = 0;
     if (readSheetLine(text, out)) {
@@ -554,6 +666,7 @@ bool CharLinesTracker::readSheetLine(const QString &text, CharReplies &out)
 {
     CharScore &sheet = *m_sheet;
     const bool afterScored = std::exchange(m_sheetAfterScored, false);
+    const bool afterPerception = std::exchange(m_sheetAfterPerception, false);
 
     if (m_sheetInEffects) {
         if (text.startsWith(QStringLiteral("- "))) {
@@ -567,6 +680,8 @@ bool CharLinesTracker::readSheetLine(const QString &text, CharReplies &out)
         return true;
     }
     if (isSheetInfoOnly(text)) {
+        readSheetInfo(text, sheet);
+        m_sheetAfterPerception = text.startsWith(QStringLiteral("Perception:"));
         return true;
     }
     if (g_abilities.match(text).hasMatch()) {
@@ -680,6 +795,13 @@ bool CharLinesTracker::readSheetLine(const QString &text, CharReplies &out)
         sheet.effectsKnown = true;
         return true;
     }
+    if (g_war.match(text).hasMatch()) {
+        // Its own field, and `renown` below as before when it comes after the experience line.
+        sheet.war = text;
+        if (!afterScored) {
+            return true;
+        }
+    }
     if (afterScored) {
         // The renown line has many wordings, and older ones carry no "(N wp)"; it is whatever
         // comes straight after the experience line.
@@ -690,6 +812,14 @@ bool CharLinesTracker::readSheetLine(const QString &text, CharReplies &out)
         }
         sheet.renown = renown.trimmed();
         m_sheetHasFigure = true;
+        return true;
+    }
+    // Last, so that it takes no line another reader knows. Like the lines of g_sheetInfoOnly
+    // it states no figure: a sheet of nothing else is not published.
+    if (isAlignment(text)
+        || (afterPerception && text.startsWith(QStringLiteral("You "))
+            && (text.endsWith(QLatin1Char('.')) || text.endsWith(QLatin1Char('!'))))) {
+        sheet.alignment = text;
         return true;
     }
     return false;
@@ -710,6 +840,7 @@ CharReplies CharLinesTracker::closeSheet()
     m_sheetLines.clear();
     m_sheetInEffects = false;
     m_sheetAfterScored = false;
+    m_sheetAfterPerception = false;
     m_sheetStrangers = 0;
     if (std::exchange(m_sheetHasFigure, false)) {
         if (sheet.wimpy.has_value()) {
@@ -746,6 +877,7 @@ void CharLinesTracker::reset()
     m_sheetLines.clear();
     m_sheetInEffects = false;
     m_sheetAfterScored = false;
+    m_sheetAfterPerception = false;
     m_sheetHasFigure = false;
     m_sheetStrangers = 0;
 }

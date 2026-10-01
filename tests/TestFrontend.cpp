@@ -1217,6 +1217,56 @@ void TestFrontend::charSheetTest()
     QCOMPARE(again["ob"].toInteger(), 140);
     QCOMPARE(again["affects"].toArray(), QJsonArray{QStringLiteral("strength")});
 
+    // The head of the sheet (the live `info` of 2026-10-02): words as MUME's words, figures as
+    // numbers, the age and the perception as objects, the places as an array.
+    CharLinesTracker headTracker;
+    CharReplies head;
+    for (const char *const line :
+         {"You are a male Eriadorian.",
+          "You are 19 years and 6 months old.",
+          "You have played 4 hours (real time). Session: 10 mins.",
+          "This ranks you as Idwar the Man Adventurer (level 2).",
+          "You are five feet nine and weigh eleven stone and eleven pounds.",
+          "Perception: vision 40, hearing -31, smell -60. Alertness: normal.",
+          "You are a well-meaning person, always glad to help your friends.",
+          "You are welcome in Fornost.",
+          "You have scored 1,478 experience points and you have 241 travel points.",
+          "You are not known for any acts of war."}) {
+        head.append(headTracker.receiveLine(QString::fromUtf8(line)));
+    }
+    head.append(headTracker.receivePrompt());
+    QCOMPARE(head.scores.size(), size_t{1});
+    const QJsonObject h = payloadOf(frontend_messages::makeCharScore(head.scores.front()));
+    QCOMPARE(h["sex"].toString(), QStringLiteral("male"));
+    QCOMPARE(h["race"].toString(), QStringLiteral("Eriadorian"));
+    QCOMPARE(h["age"].toObject()["years"].toInteger(), 19);
+    QCOMPARE(h["age"].toObject()["months"].toInteger(), 6);
+    QVERIFY(!h["age"].toObject().contains("days"));
+    QCOMPARE(h["played"].toString(), QStringLiteral("4 hours"));
+    QCOMPARE(h["session"].toString(), QStringLiteral("10 mins"));
+    QCOMPARE(h["name"].toString(), QStringLiteral("Idwar"));
+    QCOMPARE(h["title"].toString(), QStringLiteral("the Man Adventurer"));
+    QVERIFY(h["level"].isDouble());
+    QCOMPARE(h["level"].toInteger(), 2);
+    QCOMPARE(h["height"].toString(), QStringLiteral("five feet nine"));
+    QCOMPARE(h["weight"].toString(), QStringLiteral("eleven stone and eleven pounds"));
+    QCOMPARE(h["perception"].toObject()["vision"].toInteger(), 40);
+    QCOMPARE(h["perception"].toObject()["hearing"].toInteger(), -31);
+    QCOMPARE(h["perception"].toObject()["smell"].toInteger(), -60);
+    QCOMPARE(h["alertness"].toString(), QStringLiteral("normal"));
+    QCOMPARE(h["alignment"].toString(),
+             QStringLiteral("You are a well-meaning person, always glad to help your friends."));
+    QCOMPARE(h["welcome"].toArray(), QJsonArray{QStringLiteral("Fornost")});
+    QCOMPARE(h["war"].toString(), QStringLiteral("You are not known for any acts of war."));
+    QCOMPARE(h["renown"].toString(), QStringLiteral("You are not known for any acts of war."));
+    // The sheet above had no head, and a one-line `score` has none: neither sends its fields.
+    for (const char *const key : {"sex", "race", "age", "played", "session", "name", "title",
+                                  "level", "height", "weight", "perception", "alertness",
+                                  "alignment", "welcome", "war"}) {
+        QVERIFY2(!sc.contains(QString::fromUtf8(key)), key);
+        QVERIFY2(!payloadOf(brief).contains(QString::fromUtf8(key)), key);
+    }
+
     // A new game session forgets them, as it forgets Char.Vitals.
     cache.clear();
     QVERIFY(replayed(cache, GmcpMessageTypeEnum::MMAPPER_CHAR_SCORE).isNull());

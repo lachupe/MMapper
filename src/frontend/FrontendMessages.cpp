@@ -765,6 +765,36 @@ GmcpMessage makeCharScore(const CharScore &score)
     putText(obj, "language", score.language);
     putText(obj, "swim", score.swim);
     putText(obj, "climb", score.climb);
+    // The head of the sheet.
+    putText(obj, "sex", score.sex);
+    putText(obj, "race", score.race);
+    QJsonObject age;
+    putNumber(age, "years", score.ageYears);
+    putNumber(age, "months", score.ageMonths);
+    putNumber(age, "days", score.ageDays);
+    if (!age.isEmpty()) {
+        obj["age"] = age;
+    }
+    putText(obj, "played", score.played);
+    putText(obj, "session", score.session);
+    putText(obj, "name", score.name);
+    putText(obj, "title", score.title);
+    putNumber(obj, "level", score.level);
+    putText(obj, "height", score.height);
+    putText(obj, "weight", score.weight);
+    QJsonObject perception;
+    putNumber(perception, "vision", score.vision);
+    putNumber(perception, "hearing", score.hearing);
+    putNumber(perception, "smell", score.smell);
+    if (!perception.isEmpty()) {
+        obj["perception"] = perception;
+    }
+    putText(obj, "alertness", score.alertness);
+    putText(obj, "alignment", score.alignment);
+    if (!score.welcome.isEmpty()) {
+        obj["welcome"] = QJsonArray::fromStringList(score.welcome);
+    }
+    putText(obj, "war", score.war);
     if (score.effectsKnown) {
         obj["effects"] = QJsonArray::fromStringList(score.effects);
         obj["wounds"] = QJsonArray::fromStringList(score.wounds);

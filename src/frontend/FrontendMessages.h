@@ -276,9 +276,16 @@ NODISCARD GmcpMessage makeCharStat(const CharStat &stat);
 /// any armour."), `hp`, `maxhp`, `mana`, `maxmana`, `mp`, `maxmp`, `mood`, `wimpy` (0 for "You
 /// will fight to the death."), `xp`, `tp`, `renown` (the line less its "(N wp)") and `wp`,
 /// `neededXp`, `neededTp`, `gold`, `silver`, `copper`, `language`, and `swim` and `climb` as
-/// MUME's sentences. `effects` and `wounds` are sent when the sheet was complete: empty when it
-/// had no effects list. State: the fields are merged for a frontend that connects later, so a
-/// one-line `score` updates the pools of the last sheet rather than replacing it.
+/// MUME's sentences. From the head of the sheet, each likewise only when stated: `sex`, `race`,
+/// `age` (an object of `years`, `months` and, in older sheets, `days`), `played` and `session`
+/// (MUME's words: "4 hours", "10 mins"), `name`, `title` (the rank less the name: "the Man
+/// Adventurer") and `level`, `height` and `weight` (MUME's words: "five feet nine", "eleven
+/// stone and eleven pounds"), `perception` (an object of `vision`, `hearing`, `smell`),
+/// `alertness`, `alignment` (the sentence), `welcome` (an array of places) and `war` ("You are
+/// not known for any acts of war.", which is in `renown` as well). `effects` and `wounds` are
+/// sent when the sheet was complete: empty when it had no effects list. State: the fields are
+/// merged for a frontend that connects later, so a one-line `score` updates the pools of the
+/// last sheet rather than replacing it.
 NODISCARD GmcpMessage makeCharScore(const CharScore &score);
 
 /// MMapper.Char.Burden -- "Your equipment weighs one hundred fourteen pounds. Heavy, but we will
