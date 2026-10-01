@@ -21,6 +21,8 @@
 #include "../src/map/roomid.h"
 #include "../src/observer/gameobserver.h"
 #include "../src/parser/AccountLines.h"
+#include "../src/parser/CharAffects.h"
+#include "../src/parser/CombatLines.h"
 #include "../src/parser/ContainerLines.h"
 #include "../src/parser/GameStateLines.h"
 #include "../src/parser/ItemLines.h"
@@ -1251,6 +1253,192 @@ void TestFrontend::charLevelTest()
     QVERIFY(!replay.contains("neededXp"));
     cache.clear();
     QVERIFY(replayed(cache, GmcpMessageTypeEnum::MMAPPER_CHAR_LEVEL).isNull());
+}
+
+void TestFrontend::charWimpyTest()
+{
+    const std::optional<CharWimpy> set = parseWimpyLine(QStringLiteral("Wimpy set to: 120"));
+    QVERIFY(set.has_value());
+    const GmcpMessage msg = frontend_messages::makeCharWimpy(*set);
+    QCOMPARE(msg.getType(), GmcpMessageTypeEnum::MMAPPER_CHAR_WIMPY);
+    QCOMPARE(msg.toRawBytes(), QByteArray(R"(MMapper.Char.Wimpy {"wimpy":120})"));
+    QCOMPARE(GmcpMessage::fromRawBytes(QByteArray{"MMapper.Char.Wimpy"}).getType(),
+             GmcpMessageTypeEnum::MMAPPER_CHAR_WIMPY);
+
+    FrontendSubscriptions subs;
+    QVERIFY(subs.applySupports(parse(R"(Core.Supports.Set [ "MMapper.Char 1" ])")));
+    QVERIFY(subs.wants(msg));
+
+    // State: replayed as last sent, forgotten when the character leaves the game and when
+    // MMapper connects again.
+    FrontendReplayCache cache;
+    cache.remember(msg);
+    cache.remember(frontend_messages::makeCharWimpy(CharWimpy{0}));
+    const QJsonObject replay = replayed(cache, GmcpMessageTypeEnum::MMAPPER_CHAR_WIMPY).object();
+    QVERIFY(replay["wimpy"].isDouble());
+    QCOMPARE(replay["wimpy"].toInteger(), 0);
+    cache.clearGame();
+    QVERIFY(replayed(cache, GmcpMessageTypeEnum::MMAPPER_CHAR_WIMPY).isNull());
+    cache.remember(msg);
+    cache.clear();
+    QVERIFY(replayed(cache, GmcpMessageTypeEnum::MMAPPER_CHAR_WIMPY).isNull());
+}
+
+void TestFrontend::charAffectsTest()
+{
+    // The one table of names: `stat`'s words and the events' come to the same.
+    QCOMPARE(charAffectName(QStringLiteral("poison (type: psylonia)")), QStringLiteral("poison"));
+    QCOMPARE(charAffectName(QStringLiteral("poisoned")), QStringLiteral("poison"));
+    QCOMPARE(charAffectName(QStringLiteral("blind")), QStringLiteral("blindness"));
+    QCOMPARE(charAffectName(QStringLiteral("blindness")), QStringLiteral("blindness"));
+    QCOMPARE(charAffectName(QStringLiteral("watch room (xanscasoebb)")),
+             QStringLiteral("watch room"));
+    QCOMPARE(charAffectName(QStringLiteral("Orkish draught")), QStringLiteral("orkish draught"));
+    QCOMPARE(charAffectName(QStringLiteral("disease (type: flu)")), QStringLiteral("disease"));
+    QCOMPARE(charAffectName(QStringLiteral("sense life")), QStringLiteral("sense life"));
+    QVERIFY(charAffectName(QStringLiteral("stored spell fireball")).isEmpty());
+
+    CharAffectsTracker tracker;
+    // What the tracker makes of one of MUME's lines at `now`: true when the list changed.
+    const auto line = [&tracker](const char *const text, const int64_t now) {
+        const std::optional<CombatEvent> event = parseCombatLine(QString::fromUtf8(text));
+        return event.has_value() && tracker.receiveEvent(*event, now);
+    };
+    const auto names = [&tracker]() {
+        QStringList result;
+        for (const CharAffect &affect : tracker.affects()) {
+            result.append(affect.name);
+        }
+        return result;
+    };
+    const auto payload = [&tracker]() {
+        return payloadOf(frontend_messages::makeCharAffects(tracker.affects()));
+    };
+
+    // Up: the line that says it took hold gives the name and the time.
+    QVERIFY(line("A blue transparent wall slowly appears around you.", 1000));
+    QVERIFY(line("You feel protected.", 1010));
+    const GmcpMessage two = frontend_messages::makeCharAffects(tracker.affects());
+    QCOMPARE(two.getType(), GmcpMessageTypeEnum::MMAPPER_CHAR_AFFECTS);
+    QCOMPARE(two.toRawBytes(),
+             QByteArray(R"(MMapper.Char.Affects {"affects":[)"
+                        R"({"name":"armour","since":1000,"source":"line"},)"
+                        R"({"name":"shield","since":1010,"source":"line"}]})"));
+
+    // Refresh: `refreshed` moves, `since` stays.
+    QVERIFY(line("Your magic armour is revitalized.", 1500));
+    QJsonObject armour = payload()["affects"].toArray().at(0).toObject();
+    QCOMPARE(armour["since"].toInteger(), 1000);
+    QCOMPARE(armour["refreshed"].toInteger(), 1500);
+    // A refresh of something not known: it is on, since nobody knows when.
+    QVERIFY(line("Your aura glows more intensely.", 1510));
+    const QJsonObject sanctuary = payload()["affects"].toArray().at(2).toObject();
+    QCOMPARE(sanctuary["name"].toString(), QStringLiteral("sanctuary"));
+    QVERIFY(!sanctuary.contains("since"));
+    QCOMPARE(sanctuary["refreshed"].toInteger(), 1510);
+    QCOMPARE(sanctuary["source"].toString(), QStringLiteral("line"));
+
+    // Down: gone. A down for what was not known changes nothing.
+    QVERIFY(line("Your magical shield wears off.", 1600));
+    QCOMPARE(names(), (QStringList{QStringLiteral("armour"), QStringLiteral("sanctuary")}));
+    QVERIFY(!line("You feel weaker.", 1601));
+
+    // Somebody else's effects, heals, the conditions that are no lasting effect, and lines
+    // that are no effect at all leave the list alone.
+    QVERIFY(!line("Walo is surrounded by a brilliant white aura.", 1602));
+    QVERIFY(!line("Your scratches and bruises disappear.", 1603));
+    QVERIFY(!line("You bleed from open wounds.", 1604));
+    QVERIFY(!line("You fight the web to get free, but just become more entangled.", 1605));
+    QVERIFY(!line("You are incapacitated and will slowly die, if not aided.", 1606));
+    QVERIFY(!line("Bert the stone-troll seems to be blinded!", 1607));
+    QVERIFY(!line("You feel sleepy.", 1608));
+    QCOMPARE(names(), (QStringList{QStringLiteral("armour"), QStringLiteral("sanctuary")}));
+
+    // The conditions `stat` lists land under `stat`'s names; the symptom repeating is no
+    // change, and the cure's line takes it off.
+    QVERIFY(line("You suddenly feel a terrible headache!", 1700));
+    QVERIFY(!line("You suddenly feel a terrible headache!", 1760));
+    QVERIFY(line("You have been blinded!", 1770));
+    QCOMPARE(names(),
+             (QStringList{QStringLiteral("armour"),
+                          QStringLiteral("sanctuary"),
+                          QStringLiteral("poison"),
+                          QStringLiteral("blindness")}));
+    QCOMPARE(payload()["affects"].toArray().at(2).toObject()["since"].toInteger(), 1700);
+    QVERIFY(line("You feel a cloak of blindness dissolve.", 1780));
+
+    // `stat` sets it right, both ways: what it lists and was not known comes in without a
+    // time and marked as `stat`'s; what was tracked and it does not list goes (sanctuary's
+    // fading was missed); what both know keeps its times. Stored spells are no effects.
+    QVERIFY(tracker.receiveStat(QStringList{QStringLiteral("armour"),
+                                            QStringLiteral("noquit"),
+                                            QStringLiteral("poison (type: psylonia)"),
+                                            QStringLiteral("stored spell fireball"),
+                                            QStringLiteral("stored spell fireball"),
+                                            QStringLiteral("detect magic")}));
+    QCOMPARE(names(),
+             (QStringList{QStringLiteral("armour"),
+                          QStringLiteral("poison"),
+                          QStringLiteral("noquit"),
+                          QStringLiteral("detect magic")}));
+    const QJsonArray after = payload()["affects"].toArray();
+    armour = after.at(0).toObject();
+    QCOMPARE(armour["since"].toInteger(), 1000);
+    QCOMPARE(armour["refreshed"].toInteger(), 1500);
+    QCOMPARE(armour["source"].toString(), QStringLiteral("line"));
+    QCOMPARE(after.at(1).toObject()["since"].toInteger(), 1700);
+    const QJsonObject noquit = after.at(2).toObject();
+    QCOMPARE(noquit["source"].toString(), QStringLiteral("stat"));
+    QVERIFY(!noquit.contains("since"));
+    QVERIFY(!noquit.contains("refreshed"));
+    // The same list again changes nothing, so nothing is sent.
+    QVERIFY(!tracker.receiveStat(QStringList{QStringLiteral("armour"),
+                                             QStringLiteral("noquit"),
+                                             QStringLiteral("poison (type: psylonia)"),
+                                             QStringLiteral("detect magic")}));
+    // An effect `stat` told of, then renewed by a line, then worn off by one.
+    QVERIFY(line("Your awareness of magical auras is renewed.", 2000));
+    const QJsonObject magic = payload()["affects"].toArray().at(3).toObject();
+    QCOMPARE(magic["refreshed"].toInteger(), 2000);
+    QCOMPARE(magic["source"].toString(), QStringLiteral("line"));
+    QVERIFY(!magic.contains("since"));
+    QVERIFY(line("Your perception of magical auras wears off.", 2100));
+    QVERIFY(line("A warm feeling runs through your body, you feel better.", 2110));
+    QCOMPARE(names(), (QStringList{QStringLiteral("armour"), QStringLiteral("noquit")}));
+    // Taking hold again while known: a new time, and the old renewal no longer counts.
+    QVERIFY(line("A blue transparent wall slowly appears around you.", 2200));
+    armour = payload()["affects"].toArray().at(0).toObject();
+    QCOMPARE(armour["since"].toInteger(), 2200);
+    QVERIFY(!armour.contains("refreshed"));
+
+    // Replay: the list as last sent, whole; a frontend that attaches late is told at once.
+    const GmcpMessage current = frontend_messages::makeCharAffects(tracker.affects());
+    FrontendSubscriptions subs;
+    QVERIFY(subs.applySupports(parse(R"(Core.Supports.Set [ "MMapper.Char 1" ])")));
+    QVERIFY(subs.wants(current));
+    FrontendReplayCache cache;
+    cache.remember(two);
+    cache.remember(current);
+    const QJsonArray replay
+        = replayed(cache, GmcpMessageTypeEnum::MMAPPER_CHAR_AFFECTS).object()["affects"].toArray();
+    QCOMPARE(replay.size(), 2);
+    QCOMPARE(replay.at(0).toObject()["since"].toInteger(), 2200);
+    QCOMPARE(replay.at(1).toObject()["name"].toString(), QStringLiteral("noquit"));
+
+    // Reset: the character left the game (or another connection began). Nothing is replayed
+    // and nothing is known; the next character's first `stat` is a statement even when it
+    // lists nothing, and only the first.
+    cache.clearGame();
+    QVERIFY(replayed(cache, GmcpMessageTypeEnum::MMAPPER_CHAR_AFFECTS).isNull());
+    tracker.reset();
+    QVERIFY(tracker.affects().empty());
+    QVERIFY(tracker.receiveStat(QStringList{}));
+    QCOMPARE(frontend_messages::makeCharAffects(tracker.affects()).toRawBytes(),
+             QByteArray(R"(MMapper.Char.Affects {"affects":[]})"));
+    QVERIFY(!tracker.receiveStat(QStringList{}));
+    cache.remember(current);
+    cache.clear();
+    QVERIFY(replayed(cache, GmcpMessageTypeEnum::MMAPPER_CHAR_AFFECTS).isNull());
 }
 
 void TestFrontend::accountTest()

@@ -7,6 +7,7 @@
 #include "../global/macros.h"
 #include "../map/RoomHandle.h"
 #include "../parser/AccountLines.h"
+#include "../parser/CharAffects.h"
 #include "../parser/CharLines.h"
 #include "../parser/CombatLines.h"
 #include "../parser/ContainerLines.h"
@@ -272,6 +273,19 @@ NODISCARD GmcpMessage makeCharBurden(const CharBurden &burden);
 /// are met), and `text` the line as MUME sent it. A figure MUME did not print as a number is
 /// left out. The line is not shown in the terminal. State: replayed as last sent.
 NODISCARD GmcpMessage makeCharLevel(const CharLevel &level);
+
+/// MMapper.Char.Wimpy -- the hit points below which the character flees, as MUME last stated
+/// them: `{"wimpy": 120}`, 0 for none. From the reply to `change wimpy` ("Wimpy set to: 120"),
+/// and again after each `stat` and `info` that states it. State: replayed as last sent.
+NODISCARD GmcpMessage makeCharWimpy(const CharWimpy &wimpy);
+
+/// MMapper.Char.Affects -- the lasting effects on the player's character, whole, at each
+/// change: `{"affects": [{"name": "armour", "since": 1790842000, "refreshed": 1790842600,
+/// "source": "line"}, {"name": "noquit", "source": "stat"}]}`. `since` and `refreshed` are unix
+/// seconds and left out when not known; `source` is "line" when one of MUME's lines told of the
+/// effect, "stat" when only `stat`'s list did. State: replayed as last sent. See
+/// CharAffectsTracker.
+NODISCARD GmcpMessage makeCharAffects(const std::vector<CharAffect> &affects);
 
 /// MMapper.Account.Menu -- MUME's account menu: `commands`, each {`name` (the command word,
 /// lowercase), `usage` ("Play <name>"), `help`}, in the menu's order, and `sorts`, the sort

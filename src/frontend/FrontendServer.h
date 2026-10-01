@@ -6,6 +6,7 @@
 #include "../global/Signal2.h"
 #include "../global/macros.h"
 #include "../map/roomid.h"
+#include "../parser/CharAffects.h"
 #include "../proxy/GmcpMessage.h"
 #include "FrontendMapIdentity.h"
 #include "FrontendReplayCache.h"
@@ -105,6 +106,9 @@ private:
     /// replayed to a frontend that connects mid-session so that it does not have to wait
     /// for the next change to become usable.
     FrontendReplayCache m_replayCache;
+    /// The effects on the player's character, published whole as MMapper.Char.Affects at
+    /// each change and replayed through the cache; forgotten with it.
+    CharAffectsTracker m_charAffects;
 
     bool m_upstreamConnected = false;
     bool m_echo = true;
@@ -226,6 +230,7 @@ private:
     /// Works out again whether the driving frontend claims MUME's viewer (claimsViewer()).
     void updateViewerClaim();
     void publishSessionState();
+    void publishCharAffects();
     /// Publishes MMapper.Session.State once the map's announcement interval allows: on the next
     /// turn of the event loop, or when the interval is over. Changes made meanwhile ride along.
     void scheduleSessionState();

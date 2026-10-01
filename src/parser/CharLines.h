@@ -151,6 +151,19 @@ struct NODISCARD CharLevel final
 /// not one. The level must be a number; the other four are left unset when they are not.
 NODISCARD std::optional<CharLevel> parseCharLevelLine(const QString &line);
 
+/// The hit points below which the character flees, as MUME last stated them: in its reply to
+/// `change wimpy N` ("Wimpy set to: 120", the powwow logs' wording; 0 turns it off), in `stat`
+/// ("Wimpy: 120.") or in `info` ("You will flee if your hit points go below 315.", 0 for "You
+/// will fight to the death."). One package for all three, so that a frontend has one figure
+/// and need not work out which of several replayed replies was the last.
+struct NODISCARD CharWimpy final
+{
+    int64_t wimpy = 0;
+};
+
+/// "Wimpy set to: 120", or nullopt when `line` is not that reply.
+NODISCARD std::optional<CharWimpy> parseWimpyLine(const QString &line);
+
 /// "one hundred twenty-one" as 121, or nullopt when the words are not a number.
 NODISCARD std::optional<int64_t> parseNumberWords(const QString &words);
 
@@ -166,8 +179,13 @@ struct NODISCARD CharReplies final
     std::vector<CharStat> stats;
     std::vector<CharScore> scores;
     std::vector<CharBurden> burdens;
+    /// After the `stat` or sheet that stated it, when one did.
+    std::vector<CharWimpy> wimpies;
 
-    NODISCARD bool empty() const { return stats.empty() && scores.empty() && burdens.empty(); }
+    NODISCARD bool empty() const
+    {
+        return stats.empty() && scores.empty() && burdens.empty() && wimpies.empty();
+    }
     void append(CharReplies &&other);
 };
 

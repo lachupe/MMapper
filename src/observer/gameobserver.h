@@ -93,6 +93,8 @@ public:
     Signal2<CharStat> sig2_charStat;
     Signal2<CharScore> sig2_charScore;
     Signal2<CharBurden> sig2_charBurden;
+    /// The wimpy as MUME last stated it: "Wimpy set to: 120", or a `stat` or `info` saying it.
+    Signal2<CharWimpy> sig2_charWimpy;
     /// The reply to CHAR_LEVEL_REQUEST, which is kept out of the terminal. See parseCharLevelLine.
     Signal2<CharLevel> sig2_charLevel;
     /// MUME's account menu, its `list` of characters and its one-line answers. See
@@ -163,6 +165,7 @@ public:
     void observeCharStat(const CharStat &stat) { sig2_charStat.invoke(stat); }
     void observeCharScore(const CharScore &score) { sig2_charScore.invoke(score); }
     void observeCharBurden(const CharBurden &burden) { sig2_charBurden.invoke(burden); }
+    void observeCharWimpy(const CharWimpy &wimpy) { sig2_charWimpy.invoke(wimpy); }
     void observeCharLevel(const CharLevel &level) { sig2_charLevel.invoke(level); }
     void observeAccountMenu(const AccountMenu &menu) { sig2_accountMenu.invoke(menu); }
     void observeAccountChars(const AccountChars &chars) { sig2_accountChars.invoke(chars); }

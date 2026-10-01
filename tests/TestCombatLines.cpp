@@ -1725,6 +1725,96 @@ void TestCombatLines::affectTest()
         {"You feel yourself exposed.", A, DOWN, "you", "", "shroud"},
         {"You feel your awareness improve.", A, UP, "you", "", "sense life"},
         {"You feel less aware of your surroundings.", A, DOWN, "you", "", "sense life"},
+        // MUME spells it both ways: 3454 lines with the z in the powwow logs, 88 with the s.
+        {"Your magic armour is revitalized.", A, RE, "you", "", "armour"},
+        {"Your protection is revitalized.", A, RE, "you", "", "shield"},
+        {"Your misty shroud is renewed.", A, RE, "you", "", "shroud"},
+        {"Your awareness is refreshed.", A, RE, "you", "", "sense life"},
+        {"You become sensitive of magical auras.", A, UP, "you", "", "detect magic"},
+        {"Your awareness of magical auras is renewed.", A, RE, "you", "", "detect magic"},
+        {"Your perception of magical auras wears off.", A, DOWN, "you", "", "detect magic"},
+        {"Your vision blurs.", A, DOWN, "you", "", "night vision"},
+        {"The detect invisible wears off.", A, DOWN, "you", "", "detect invisibility"},
+        {"Hearing the horn blow, you feel your urge to battle increase!",
+         A,
+         UP,
+         "you",
+         "",
+         "battle glory"},
+        {"You feel your newfound strength leaving you again.", A, DOWN, "you", "", "battle glory"},
+        {"The warm taste of blood in your mouth vanishes.", A, DOWN, "you", "", "blood of sauron"},
+        {"You have a righteous feeling!", A, UP, "you", "", "protection from evil"},
+        {"You feel less righteous.", A, DOWN, "you", "", "protection from evil"},
+        {"You feel aware of this place.", A, UP, "you", "", "watch room"},
+        {"Your awareness decreases.", A, DOWN, "you", "", "watch room"},
+        {"[xanscasoebb] Your awareness decreases.", A, DOWN, "you", "", "watch room"},
+        {"The draught burns down your throat, and a fiery feeling fills your limbs.",
+         A,
+         UP,
+         "you",
+         "",
+         "orkish draught"},
+        {"As the warmth of the draught recedes from your limbs, you feel less energetic.",
+         A,
+         DOWN,
+         "you",
+         "",
+         "orkish draught"},
+        {"You feel your muscles relax and your pulse slow as the strength that welled within you "
+         "subsides.",
+         A,
+         UP,
+         "you",
+         "",
+         "tiredness"},
+        {"You feel your muscles regain some of their former energy.", A, DOWN, "you", "", "tiredness"},
+        {"You feel a sudden flash of dizziness causing you to pause before getting your "
+         "directional bearings back.",
+         A,
+         UP,
+         "you",
+         "",
+         "haggardness"},
+        {"You feel steadier now.", A, DOWN, "you", "", "haggardness"},
+        // Both endings: the powwow action's and the logs'.
+        {"You feel a sudden loss of energy as the power that once mingled with your own has now "
+         "vanished.",
+         A,
+         UP,
+         "you",
+         "",
+         "lethargy"},
+        {"You feel a sudden loss of energy as the power that once mingled with your own vanishes.",
+         A,
+         UP,
+         "you",
+         "",
+         "lethargy"},
+        {"You feel your magic energy coming back to you.", A, DOWN, "you", "", "lethargy"},
+        // MUME breaks this one after "has"; a wider terminal may not.
+        {"Alas, you realize that yet again the mighty knowledge of drowned Numenor has",
+         A,
+         UP,
+         "you",
+         "",
+         "depression"},
+        {"Alas, you realise that yet again the mighty knowledge of drowned Númenor has been "
+         "lost... Despair settles on you.",
+         A,
+         UP,
+         "you",
+         "",
+         "depression"},
+        {"Your heart feels lighter.", A, DOWN, "you", "", "depression"},
+        {"A haze seems to cloud your eyes, blurring your vision, making it difficult for you to "
+         "see anything clearly.",
+         A,
+         UP,
+         "you",
+         "",
+         "disorientation"},
+        {"You feel less disoriented.", A, DOWN, "you", "", "disorientation"},
+        {"You feel bolder.", A, DOWN, "you", "", "panic"},
         // Heals, on the player and on others.
         {"Your scratches and bruises disappear.", A, UP, "you", "", "heal"},
         {"You begin to see scars fade away and a feeling of health comes over you.",
@@ -1742,6 +1832,16 @@ void TestCombatLines::affectTest()
         {"Ibuki glows briefly as healing energy flows into her.", A, UP, "Ibuki", "", "heal"},
         {"*Stitch the Half-Elf* looks better.", A, UP, "*Stitch the Half-Elf*", "", "heal"},
     });
+
+    // Night vision's line taking hold, and detect invisibility's, and a cure blindness on
+    // somebody who sees: the line does not say which, so it is no event. The second half of the
+    // depression's line says nothing the first did not.
+    for (const char *const line : {"Your eyes tingle.",
+                                   "been lost... Despair settles on you.",
+                                   "You feel bolder than ever.",
+                                   "Your vision blurs as the smoke thickens."}) {
+        QVERIFY2(!parseCombatLine(QString::fromUtf8(line)).has_value(), line);
+    }
 }
 
 void TestCombatLines::harmfulConditionTest()
@@ -1797,7 +1897,8 @@ void TestCombatLines::notFix16Test()
           "Zûd tells the group 'can you flee?'",
           "Akallabêth tells you 'low mana'",
           "A black candle burns in a silver stand, giving off little light. (blue aura).",
-          "The draught burns down your throat, and a fiery feeling fills your limbs.",
+          // "The draught burns down your throat, ..." was here as no burn; it is none still, but
+          // it is the Orkish draught taking hold, an affect (affectTest).
           "*South* - The glare of the sun burns your eyes.",
           "The sun burns you! You slowly turn into stone.",
           "A cobweb burns away completely.",

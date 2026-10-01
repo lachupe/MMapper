@@ -766,6 +766,62 @@ void TestCharLines::levelLineTest()
     QVERIFY(!sheet.scores.front().text.contains("MMXP"));
 }
 
+void TestCharLines::wimpyTest()
+{
+    // powwow/logs/archives/log-2006.02.09-19.48.52.txt:488-489: "cha wimpy 120" answered
+    // "Wimpy set to: 120"; Mochomurka/.../logs/thundur.txt:865 has it set to 0.
+    const std::optional<CharWimpy> set = parseWimpyLine("Wimpy set to: 120");
+    QVERIFY(set.has_value());
+    QCOMPARE(set->wimpy, int64_t{120});
+    QCOMPARE(parseWimpyLine("Wimpy set to: 0")->wimpy, int64_t{0});
+    // Colour, a line ending, a thousand separator and a full stop are tolerated.
+    QCOMPARE(parseWimpyLine("\x1b[32mWimpy set to: 1,200.\x1b[0m\r\n")->wimpy, int64_t{1200});
+
+    // Not the reply: another game's wording (log-2005.09.03-02.28.34.txt:161), speech, a
+    // figure that is none.
+    QVERIFY(!parseWimpyLine("Wimpy set to 0 hit points. Mood: wimpy.").has_value());
+    QVERIFY(!parseWimpyLine("Zubr says 'Wimpy set to: 120'").has_value());
+    QVERIFY(!parseWimpyLine("Wimpy set to: high").has_value());
+    QVERIFY(!parseWimpyLine("Wimpy set to: 120 hit points").has_value());
+
+    // The tracker gives it at once, and it neither ends nor spoils a sheet open around it.
+    CharLinesTracker tracker;
+    const CharReplies reply = tracker.receiveLine("Wimpy set to: 165");
+    QCOMPARE(reply.wimpies.size(), size_t{1});
+    QCOMPARE(reply.wimpies.front().wimpy, int64_t{165});
+    QVERIFY(reply.stats.empty() && reply.scores.empty() && reply.burdens.empty());
+    QVERIFY(tracker.receivePrompt().empty());
+    QVERIFY(tracker.receiveLine("Offensive Bonus: 93%, Dodging Bonus: 53%, Parrying Bonus: 93%.")
+                .empty());
+    QCOMPARE(tracker.receiveLine("Wimpy set to: 50").wimpies.size(), size_t{1});
+    const CharReplies sheet = tracker.receivePrompt();
+    QCOMPARE(sheet.scores.size(), size_t{1});
+    QVERIFY(!sheet.scores.front().text.contains("Wimpy set"));
+    // That sheet stated no wimpy, so none is repeated.
+    QVERIFY(sheet.wimpies.empty());
+
+    // `stat` and `info` state it too, and it comes out with them: one figure for a frontend,
+    // whichever reply was the last.
+    const CharReplies stat = feed({"OB: 131%, DB: 24%, PB: 0%, Armour: 0%. Wimpy: 111. Mood: wimpy.",
+                                   "Needed: 1,108,995 xp, 0 tp. Gold: 0. Alert: normal.",
+                                   "",
+                                   PROMPT});
+    QCOMPARE(stat.stats.size(), size_t{1});
+    QCOMPARE(stat.wimpies.size(), size_t{1});
+    QCOMPARE(stat.wimpies.front().wimpy, int64_t{111});
+    const CharReplies info = feed({"Offensive Bonus: 93%, Dodging Bonus: 53%, Parrying Bonus: 93%.",
+                                   "Your mood is wimpy. You will flee if your hit points go below "
+                                   "315.",
+                                   PROMPT});
+    QCOMPARE(info.scores.size(), size_t{1});
+    QCOMPARE(info.wimpies.size(), size_t{1});
+    QCOMPARE(info.wimpies.front().wimpy, int64_t{315});
+    // A `stat` line without the figure (old wordings) repeats none.
+    const CharReplies bare = feed({"OB: 60%, DB: 62%, PB: 60%, Armour: 66%.", "", PROMPT});
+    QCOMPARE(bare.stats.size(), size_t{1});
+    QVERIFY(bare.wimpies.empty());
+}
+
 void TestCharLines::resetTest()
 {
     CharLinesTracker tracker;

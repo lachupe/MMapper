@@ -742,6 +742,40 @@ const QRegularExpression g_flash{
 /// Lasting effects taking hold, wearing off and being renewed, heals landing, and the harmful
 /// states that are conditions. Each line is MUME's own as the logs and the help show it. A named
 /// group "w" is the one it is on; without one it is the player.
+///
+/// The detail is MUME's own name for the effect, as `stat` lists it, lowercase ("detect magic",
+/// "battle glory"), except "poisoned" and "blind", which `stat` calls "poison" and "blindness":
+/// CharAffects.cpp holds the one table that brings the two together.
+///
+/// Where the later lines come from (/home/aza/data/powwow; "magic.pow" is pow/magic.pow, "tmp"
+/// is pow/send/tmp/magic.pow, logs are under logs/):
+/// - "revitalized" beside "revitalised": pow/send/magic.pow:27,30; the logs have the z 3454
+///   times and the s 88 (archives/log-2005.09.05-19.23.16.txt:1371);
+/// - sense life renewed: magic.pow:39; nelly.mov:18427;
+/// - shroud renewed: tmp:368; archives/log-2006.05.20-01.28.11.txt:74820;
+/// - detect magic: magic.pow:44-46; archives/log-2005.09.05-19.23.16.txt:258;
+/// - tiredness, haggardness, lethargy: magic.pow:47-52; lethargy's "vanishes" is
+///   moria.gjurza.mov:104199;
+/// - depression: magic.pow:55-56; archives/log-2005.09.05-19.23.16.txt:68226 (MUME breaks the
+///   line after "has", so both the first half and the whole are read);
+/// - night vision wearing off: magic.pow:58; logs/Moria_Whitey_Escape.txt:2019;
+/// - detect invisibility wearing off: tmp:404; Mochomurka/.../logs/haste.txt:27;
+/// - battle glory: magic.pow:61-62; Mochomurka/.../logs/wpriest.txt:145; old/!best/log.txt:1886;
+/// - blood of Sauron wearing off: magic.pow:64 only (what it says taking hold is not known);
+/// - watch room: tmp:399-400; archives/log-2005.09.29-03.25.26.txt:10430 and :12160 (the room's
+///   key in brackets before the line);
+/// - disorientation: tmp:389-390 only, in no log;
+/// - protection from evil: old/!best/orodreth.txt:4945; logs/deacondies.txt:653;
+/// - Orkish draught: archives/log-2005.09.07-02.50.20.txt:2841 and :53549 (`stat` lists it
+///   after the first line in 145 of 185 cases and no longer after the second in 150 of 157);
+/// - panic wearing off: logs/deacondies.txt:652 (`stat` listed panic before "You feel bolder."
+///   in 1995 of 2781 cases and not after it in 2191 of 2615). What starts it is a flight, which
+///   says nothing of its own.
+///
+/// "Your eyes tingle." is deliberately not here: it is what night vision says taking hold
+/// (old/!best/orod3.txt:814-819), and detect invisibility (archives/log-2005.09.06-14.57.57.txt:
+/// 2655-2659), and what a cure blindness on somebody who sees says
+/// (archives/log-2006.04.24-13.45.52.txt:4723), so the line does not say which effect it is.
 struct NODISCARD AffectLine final
 {
     QRegularExpression pattern;
@@ -761,10 +795,10 @@ struct NODISCARD AffectLine final
 const AffectLine g_affectLines[] = {
     AFFECT_LINE(R"(^A blue transparent wall slowly appears around you\.$)", UP, "armour"),
     AFFECT_LINE(R"(^You feel less protected\.$)", DOWN, "armour"),
-    AFFECT_LINE(R"(^Your magic armour is revitalised\.$)", REFRESH, "armour"),
+    AFFECT_LINE(R"(^Your magic armour is revitali[sz]ed\.$)", REFRESH, "armour"),
     AFFECT_LINE(R"(^You feel protected\.$)", UP, "shield"),
     AFFECT_LINE(R"(^Your magical shield wears off\.$)", DOWN, "shield"),
-    AFFECT_LINE(R"(^Your protection is revitalised\.$)", REFRESH, "shield"),
+    AFFECT_LINE(R"(^Your protection is revitali[sz]ed\.$)", REFRESH, "shield"),
     AFFECT_LINE(R"(^You start glowing\.$)", UP, "sanctuary"),
     AFFECT_LINE(R"(^(?<w>.+?) is surrounded by a (?:dim |brilliant )?white aura\.$)",
                 UP,
@@ -784,8 +818,60 @@ const AffectLine g_affectLines[] = {
     AFFECT_LINE(R"(^The energy in your legs is refreshed\.$)", REFRESH, "breath of briskness"),
     AFFECT_LINE(R"(^You are surrounded by a misty shroud\.$)", UP, "shroud"),
     AFFECT_LINE(R"(^You feel yourself exposed\.$)", DOWN, "shroud"),
+    AFFECT_LINE(R"(^Your misty shroud is renewed\.$)", REFRESH, "shroud"),
     AFFECT_LINE(R"(^You feel your awareness improve\.$)", UP, "sense life"),
     AFFECT_LINE(R"(^You feel less aware of your surroundings\.$)", DOWN, "sense life"),
+    AFFECT_LINE(R"(^Your awareness is refreshed\.$)", REFRESH, "sense life"),
+    AFFECT_LINE(R"(^You become sensitive of magical auras\.$)", UP, "detect magic"),
+    AFFECT_LINE(R"(^Your perception of magical auras wears off\.$)", DOWN, "detect magic"),
+    AFFECT_LINE(R"(^Your awareness of magical auras is renewed\.$)", REFRESH, "detect magic"),
+    AFFECT_LINE(R"(^Your vision blurs\.$)", DOWN, "night vision"),
+    AFFECT_LINE(R"(^The detect invisible wears off\.$)", DOWN, "detect invisibility"),
+    AFFECT_LINE(R"(^Hearing the horn blow, you feel your urge to battle increase!$)",
+                UP,
+                "battle glory"),
+    AFFECT_LINE(R"(^You feel your newfound strength leaving you again\.$)", DOWN, "battle glory"),
+    AFFECT_LINE(R"(^The warm taste of blood in your mouth vanishes\.$)", DOWN, "blood of sauron"),
+    AFFECT_LINE(R"(^You have a righteous feeling!$)", UP, "protection from evil"),
+    AFFECT_LINE(R"(^You feel less righteous\.$)", DOWN, "protection from evil"),
+    // A watch room's line may have the room's key before it: "[xanscasoebb] Your awareness
+    // decreases."
+    AFFECT_LINE(R"(^You feel aware of this place\.$)", UP, "watch room"),
+    AFFECT_LINE(R"(^(?:\[\w+\] )?Your awareness decreases\.$)", DOWN, "watch room"),
+    AFFECT_LINE(R"(^The draught burns down your throat, and a fiery feeling fills your limbs\.$)",
+                UP,
+                "orkish draught"),
+    AFFECT_LINE(
+        R"(^As the warmth of the draught recedes from your limbs, you feel less energetic\.$)",
+        DOWN,
+        "orkish draught"),
+    // What a spell leaves behind when it wears off or backfires, and a flight's panic ending.
+    AFFECT_LINE(
+        R"(^You feel your muscles relax and your pulse slow as the strength that welled within you subsides\.$)",
+        UP,
+        "tiredness"),
+    AFFECT_LINE(R"(^You feel your muscles regain some of their former energy\.$)", DOWN, "tiredness"),
+    AFFECT_LINE(
+        R"(^You feel a sudden flash of dizziness causing you to pause before getting your directional bearings back\.$)",
+        UP,
+        "haggardness"),
+    AFFECT_LINE(R"(^You feel steadier now\.$)", DOWN, "haggardness"),
+    AFFECT_LINE(
+        R"(^You feel a sudden loss of energy as the power that once mingled with your own (?:has now vanished|vanishes)\.$)",
+        UP,
+        "lethargy"),
+    AFFECT_LINE(R"(^You feel your magic energy coming back to you\.$)", DOWN, "lethargy"),
+    AFFECT_LINE(
+        R"(^Alas, you reali[sz]e that yet again the mighty knowledge of drowned \S+ has(?: been lost\.\.\. Despair settles on you\.)?$)",
+        UP,
+        "depression"),
+    AFFECT_LINE(R"(^Your heart feels lighter\.$)", DOWN, "depression"),
+    AFFECT_LINE(
+        R"(^A haze seems to cloud your eyes, blurring your vision, making it difficult for you to see anything clearly\.$)",
+        UP,
+        "disorientation"),
+    AFFECT_LINE(R"(^You feel less disoriented\.$)", DOWN, "disorientation"),
+    AFFECT_LINE(R"(^You feel bolder\.$)", DOWN, "panic"),
     // Heals: cure light, cure serious, cure critic, heal, a pale blue stone, and on others.
     AFFECT_LINE(R"(^Your scratches and bruises disappear\.$)", UP, "heal"),
     AFFECT_LINE(R"(^You begin to see scars fade away and a feeling of health comes over you\.$)",

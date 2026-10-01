@@ -28,6 +28,10 @@ NODISCARD bool isWholeState(const GmcpMessageTypeEnum type)
     // MMapper's own, read off the replies to `stat` and `info`: each reply states them whole.
     case GmcpMessageTypeEnum::MMAPPER_CHAR_BURDEN:
     case GmcpMessageTypeEnum::MMAPPER_CHAR_LEVEL:
+    // The effects on the character, which CharAffectsTracker keeps and sends whole at each
+    // change, and the wimpy as last stated.
+    case GmcpMessageTypeEnum::MMAPPER_CHAR_AFFECTS:
+    case GmcpMessageTypeEnum::MMAPPER_CHAR_WIMPY:
     // The account menu and `list`'s characters: each printing is the whole of it.
     case GmcpMessageTypeEnum::MMAPPER_ACCOUNT_CHARS:
     case GmcpMessageTypeEnum::MMAPPER_ACCOUNT_MENU:

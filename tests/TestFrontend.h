@@ -43,6 +43,8 @@ private Q_SLOTS:
     static void charItemTest();
     static void charSheetTest();
     static void charLevelTest();
+    static void charWimpyTest();
+    static void charAffectsTest();
     static void accountTest();
     static void itemObservationMetadataTest();
     static void replayChangedFieldsTest();

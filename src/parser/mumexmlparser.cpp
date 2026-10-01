@@ -384,6 +384,10 @@ void MumeXmlParser::publishCharReplies(const CharReplies &replies)
     for (const CharBurden &burden : replies.burdens) {
         m_observer.observeCharBurden(burden);
     }
+    // After the `stat` or sheet that stated it.
+    for (const CharWimpy &wimpy : replies.wimpies) {
+        m_observer.observeCharWimpy(wimpy);
+    }
 }
 
 bool MumeXmlParser::element(const QString &line)

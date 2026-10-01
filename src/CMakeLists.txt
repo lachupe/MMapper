@@ -513,6 +513,8 @@ set(mmapper_SRCS
     parser/Action.h
     parser/AccountLines.cpp
     parser/AccountLines.h
+    parser/CharAffects.cpp
+    parser/CharAffects.h
     parser/CharLines.cpp
     parser/CharLines.h
     parser/CombatLines.cpp

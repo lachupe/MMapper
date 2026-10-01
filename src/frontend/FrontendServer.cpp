@@ -79,6 +79,7 @@ FrontendServer::FrontendServer(GameObserver &observer,
         m_upstreamConnected = true;
         // A new game session invalidates everything we cached from the previous one.
         m_replayCache.clear();
+        m_charAffects.reset();
         m_groundState.reset();
         m_roomContents.reset();
         m_charEquipment.reset();
@@ -103,6 +104,8 @@ FrontendServer::FrontendServer(GameObserver &observer,
             // frontend that connects while MUME waits at its menu. The account's menu and
             // characters stay: they are what MUME's menu shows.
             m_replayCache.clearGame();
+            // The effects were this character's: the next one to enter starts with none known.
+            m_charAffects.reset();
             m_groundState.reset();
             m_roomContents.reset();
             m_charEquipment.reset();
@@ -132,6 +135,11 @@ FrontendServer::FrontendServer(GameObserver &observer,
     m_observer.sig2_sentToUserCombat.connect(m_lifetime, [this](const CombatEvent &event) {
         // An event, like the XML elements: something that happened, not state to replay.
         publish(frontend_messages::makeCombatEvent(event));
+        // What it changed of the effects on the player's character is state, though: kept,
+        // and sent whole after the event that changed it.
+        if (m_charAffects.receiveEvent(event, QDateTime::currentSecsSinceEpoch())) {
+            publishCharAffects();
+        }
     });
 
     m_observer.sig2_sentToUserXml.connect(m_lifetime, [this](const XmlElement &element) {
@@ -197,6 +205,10 @@ FrontendServer::FrontendServer(GameObserver &observer,
         const GmcpMessage msg = frontend_messages::makeCharStat(stat);
         m_replayCache.remember(msg);
         publish(msg);
+        // `stat`'s list sets the tracked effects right: after the reply it came in.
+        if (m_charAffects.receiveStat(stat.affects)) {
+            publishCharAffects();
+        }
     });
     m_observer.sig2_charScore.connect(m_lifetime, [this](const CharScore &score) {
         const GmcpMessage msg = frontend_messages::makeCharScore(score);
@@ -205,6 +217,13 @@ FrontendServer::FrontendServer(GameObserver &observer,
     });
     m_observer.sig2_charBurden.connect(m_lifetime, [this](const CharBurden &burden) {
         const GmcpMessage msg = frontend_messages::makeCharBurden(burden);
+        m_replayCache.remember(msg);
+        publish(msg);
+    });
+
+    // State: the wimpy as MUME last stated it.
+    m_observer.sig2_charWimpy.connect(m_lifetime, [this](const CharWimpy &wimpy) {
+        const GmcpMessage msg = frontend_messages::makeCharWimpy(wimpy);
         m_replayCache.remember(msg);
         publish(msg);
     });
@@ -639,6 +658,13 @@ void FrontendServer::replayTo(Client &client)
     for (const auto &[key, msg] : m_charContainers) {
         sendTo(client, msg);
     }
+}
+
+void FrontendServer::publishCharAffects()
+{
+    const GmcpMessage msg = frontend_messages::makeCharAffects(m_charAffects.affects());
+    m_replayCache.remember(msg);
+    publish(msg);
 }
 
 void FrontendServer::publishSessionState()

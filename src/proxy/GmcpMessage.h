@@ -90,12 +90,14 @@ class ParseEvent;
       "MMapper.Char.Inventory") \
     X(MMAPPER_CHAR_COMMAND, MMapperCharCommand, "mmapper.char.command", "MMapper.Char.Command") \
     X(MMAPPER_CHAR_ITEM, MMapperCharItem, "mmapper.char.item", "MMapper.Char.Item") \
+    X(MMAPPER_CHAR_AFFECTS, MMapperCharAffects, "mmapper.char.affects", "MMapper.Char.Affects") \
     X(MMAPPER_CHAR_BURDEN, MMapperCharBurden, "mmapper.char.burden", "MMapper.Char.Burden") \
     X(MMAPPER_CHAR_LEVEL, MMapperCharLevel, "mmapper.char.level", "MMapper.Char.Level") \
     X(MMAPPER_CHAR_SCORE, MMapperCharScore, "mmapper.char.score", "MMapper.Char.Score") \
     X(MMAPPER_CHAR_SKILLS, MMapperCharSkills, "mmapper.char.skills", "MMapper.Char.Skills") \
     X(MMAPPER_CHAR_STAT, MMapperCharStat, "mmapper.char.stat", "MMapper.Char.Stat") \
     X(MMAPPER_CHAR_TROPHIES, MMapperCharTrophies, "mmapper.char.trophies", "MMapper.Char.Trophies") \
+    X(MMAPPER_CHAR_WIMPY, MMapperCharWimpy, "mmapper.char.wimpy", "MMapper.Char.Wimpy") \
     X(MMAPPER_COMBAT_EVENT, MMapperCombatEvent, "mmapper.combat.event", "MMapper.Combat.Event") \
     X(MMAPPER_GUILD_PRACTISED, \
       MMapperGuildPractised, \
@@ -144,7 +146,7 @@ enum class NODISCARD GmcpMessageTypeEnum {
 #define X_COUNT(...) +1
 static constexpr const size_t NUM_GMCP_MESSAGES = XFOREACH_GMCP_MESSAGE_TYPE(X_COUNT);
 #undef X_COUNT
-static_assert(NUM_GMCP_MESSAGES == 76);
+static_assert(NUM_GMCP_MESSAGES == 78);
 DEFINE_ENUM_COUNT(GmcpMessageTypeEnum, NUM_GMCP_MESSAGES)
 
 namespace tags {

@@ -209,6 +209,13 @@ const QRegularExpression g_renownWp{QStringLiteral(R"(\s*\((-?[\d,]+) wps?\))")}
 const QRegularExpression g_levelLine{
     QStringLiteral(R"(^MMXP (\d[\d,]*) (\S+) (\S+) (\S+) (\S+)$)")};
 
+// -- wimpy ---------------------------------------------------------------------------------
+
+// The reply to `change wimpy 120`: "Wimpy set to: 120" (powwow
+// logs/archives/log-2006.02.09-19.48.52.txt:489, and some two thousand more; none ends in a
+// full stop, which is tolerated all the same).
+const QRegularExpression g_wimpySet{QStringLiteral(R"(^Wimpy set to: ([\d,]+)\.?$)")};
+
 NODISCARD bool isWeakSheetLine(const QString &text)
 {
     return g_coins.match(text).hasMatch()
@@ -353,8 +360,25 @@ std::optional<CharLevel> parseCharLevelLine(const QString &line)
     return result;
 }
 
+std::optional<CharWimpy> parseWimpyLine(const QString &line)
+{
+    const QString text = cleaned(line);
+    if (!text.startsWith(QStringLiteral("Wimpy set to: "))) {
+        return std::nullopt;
+    }
+    const QRegularExpressionMatch m = g_wimpySet.match(text);
+    const std::optional<int64_t> wimpy = m.hasMatch() ? captured(m, 1) : std::nullopt;
+    if (!wimpy.has_value()) {
+        return std::nullopt;
+    }
+    return CharWimpy{*wimpy};
+}
+
 void CharReplies::append(CharReplies &&other)
 {
+    for (const CharWimpy &wimpy : other.wimpies) {
+        wimpies.push_back(wimpy);
+    }
     for (auto &stat : other.stats) {
         stats.push_back(std::move(stat));
     }
@@ -384,6 +408,13 @@ CharReplies CharLinesTracker::receiveLine(const QString &line)
             return out;
         }
         out.append(closeStat());
+    }
+
+    // The reply to `change wimpy`: a line of its own, which is no part of an open sheet and
+    // does not count against it.
+    if (const auto wimpy = parseWimpyLine(text)) {
+        out.wimpies.push_back(*wimpy);
+        return out;
     }
 
     if (g_statFirst.match(text).hasMatch()) {
@@ -512,6 +543,9 @@ CharReplies CharLinesTracker::closeStat()
     m_statLines.clear();
     m_statSection = StatSectionEnum::HEAD;
     m_statHasSecondLine = false;
+    if (stat.wimpy.has_value()) {
+        out.wimpies.push_back(CharWimpy{*stat.wimpy});
+    }
     out.stats.push_back(std::move(stat));
     return out;
 }
@@ -678,6 +712,9 @@ CharReplies CharLinesTracker::closeSheet()
     m_sheetAfterScored = false;
     m_sheetStrangers = 0;
     if (std::exchange(m_sheetHasFigure, false)) {
+        if (sheet.wimpy.has_value()) {
+            out.wimpies.push_back(CharWimpy{*sheet.wimpy});
+        }
         out.scores.push_back(std::move(sheet));
     }
     return out;

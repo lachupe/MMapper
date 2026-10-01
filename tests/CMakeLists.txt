@@ -379,6 +379,8 @@ if(WITH_FRONTEND)
         ../src/frontend/FrontendRenderPause.h
         ../src/parser/AccountLines.cpp
         ../src/parser/AccountLines.h
+        ../src/parser/CharAffects.cpp
+        ../src/parser/CharAffects.h
         ../src/parser/CharLines.cpp
         ../src/parser/CharLines.h
         ../src/parser/CombatLines.cpp

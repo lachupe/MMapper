@@ -30,6 +30,7 @@ private Q_SLOTS:
     static void burdenTest();
     static void numberWordsTest();
     static void levelLineTest();
+    static void wimpyTest();
     static void notCharTest();
     static void resetTest();
 };

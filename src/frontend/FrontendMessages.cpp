@@ -721,6 +721,29 @@ GmcpMessage makeCharLevel(const CharLevel &level)
     return GmcpMessage{GmcpMessageTypeEnum::MMAPPER_CHAR_LEVEL, toGmcpJson(obj)};
 }
 
+GmcpMessage makeCharWimpy(const CharWimpy &wimpy)
+{
+    QJsonObject obj;
+    obj["wimpy"] = static_cast<qint64>(wimpy.wimpy);
+    return GmcpMessage{GmcpMessageTypeEnum::MMAPPER_CHAR_WIMPY, toGmcpJson(obj)};
+}
+
+GmcpMessage makeCharAffects(const std::vector<CharAffect> &affects)
+{
+    QJsonArray rows;
+    for (const CharAffect &affect : affects) {
+        QJsonObject row;
+        row["name"] = affect.name;
+        putNumber(row, "since", affect.since);
+        putNumber(row, "refreshed", affect.refreshed);
+        row["source"] = affect.fromLine ? QStringLiteral("line") : QStringLiteral("stat");
+        rows.append(row);
+    }
+    QJsonObject obj;
+    obj["affects"] = rows;
+    return GmcpMessage{GmcpMessageTypeEnum::MMAPPER_CHAR_AFFECTS, toGmcpJson(obj)};
+}
+
 GmcpMessage makeCharCommand(const ItemCommandObservation &command)
 {
     QJsonObject obj;
