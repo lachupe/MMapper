@@ -764,6 +764,19 @@ GmcpMessage makeCharFollowers(const CharFollowers &followers)
     }
     QJsonObject obj;
     obj["followers"] = rows;
+    putText(obj, "following", followers.following);
+    if (const auto leader = leaderOf(followers)) {
+        QJsonObject who;
+        putText(who, "name", leader->name);
+        who["you"] = leader->you;
+        obj["leader"] = who;
+    }
+    obj["players"] = QJsonArray::fromStringList(followers.players);
+    if (followers.protecting.has_value()) {
+        QJsonObject protect;
+        protect["protecting"] = QJsonArray::fromStringList(*followers.protecting);
+        obj["protect"] = protect;
+    }
     if (followers.reply.has_value()) {
         QJsonObject reply;
         reply["order"] = followers.reply->order;

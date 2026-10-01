@@ -296,7 +296,13 @@ NODISCARD GmcpMessage makeCharAffects(const std::vector<CharAffect> &affects);
 /// unknown; `state` following, refusing, lost, left or dead, the last two sent once and the
 /// follower in no message after; `label` is "" when none is known; `since` (unix seconds),
 /// `lastOrder` and `lastRefused` are left out when not known. `reply` is there only in the
-/// message an `order`'s answer caused: `result` ok, failed, none-here, syntax or asleep. State:
+/// message an `order`'s answer caused: `result` ok, failed, none-here, syntax or asleep.
+/// With them, the other side of following: `"following": "Grayelf"` (whom the character
+/// follows; left out when nobody), `"leader": {"name": "Grayelf", "you": false}` or `{"you":
+/// true}` when the character follows nobody and a player or a bound follower follows it (left
+/// out when nobody is known to lead), `"players": ["Budach"]` (the players that follow the
+/// character; always there) and `"protect": {"protecting": ["Kazadoe"]}` (whom the character
+/// said it will try to protect; left out until a line stated it). State:
 /// replayed as lastingFollowers() of the last sent -- without `reply` and without those that
 /// left or died. See CharFollowersTracker.
 NODISCARD GmcpMessage makeCharFollowers(const CharFollowers &followers);

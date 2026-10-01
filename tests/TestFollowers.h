@@ -28,4 +28,7 @@ private Q_SLOTS:
     static void ownDeathTest();
     static void limitsTest();
     static void resetTest();
+    static void followingTest();
+    static void leaderTest();
+    static void protectTest();
 };

@@ -1473,7 +1473,8 @@ void TestFrontend::charFollowersTest()
     QCOMPARE(sent.last(),
              QByteArray(R"(MMapper.Char.Followers {"followers":[)"
                         R"({"here":true,"kind":"charmie","label":"","name":"a mother eagle",)"
-                        R"("since":1000,"state":"following"}]})"));
+                        R"("since":1000,"state":"following"}],"leader":{"you":true},)"
+                        R"("players":[]})"));
     FrontendSubscriptions subs;
     QVERIFY(subs.applySupports(parse(R"(Core.Supports.Set [ "MMapper.Char 1" ])")));
     QVERIFY(subs.wants(GmcpMessage::fromRawBytes(sent.last())));
@@ -1493,6 +1494,7 @@ void TestFrontend::charFollowersTest()
                         R"("name":"a mother eagle","since":1000,"state":"refusing"},)"
                         R"({"here":true,"kind":"mount","label":"my","lastOrder":"assist",)"
                         R"("name":"a trained horse","since":1005,"state":"following"}],)"
+                        R"("leader":{"you":true},"players":[],)"
                         R"("reply":{"failed":["a mother eagle"],"order":"assist",)"
                         R"("result":"failed","who":"followers"}})"));
     // Replay: a frontend that attaches late is told the followers, not the answer to an
@@ -1502,7 +1504,8 @@ void TestFrontend::charFollowersTest()
                      R"({"here":true,"kind":"charmie","label":"one","lastRefused":"assist",)"
                      R"("name":"a mother eagle","since":1000,"state":"refusing"},)"
                      R"({"here":true,"kind":"mount","label":"my","lastOrder":"assist",)"
-                     R"("name":"a trained horse","since":1005,"state":"following"}]})");
+                     R"("name":"a trained horse","since":1005,"state":"following"}],)"
+                     R"("leader":{"you":true},"players":[]})");
     QCOMPARE(replay(), twoBound);
 
     // The other results, with the followers unchanged.
@@ -1562,7 +1565,31 @@ void TestFrontend::charFollowersTest()
     QCOMPARE(payloadOf(GmcpMessage::fromRawBytes(replay()))["followers"].toArray().size(), 1);
     // The last one gone: an empty list is sent, and is what is replayed.
     QVERIFY(line("Harle the Hobbit is dead! R.I.P.", 1070));
-    QCOMPARE(replay(), QByteArray(R"(MMapper.Char.Followers {"followers":[]})"));
+    QCOMPARE(replay(), QByteArray(R"(MMapper.Char.Followers {"followers":[],"players":[]})"));
+
+    // The other side of following: whom the character follows, who leads, the players that
+    // follow it and whom it protects, each in the message and in the replay.
+    QVERIFY(line("Budach (B) starts following you.", 1080));
+    QCOMPARE(sent.last(),
+             QByteArray(R"(MMapper.Char.Followers {"followers":[],"leader":{"you":true},)"
+                        R"("players":["Budach"]})"));
+    QVERIFY(line("You now follow Grayelf.", 1081));
+    QCOMPARE(sent.last(),
+             QByteArray(R"(MMapper.Char.Followers {"followers":[],"following":"Grayelf",)"
+                        R"("leader":{"name":"Grayelf","you":false},"players":["Budach"]})"));
+    QVERIFY(line("You will now try to protect Kazadoe (K).", 1082));
+    const QByteArray led
+        = QByteArray(R"(MMapper.Char.Followers {"followers":[],"following":"Grayelf",)"
+                     R"("leader":{"name":"Grayelf","you":false},"players":["Budach"],)"
+                     R"("protect":{"protecting":["Kazadoe"]}})");
+    QCOMPARE(sent.last(), led);
+    QCOMPARE(replay(), led);
+    QVERIFY(line("You stop following Grayelf.", 1083));
+    QVERIFY(line("Budach (B) stops following you.", 1084));
+    QVERIFY(line("Very well, you concentrate on your own health.", 1085));
+    QCOMPARE(replay(),
+             QByteArray(R"(MMapper.Char.Followers {"followers":[],"players":[],)"
+                        R"("protect":{"protecting":[]}})"));
 
     // Reset: the character left the game, or another connection began. Nothing is replayed,
     // nothing is known, and nothing is sent to say so.

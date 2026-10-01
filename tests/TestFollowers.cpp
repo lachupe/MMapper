@@ -131,6 +131,55 @@ const LineCase g_lines[] = {
     {"You stop riding Gwaihir the Windlord.", L::RODE, "Gwaihir the Windlord", "", "",
      "log-2005.09.15-21.01.17.txt:100896"},
     {"You are dead! Sorry...", L::YOU_DIED, "", "", "", "CombatLines g_youDead"},
+    // Whom the player follows (243 "You now follow", 186 "You stop following", 87 "You will
+    // not follow anyone else now." in logs/archives).
+    {"You now follow Grayelf.", L::YOU_FOLLOW, "Grayelf", "", "",
+     "log-2005.09.02-23.20.17.txt:22833"},
+    {"You now follow a black sorcerer.", L::YOU_FOLLOW, "a black sorcerer", "", "",
+     "log-2005.11.03-21.45.23.txt:5134"},
+    {"You now follow Kazadoe (K).", L::YOU_FOLLOW, "Kazadoe", "K", "",
+     "log-2005.12.12-16.09.18.txt:2077"},
+    {"You now follow Ukzlug (Uk).", L::YOU_FOLLOW, "Ukzlug", "Uk", "",
+     "log-2005.11.02-01.27.58.txt:55778"},
+    {"You stop following Zmej.", L::YOU_STOP, "Zmej", "", "",
+     "log-2005.09.21-01.39.48.txt:29976"},
+    {"You stop following Pimba.", L::YOU_STOP, "Pimba", "", "",
+     "log-2005.09.05-19.23.16.txt:66234"},
+    {"You will not follow anyone else now.", L::YOU_FOLLOW_NOBODY, "", "", "",
+     "log-2005.11.03-21.45.23.txt:5425"},
+    // The move after the leader: 37091 lines.
+    {"You follow Orhzul.", L::YOU_WENT_AFTER, "Orhzul", "", "",
+     "log-2005.10.08-15.55.31.txt:32976"},
+    {"You follow Grayelf.", L::YOU_WENT_AFTER, "Grayelf", "", "",
+     "log-2005.09.02-23.20.17.txt:22835"},
+    // Sent away (71 "him.", 3 "her."), refused (2 "him!"), a loop (16).
+    {"Zmej doesn't want you to follow him.", L::FOLLOW_DENIED, "Zmej", "", "",
+     "log-2005.09.05-19.23.16.txt:42094"},
+    {"Pimba doesn't want you to follow her.", L::FOLLOW_DENIED, "Pimba", "", "",
+     "log-2005.09.05-19.23.16.txt:67617"},
+    {"-\\|Orhzul doesn't want you to follow him.", L::FOLLOW_DENIED, "Orhzul", "", "",
+     "log-2005.10.08-15.55.31.txt:47374"},
+    {"An old man doesn't want you to follow him!", L::FOLLOW_DENIED, "an old man", "", "",
+     "log-2006.02.03-00.39.44.txt:109205"},
+    {"Sorry, but following in 'loops' is not allowed.", L::FOLLOW_DENIED, "", "", "",
+     "log-2005.09.05-19.23.16.txt:66214"},
+    // Protecting: 67 on, 11 off, 18 lists, 2 + 5 nobody, 3 refused.
+    {"You will now try to protect Budach (B).", L::PROTECTS, "Budach", "B", "",
+     "log-2005.09.15-21.01.17.txt:156"},
+    {"You will now try to protect Elerin.", L::PROTECTS, "Elerin", "", "",
+     "log-2005.12.19-22.31.26.txt:26643"},
+    {"You will no longer try to protect Kazadoe (k).", L::UNPROTECTS, "Kazadoe", "k", "",
+     "log-2005.11.17-17.17.33.txt:83438"},
+    {"You will no longer try to protect Barzikon.", L::UNPROTECTS, "Barzikon", "", "",
+     "log-2006.01.08-19.15.21.txt:28232"},
+    {"You will try to protect:", L::PROTECT_LIST, "", "", "",
+     "log-2005.12.19-20.51.29.txt:88011"},
+    {"You aren't trying to protect anyone.", L::PROTECT_NONE, "", "", "",
+     "log-2006.01.08-19.15.21.txt:29266"},
+    {"Very well, you concentrate on your own health.", L::PROTECT_NONE, "", "", "",
+     "log-2005.11.17-17.17.33.txt:44529"},
+    {"You can only protect those in your group.", L::PROTECT_DENIED, "", "", "",
+     "log-2005.12.24-02.05.16.txt:130436"},
 };
 
 /// Lines about following and orders that are nobody's bond with the player.
@@ -139,10 +188,21 @@ const char *const g_notLines[] = {
     // log-2006.02.06-18.58.18.txt:91239.
     "Zmej issues the order 'bash'.",
     "Farseer (F) gives an enslaved shadow (one) an order.",
-    // The player following somebody: pow/mapper.pow:30, pow/tmp/follow.pow:10-12.
-    "You now follow Stolb.",
-    "You stop following Stolb.",
-    "You will not follow anyone else now.",
+    // A room's description, not a move after a leader: log-2005.09.05-19.23.16.txt:72197,
+    // log-2005.12.21-19.59.01.txt:26485.
+    "You follow the trail up to a hill.",
+    "You follow a gentle slope downward to some shallow water.",
+    // Other answers to `follow` and `protect`, which change nothing and name no bond:
+    // log-2005.09.05-19.23.16.txt (21 after a typed follow), log-2005.10.27-01.19.35.txt:9216,
+    // log-2006.01.04-22.01.05.txt:52758, log-2005.10.08-15.55.31.txt:4133.
+    "I see no person by that name here!",
+    "You want to be protected from WHAT? Look at yourself...",
+    "But he is not following you!",
+    "A pack horse (my) is already following you!",
+    // Others' following said another way (log-2006.05.02-16.20.44.txt:3965), and a client's
+    // own line (log-2005.11.03-21.45.23.txt:5133).
+    "Olks starts to follow Mehine.",
+    "-- [Pandora: Following leader : You",
     // log-2006.02.03-00.39.44.txt:20260, log-2005.09.03-02.28.34.txt:1906.
     "Vip has been kicked out of the group!",
     "Grayelf joins your group.",
@@ -598,13 +658,18 @@ void TestFollowers::pairingTest()
 void TestFollowers::playersTest()
 {
     Game g;
-    // A player who starts following is no follower of this kind: no article.
-    QVERIFY(!g.line("Stolb (S) starts following you."));
-    QVERIFY(!g.line("Zmej starts following you."));
-    QVERIFY(!g.line("Grayelf now follows you."));
-    QVERIFY(!g.line("*an Orc* starts following you."));
+    // A player who starts following is no follower of this kind: no article. It is kept by
+    // name in `players`, and the followers stay empty.
+    QVERIFY(g.line("Stolb (S) starts following you."));
+    QVERIFY(g.last->followers.empty());
+    QCOMPARE(g.last->players, QStringList{QStringLiteral("Stolb")});
+    QVERIFY(g.line("Zmej starts following you."));
+    QVERIFY(g.line("Grayelf now follows you."));
     QVERIFY(!g.line("ACK! Stolb didn't follow you, you lost him."));
-    QVERIFY(!g.line("Stolb (S) stops following you."));
+    QVERIFY(g.line("Stolb (S) stops following you."));
+    QVERIFY(g.line("Zmej stops following you."));
+    QVERIFY(g.line("Grayelf stops following you."));
+    QVERIFY(g.tracker.players().isEmpty());
     // Nor is what cannot be named.
     QVERIFY(!g.line("Something starts following you."));
     QVERIFY(!g.line("ACK! Someone didn't follow you, you lost him."));
@@ -681,10 +746,13 @@ void TestFollowers::mountTest()
 
     // A mount by no name the table has, known by having been ridden
     // (log-2005.09.15-21.01.17.txt:100896); without that it would be a player's name.
-    QVERIFY(!g.line("Gwaihir the Windlord starts following you."));
+    QVERIFY(g.line("Gwaihir the Windlord starts following you."));
+    QCOMPARE(g.count(), size_t{0});
+    QCOMPARE(g.last->players, QStringList{QStringLiteral("Gwaihir the Windlord")});
     QVERIFY(!g.line("You stop riding Gwaihir the Windlord."));
     QVERIFY(g.line("Gwaihir the Windlord starts following you."));
     QVERIFY(g.at(0).kind == K::MOUNT);
+    QVERIFY(g.last->players.isEmpty());
     // And one with an article that is no stable's mount.
     QVERIFY(!g.line("You stop riding a Great Eagle."));
     QVERIFY(g.line("A Great Eagle starts following you."));
@@ -794,8 +862,191 @@ void TestFollowers::resetTest()
     // Nothing waits for an answer, and what was ridden is forgotten.
     QVERIFY(!g.line("Ok."));
     QVERIFY(!g.prompt());
-    QVERIFY(!g.line("Gwaihir the Windlord starts following you."));
     QVERIFY(!g.line("A mother eagle (one) is dead! R.I.P."));
+    // Without the ride remembered the name is a player's by the look of it.
+    QVERIFY(g.line("Gwaihir the Windlord starts following you."));
+    QCOMPARE(g.count(), size_t{0});
+    QCOMPARE(g.tracker.players(), QStringList{QStringLiteral("Gwaihir the Windlord")});
+
+    // The leader, the players that follow and the protected are forgotten too.
+    QVERIFY(g.line("You now follow Grayelf."));
+    QVERIFY(g.line("You will now try to protect Budach (B)."));
+    QVERIFY(!g.line("You will try to protect:"));
+    g.tracker.reset();
+    QVERIFY(g.tracker.following().isEmpty());
+    QVERIFY(g.tracker.players().isEmpty());
+    QVERIFY(!g.tracker.protecting().has_value());
+    // The list that was being read is over: this is no name of it.
+    QVERIFY(!g.line("   Kazadoe (K)"));
+    QVERIFY(!g.prompt());
+    QVERIFY(!g.tracker.protecting().has_value());
+    QVERIFY(!g.line("You stop following Grayelf."));
+}
+
+void TestFollowers::followingTest()
+{
+    Game g;
+    QVERIFY(!leaderOf(CharFollowers{}).has_value());
+
+    // log-2005.09.02-23.20.17.txt:22832-22835: `fol grayelf`, the bond, the first move.
+    QVERIFY(g.line("You now follow Grayelf."));
+    QCOMPARE(g.last->following, QStringLiteral("Grayelf"));
+    auto leader = leaderOf(*g.last);
+    QVERIFY(leader.has_value());
+    QCOMPARE(leader->name, QStringLiteral("Grayelf"));
+    QVERIFY(!leader->you);
+    QVERIFY(!g.line("Grayelf leaves north."));
+    QVERIFY(!g.line("You follow Grayelf."));
+    // log-2005.09.21-01.39.48.txt:29976-29977: `fol me`.
+    QVERIFY(g.line("You stop following Grayelf."));
+    QVERIFY(g.last->following.isEmpty());
+    QVERIFY(!leaderOf(*g.last).has_value());
+    QVERIFY(!g.line("You will not follow anyone else now."));
+
+    // log-2005.09.05-19.23.16.txt:42094-42095: sent away; the second line ends it.
+    QVERIFY(g.line("You now follow Zmej."));
+    QVERIFY(!g.line("Zmej doesn't want you to follow him."));
+    QCOMPARE(g.tracker.following(), QStringLiteral("Zmej"));
+    QVERIFY(g.line("You stop following Zmej."));
+    QVERIFY(g.tracker.following().isEmpty());
+
+    // From one leader to another: "You stop following X." / "You now follow Y." (44 pairs).
+    QVERIFY(g.line("You now follow Kazadoe (K)."));
+    QCOMPARE(g.tracker.following(), QStringLiteral("Kazadoe"));
+    QVERIFY(!g.line("You now follow Kazadoe (K)."));
+    QVERIFY(g.line("You stop following Kazadoe (K)."));
+    QVERIFY(g.line("You now follow a black sorcerer."));
+    QCOMPARE(g.tracker.following(), QStringLiteral("a black sorcerer"));
+    // Refusals change nothing.
+    QVERIFY(!g.line("Sorry, but following in 'loops' is not allowed."));
+    QVERIFY(!g.line("An old man doesn't want you to follow him!"));
+    // `fol me` with a leader, the last line alone when the first went unread.
+    QVERIFY(g.line("You will not follow anyone else now."));
+    QVERIFY(g.tracker.following().isEmpty());
+
+    // A bond made before MMapper was watching is learned from the first move after the
+    // leader; a room's description is not one.
+    QVERIFY(!g.line("You follow the trail up to a hill."));
+    QVERIFY(!g.line("You follow a gentle slope downward to some shallow water."));
+    QVERIFY(g.tracker.following().isEmpty());
+    QVERIFY(g.line("You follow Orhzul."));
+    QCOMPARE(g.last->following, QStringLiteral("Orhzul"));
+    QVERIFY(!g.line("You follow Orhzul."));
+    // In the dark nobody is named, and nothing is kept.
+    QVERIFY(g.line("You stop following Orhzul."));
+    QVERIFY(!g.line("You now follow someone."));
+    QVERIFY(g.tracker.following().isEmpty());
+}
+
+void TestFollowers::leaderTest()
+{
+    Game g;
+    // Others follow the player, who follows nobody: the player leads.
+    // log-2005.10.16-23.42.44.txt:3680, log-2005.12.12-16.09.18.txt:1853.
+    QVERIFY(g.line("Budach (B) starts following you."));
+    QCOMPARE(g.last->players, QStringList{QStringLiteral("Budach")});
+    auto leader = leaderOf(*g.last);
+    QVERIFY(leader.has_value());
+    QVERIFY(leader->you);
+    QVERIFY(leader->name.isEmpty());
+    QVERIFY(!g.line("Budach (B) starts following you."));
+    QVERIFY(g.line("Kazadoe (K) starts following you."));
+    QCOMPARE(g.last->players, (QStringList{QStringLiteral("Budach"), QStringLiteral("Kazadoe")}));
+    // log-2005.10.16-23.42.44.txt:30777.
+    QVERIFY(g.line("Budach (B) stops following you."));
+    QCOMPARE(g.last->players, QStringList{QStringLiteral("Kazadoe")});
+    QVERIFY(leaderOf(*g.last)->you);
+    // The player follows somebody: that one leads, whoever still follows the player.
+    QVERIFY(g.line("You now follow Zmej."));
+    leader = leaderOf(*g.last);
+    QVERIFY(!leader->you);
+    QCOMPARE(leader->name, QStringLiteral("Zmej"));
+    QVERIFY(g.line("You stop following Zmej."));
+    QVERIFY(leaderOf(*g.last)->you);
+    // log-2005.09.21-01.39.48.txt:29980 "Zmej now follows Rhuka.": one who follows somebody
+    // else follows the player no longer.
+    QVERIFY(g.line("Kazadoe (K) now follows Rhuka."));
+    QVERIFY(g.last->players.isEmpty());
+    QVERIFY(!leaderOf(*g.last).has_value());
+    QVERIFY(!g.line("Kazadoe (K) stops following you."));
+
+    // A bound follower makes the player a leader as well, until it is gone.
+    QVERIFY(g.line("A mother eagle starts following you."));
+    QVERIFY(leaderOf(*g.last)->you);
+    QVERIFY(g.line("A mother eagle is dead! R.I.P."));
+    QVERIFY(!leaderOf(lastingFollowers(*g.last)).has_value());
+
+    // One taken for a player by its name that refuses an order was a follower.
+    QVERIFY(g.line("Harle the Hobbit starts following you."));
+    QCOMPARE(g.last->players, QStringList{QStringLiteral("Harle the Hobbit")});
+    QVERIFY(g.line("You failed to control Harle the Hobbit."));
+    QVERIFY(g.last->players.isEmpty());
+    QCOMPARE(g.count(), size_t{1});
+    // The player's own death leaves what it follows and who follows it as they were: no line
+    // of the logs says otherwise.
+    QVERIFY(g.line("Budach (B) starts following you."));
+    QVERIFY(g.line("You are dead! Sorry..."));
+    QCOMPARE(g.last->players, QStringList{QStringLiteral("Budach")});
+}
+
+void TestFollowers::protectTest()
+{
+    Game g;
+    QVERIFY(!g.tracker.protecting().has_value());
+    // log-2005.09.15-21.01.17.txt:155-156: `protect b`.
+    QVERIFY(g.line("You will now try to protect Budach (B)."));
+    QVERIFY(g.last->protecting.has_value());
+    QCOMPARE(*g.last->protecting, QStringList{QStringLiteral("Budach")});
+    QVERIFY(!g.line("You will now try to protect Budach (B)."));
+    // Several at once: log-2005.11.17-17.17.33.txt:5534, :13895.
+    QVERIFY(g.line("You will now try to protect Sisalik."));
+    QCOMPARE(*g.last->protecting, (QStringList{QStringLiteral("Budach"), QStringLiteral("Sisalik")}));
+    QVERIFY(!g.line("You can only protect those in your group."));
+    // log-2005.11.17-17.17.33.txt:83438: the same command turns it off.
+    QVERIFY(g.line("You will no longer try to protect Budach (B)."));
+    QCOMPARE(*g.last->protecting, QStringList{QStringLiteral("Sisalik")});
+    // `protect self`, log-2005.11.17-17.17.33.txt:44529: nobody is protected.
+    QVERIFY(g.line("Very well, you concentrate on your own health."));
+    QVERIFY(g.last->protecting.has_value());
+    QVERIFY(g.last->protecting->isEmpty());
+    QVERIFY(!g.line("You aren't trying to protect anyone."));
+
+    // The list of a bare `protect` (log-2005.12.19-20.51.29.txt:88011-88013) states it whole,
+    // and is told at the line or the prompt that ends it.
+    QVERIFY(!g.line("You will try to protect:"));
+    QVERIFY(!g.line("   Kazadoe (K)"));
+    QVERIFY(g.line(""));
+    QCOMPARE(*g.last->protecting, QStringList{QStringLiteral("Kazadoe")});
+    QVERIFY(!g.prompt());
+    QVERIFY(!g.line("You will try to protect:"));
+    QVERIFY(!g.line("   Kazadoe (K)"));
+    QVERIFY(!g.line("   Harle the Hobbit"));
+    QVERIFY(g.prompt());
+    QCOMPARE(*g.last->protecting,
+             (QStringList{QStringLiteral("Kazadoe"), QStringLiteral("Harle the Hobbit")}));
+    // The same again changes nothing; the line that ends a list is still read.
+    QVERIFY(!g.line("You will try to protect:"));
+    QVERIFY(!g.line("   Kazadoe (K)"));
+    QVERIFY(!g.line("   Harle the Hobbit"));
+    QVERIFY(g.line("You now follow Zmej."));
+    QCOMPARE(g.last->following, QStringLiteral("Zmej"));
+    QCOMPARE(g.last->protecting->size(), 2);
+    // What lasts for a replay: all of it.
+    const CharFollowers lasting = lastingFollowers(*g.last);
+    QCOMPARE(lasting.following, QStringLiteral("Zmej"));
+    QCOMPARE(lasting.protecting->size(), 2);
+    // A list with no name read tells nothing.
+    QVERIFY(!g.line("You will try to protect:"));
+    QVERIFY(!g.prompt());
+    QCOMPARE(g.tracker.protecting()->size(), 2);
+
+    // Known from the first line that says anything, whatever it says.
+    Game h;
+    QVERIFY(h.line("You will no longer try to protect Barzikon."));
+    QVERIFY(h.last->protecting->isEmpty());
+    Game i;
+    QVERIFY(i.line("You aren't trying to protect anyone."));
+    QVERIFY(i.last->protecting->isEmpty());
 }
 
 QTEST_MAIN(TestFollowers)

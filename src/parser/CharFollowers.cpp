@@ -21,6 +21,8 @@ constexpr int64_t SECONDS_TO_WAIT = 10;
 constexpr size_t FOLLOWERS_TO_KEEP = 16;
 // The mounts seen ridden that are remembered; the oldest goes first.
 constexpr int RIDDEN_TO_KEEP = 16;
+// The players that follow who are kept: one who left unseen is never said to be gone.
+constexpr int PLAYERS_TO_KEEP = 32;
 
 // The "twiddlers" prompt option draws \|/- while a delayed action runs, and they end up on the
 // front of whatever line comes next: "/-\|/-Ok." (logs/archives/log-2006.02.05-19.56.25.txt:
@@ -128,6 +130,54 @@ const QRegularExpression g_rode{QStringLiteral(R"(^You stop riding (?<w>.+?)\.$)
 // The player's own death, as CombatLines' g_youDead has it. What becomes of the followers is
 // not in the logs; they are not where the character wakes.
 const QRegularExpression g_youDead{QStringLiteral(R"(^You are dead!\s+Sorry\.\.\.$)")};
+// Whom the player's character follows. MUME answers `follow` in sentences of its own: of the
+// 279 `fol X` and 85 `fol me` typed in the logs none is answered "Ok.".
+//   You now follow Grayelf.                          log-2005.09.02-23.20.17.txt:22833 (after
+//                                                    `fol grayelf` :22832; 243 lines)
+//   You now follow a black sorcerer.                 log-2005.11.03-21.45.23.txt:5134
+//   You now follow Kazadoe (K).                      log-2005.12.12-16.09.18.txt:2077
+const QRegularExpression g_youFollow{QStringLiteral(R"(^You now follow (?<w>.+?)\.$)")};
+//   You stop following Zmej.                         log-2005.09.21-01.39.48.txt:29976 (after
+//                                                    `fol me`; 186 lines: 59 after a typed
+//                                                    follow, 74 after "X doesn't want you to
+//                                                    follow him.", 44 before "You now follow Y.")
+const QRegularExpression g_youStop{QStringLiteral(R"(^You stop following (?<w>.+?)\.$)")};
+//   You will not follow anyone else now.             log-2005.11.03-21.45.23.txt:5425 (`fol me`
+//                                                    alone), log-2005.09.21-01.39.48.txt:29977
+//                                                    (after "You stop following Zmej."); 87 lines
+// The move after a leader, 37091 lines of a player's bare name:
+//   You follow Orhzul.                               log-2005.10.08-15.55.31.txt:32976
+// Only a bare capitalised name is taken, never an article's: a room's description says "You
+// follow the trail up to a hill." (log-2005.09.05-19.23.16.txt:72197) and "You follow a gentle
+// slope downward to some shallow water." (log-2005.12.21-19.59.01.txt:26485). No label is
+// ever shown here.
+const QRegularExpression g_youWentAfter{
+    QStringLiteral(R"(^You follow (?<w>\p{Lu}[\p{L}'\-]+)\.$)")};
+// Sent away by the leader, "You stop following X." next, or refused at `follow` (the "!"):
+//   Zmej doesn't want you to follow him.             log-2005.09.05-19.23.16.txt:42094 (71 lines)
+//   Pimba doesn't want you to follow her.            log-2005.09.05-19.23.16.txt:67617 (3)
+//   An old man doesn't want you to follow him!       log-2006.02.03-00.39.44.txt:109205 (2)
+//   Sorry, but following in 'loops' is not allowed.  log-2005.09.05-19.23.16.txt:66214 (16)
+const QRegularExpression g_followDenied{
+    QStringLiteral(R"(^(?<w>.+?) doesn't want you to follow (?:him|her|it|them)[.!]$)")};
+// Whom the character protects. `protect X` turns it on and off (84 typed in the logs, none
+// answered "Ok."), a bare `protect` lists it, `protect self` ends it:
+//   You will now try to protect Budach (B).          log-2005.09.15-21.01.17.txt:156 (after
+//                                                    `protect b` :155; 67 lines)
+//   You will no longer try to protect Kazadoe (k).   log-2005.11.17-17.17.33.txt:83438 (11)
+//   You will try to protect:                         log-2005.12.19-20.51.29.txt:88011 (18)
+//      Kazadoe (K)                                   :88012 (one name in each of the 18)
+//   You aren't trying to protect anyone.             log-2006.01.08-19.15.21.txt:29266 (2)
+//   Very well, you concentrate on your own health.   log-2005.11.17-17.17.33.txt:44529 (5; after
+//                                                    it "You will now try to protect Kazadoe
+//                                                    (k)." :44532 for one protected since :5534)
+//   You can only protect those in your group.        log-2005.12.24-02.05.16.txt:130436 (3)
+// Several can be protected at once: Kazadoe :5534 and Sisalik :13895 of log-2005.11.17-
+// 17.17.33.txt, "i barelly will be able to protect both of you" :14930. No line says that
+// somebody protects the player.
+const QRegularExpression g_protects{QStringLiteral(R"(^You will now try to protect (?<w>.+?)\.$)")};
+const QRegularExpression g_unprotects{
+    QStringLiteral(R"(^You will no longer try to protect (?<w>.+?)\.$)")};
 // Not read, being somebody else's orders: "Zmej issues the order 'bash'."
 // (log-2005.10.06-18.57.04.txt:88248), "Farseer (F) gives an enslaved shadow (one) an order."
 // (log-2006.02.06-18.58.18.txt:91239).
@@ -315,6 +365,22 @@ std::optional<FollowerLine> parseFollowerLine(const QString &raw)
     if (line == QStringLiteral("In your dreams, or what?")) {
         return bare(L::ASLEEP);
     }
+    if (line == QStringLiteral("You will not follow anyone else now.")) {
+        return bare(L::YOU_FOLLOW_NOBODY);
+    }
+    if (line == QStringLiteral("Sorry, but following in 'loops' is not allowed.")) {
+        return bare(L::FOLLOW_DENIED);
+    }
+    if (line == QStringLiteral("You will try to protect:")) {
+        return bare(L::PROTECT_LIST);
+    }
+    if (line == QStringLiteral("You aren't trying to protect anyone.")
+        || line == QStringLiteral("Very well, you concentrate on your own health.")) {
+        return bare(L::PROTECT_NONE);
+    }
+    if (line == QStringLiteral("You can only protect those in your group.")) {
+        return bare(L::PROTECT_DENIED);
+    }
 
     QRegularExpressionMatch m;
     if ((m = g_lost.match(line)).hasMatch()) {
@@ -331,6 +397,24 @@ std::optional<FollowerLine> parseFollowerLine(const QString &raw)
     }
     if (g_youDead.match(line).hasMatch()) {
         return bare(L::YOU_DIED);
+    }
+    if ((m = g_youFollow.match(line)).hasMatch()) {
+        return lineOf(L::YOU_FOLLOW, m.captured(u"w"));
+    }
+    if ((m = g_youStop.match(line)).hasMatch()) {
+        return lineOf(L::YOU_STOP, m.captured(u"w"));
+    }
+    if ((m = g_youWentAfter.match(line)).hasMatch()) {
+        return lineOf(L::YOU_WENT_AFTER, m.captured(u"w"));
+    }
+    if ((m = g_followDenied.match(line)).hasMatch()) {
+        return lineOf(L::FOLLOW_DENIED, m.captured(u"w"));
+    }
+    if ((m = g_protects.match(line)).hasMatch()) {
+        return lineOf(L::PROTECTS, m.captured(u"w"));
+    }
+    if ((m = g_unprotects.match(line)).hasMatch()) {
+        return lineOf(L::UNPROTECTS, m.captured(u"w"));
     }
     const bool follows = (m = g_follows.match(line)).hasMatch();
     if (follows || (m = g_stops.match(line)).hasMatch()) {
@@ -394,7 +478,25 @@ CharFollowers lastingFollowers(const CharFollowers &change)
             result.followers.push_back(follower);
         }
     }
+    result.following = change.following;
+    result.players = change.players;
+    result.protecting = change.protecting;
     return result;
+}
+
+std::optional<FollowLeader> leaderOf(const CharFollowers &state)
+{
+    if (!state.following.isEmpty()) {
+        return FollowLeader{state.following, false};
+    }
+    const bool led = !state.players.isEmpty()
+                     || std::any_of(state.followers.begin(),
+                                    state.followers.end(),
+                                    [](const CharFollower &f) { return !ended(f); });
+    if (led) {
+        return FollowLeader{QString{}, true};
+    }
+    return std::nullopt;
 }
 
 void CharFollowersTracker::receiveCommand(const QString &input, const int64_t now)
@@ -508,13 +610,53 @@ CharFollowers CharFollowersTracker::take(std::optional<FollowerReply> reply)
     CharFollowers result;
     result.followers = m_followers;
     result.reply = std::move(reply);
+    result.following = m_following;
+    result.players = m_players;
+    result.protecting = m_protecting;
     m_followers.erase(std::remove_if(m_followers.begin(), m_followers.end(), ended),
                       m_followers.end());
     return result;
 }
 
+bool CharFollowersTracker::endProtectList()
+{
+    if (!m_protectListing) {
+        return false;
+    }
+    m_protectListing = false;
+    // MUME says "You aren't trying to protect anyone." for nobody, so a list without a name
+    // is one that was not read, and tells nothing.
+    if (m_protectListed.isEmpty()
+        || (m_protecting.has_value() && *m_protecting == m_protectListed)) {
+        return false;
+    }
+    m_protecting = m_protectListed;
+    return true;
+}
+
 std::optional<CharFollowers> CharFollowersTracker::receiveLine(const QString &text,
                                                                const int64_t now)
+{
+    bool listed = false;
+    if (m_protectListing) {
+        // "   Kazadoe (K)": the names of the list are indented; anything else ends it.
+        if (!text.isEmpty() && text.at(0).isSpace() && !text.trimmed().isEmpty()) {
+            const Named n = named(text);
+            if (!m_protectListed.contains(n.name, Qt::CaseInsensitive)) {
+                m_protectListed.append(n.name);
+            }
+            return std::nullopt;
+        }
+        listed = endProtectList();
+    }
+    std::optional<CharFollowers> result = readLine(text, now);
+    if (!result.has_value() && listed) {
+        result = take(std::nullopt);
+    }
+    return result;
+}
+
+std::optional<CharFollowers> CharFollowersTracker::readLine(const QString &text, const int64_t now)
 {
     const std::optional<FollowerLine> parsed = parseFollowerLine(text);
     if (!parsed.has_value()) {
@@ -622,6 +764,53 @@ std::optional<CharFollowers> CharFollowersTracker::receiveLine(const QString &te
         }
         return any ? std::optional<CharFollowers>{take(std::nullopt)} : std::nullopt;
     }
+    case L::YOU_STOP:
+    case L::YOU_FOLLOW_NOBODY:
+        // Whoever the line names: the character follows nobody now.
+        if (m_following.isEmpty()) {
+            return std::nullopt;
+        }
+        m_following.clear();
+        return take(std::nullopt);
+    case L::YOU_FOLLOW:
+    case L::YOU_WENT_AFTER:
+        // "You now follow someone." names nobody; "You stop following X." came before it, so
+        // nothing stale is kept.
+        if (isUnseen(line.name) || sameName(m_following, line.name)) {
+            return std::nullopt;
+        }
+        m_following = line.name;
+        return take(std::nullopt);
+    case L::FOLLOW_DENIED:
+    case L::PROTECT_DENIED:
+        return std::nullopt;
+    case L::PROTECT_LIST:
+        m_protectListing = true;
+        m_protectListed.clear();
+        return std::nullopt;
+    case L::PROTECT_NONE:
+        if (m_protecting.has_value() && m_protecting->isEmpty()) {
+            return std::nullopt;
+        }
+        m_protecting = QStringList{};
+        return take(std::nullopt);
+    case L::PROTECTS:
+    case L::UNPROTECTS: {
+        const bool known = m_protecting.has_value();
+        if (!known) {
+            m_protecting = QStringList{};
+        }
+        const bool has = m_protecting->contains(line.name, Qt::CaseInsensitive);
+        if (line.kind == L::PROTECTS && !has) {
+            m_protecting->append(line.name);
+        } else if (line.kind == L::UNPROTECTS && has) {
+            m_protecting->removeIf(
+                [&line](const QString &name) { return sameName(name, line.name); });
+        } else if (known) {
+            return std::nullopt;
+        }
+        return take(std::nullopt);
+    }
     default:
         break;
     }
@@ -630,7 +819,17 @@ std::optional<CharFollowers> CharFollowersTracker::receiveLine(const QString &te
     if (isUnseen(line.name)) {
         return std::nullopt;
     }
+    const auto dropPlayer = [this, &line]() {
+        return m_players.removeIf(
+                   [&line](const QString &name) { return sameName(name, line.name); })
+               > 0;
+    };
     if ((line.kind == L::FOLLOWS || line.kind == L::STOPS) && line.leader != QStringLiteral("you")) {
+        // "Zmej now follows Rhuka." (log-2005.09.21-01.39.48.txt:29980): one who follows
+        // somebody else follows the player no longer.
+        if (line.kind == L::FOLLOWS && dropPlayer()) {
+            return take(std::nullopt);
+        }
         return std::nullopt;
     }
 
@@ -652,8 +851,18 @@ std::optional<CharFollowers> CharFollowersTracker::receiveLine(const QString &te
             // whatever its name ("Gwaihir the Windlord").
             const FollowerKindEnum kind = kindOf(line.name);
             if (kind == FollowerKindEnum::UNKNOWN) {
-                return std::nullopt;
+                // Kept by name among the players that follow.
+                if (m_players.contains(line.name, Qt::CaseInsensitive)) {
+                    return std::nullopt;
+                }
+                m_players.append(line.name);
+                while (m_players.size() > PLAYERS_TO_KEEP) {
+                    m_players.removeFirst();
+                }
+                return take(std::nullopt);
             }
+            // Taken for a player by its name before it was seen ridden.
+            std::ignore = dropPlayer();
             CharFollower follower;
             follower.name = line.name;
             follower.label = line.label;
@@ -673,6 +882,10 @@ std::optional<CharFollowers> CharFollowersTracker::receiveLine(const QString &te
     case L::HATES:
     case L::DIED:
         if (known == nullptr) {
+            // "Budach (B) stops following you.": a player who followed.
+            if (line.kind == L::STOPS && dropPlayer()) {
+                return take(std::nullopt);
+            }
             return std::nullopt;
         }
         std::ignore = relabel(*known);
@@ -689,7 +902,9 @@ std::optional<CharFollowers> CharFollowersTracker::receiveLine(const QString &te
         break;
     case L::FAILED: {
         if (known == nullptr) {
-            // Its bond was not seen made, but only a follower refuses an order.
+            // Its bond was not seen made, but only a follower refuses an order. One taken for
+            // a player by its name ("Harle the Hobbit") was none.
+            std::ignore = dropPlayer();
             CharFollower follower;
             follower.name = line.name;
             follower.label = line.label;
@@ -750,6 +965,7 @@ std::optional<CharFollowers> CharFollowersTracker::receiveLine(const QString &te
 std::optional<CharFollowers> CharFollowersTracker::receivePrompt(const int64_t now)
 {
     std::optional<CharFollowers> result;
+    const bool listed = endProtectList();
     if (!m_pending.empty() && m_pending.front().answered) {
         const Pending done = m_pending.front();
         m_pending.pop_front();
@@ -798,12 +1014,20 @@ std::optional<CharFollowers> CharFollowersTracker::receivePrompt(const int64_t n
                                               && now - p.sent > SECONDS_TO_WAIT;
                                    }),
                     m_pending.end());
+    if (!result.has_value() && listed) {
+        result = take(std::nullopt);
+    }
     return result;
 }
 
 void CharFollowersTracker::reset()
 {
     m_followers.clear();
+    m_following.clear();
+    m_players.clear();
+    m_protecting.reset();
+    m_protectListing = false;
+    m_protectListed.clear();
     m_pending.clear();
     m_ridden.clear();
 }

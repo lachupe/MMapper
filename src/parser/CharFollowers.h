@@ -19,6 +19,9 @@
 /// `order`, paired with the command that caused them. Published whole at each change as
 /// MMapper.Char.Followers.
 ///
+/// With them goes the other side of following: whom the player's character follows, which
+/// players follow it, who therefore leads, and whom it has said it will protect.
+///
 /// The sentences are MUME's own, from the powwow logs and files under /home/aza/data/powwow
 /// (2005-2006, one player's configuration); the places are cited line by line in
 /// CharFollowers.cpp. None was seen live.
@@ -89,7 +92,30 @@ enum class NODISCARD FollowerLineEnum : uint8_t {
     /// "You stop riding a trained horse (my)."
     RODE,
     /// "You are dead! Sorry...": the player's character died, and is where no follower is.
-    YOU_DIED
+    YOU_DIED,
+    /// "You now follow Grayelf.": the player's character follows `name`.
+    YOU_FOLLOW,
+    /// "You stop following Zmej."
+    YOU_STOP,
+    /// "You will not follow anyone else now.": MUME's answer to `follow self`.
+    YOU_FOLLOW_NOBODY,
+    /// "You follow Orhzul.": the leader moved, and the character went after.
+    YOU_WENT_AFTER,
+    /// "Zmej doesn't want you to follow him.", "An old man doesn't want you to follow him!",
+    /// "Sorry, but following in 'loops' is not allowed.": refused or sent away. `name` is who
+    /// refused, empty for the loop. The bond's end is "You stop following X.", which follows.
+    FOLLOW_DENIED,
+    /// "You will now try to protect Budach (B)."
+    PROTECTS,
+    /// "You will no longer try to protect Kazadoe (k)."
+    UNPROTECTS,
+    /// "You will try to protect:": the names follow, one to a line, indented.
+    PROTECT_LIST,
+    /// "You aren't trying to protect anyone.", and `protect self`'s "Very well, you concentrate
+    /// on your own health."
+    PROTECT_NONE,
+    /// "You can only protect those in your group.": nothing changed.
+    PROTECT_DENIED
 };
 
 struct NODISCARD FollowerLine final
@@ -177,6 +203,15 @@ struct NODISCARD FollowerReply final
     QStringList failed;
 };
 
+/// Who leads: the one the player's character follows, or the character itself.
+struct NODISCARD FollowLeader final
+{
+    /// The one followed, as CharFollowers::following. Empty when `you`: the tracker does not
+    /// know the character's own name (Char.Name has it).
+    QString name;
+    bool you = false;
+};
+
 /// One MMapper.Char.Followers: the followers after a change, and the answer to an order when
 /// that is what changed them.
 struct NODISCARD CharFollowers final
@@ -185,7 +220,19 @@ struct NODISCARD CharFollowers final
     /// state, and in none after.
     std::vector<CharFollower> followers;
     std::optional<FollowerReply> reply;
+    /// Whom the player's character follows, label taken off: "Grayelf", "a black sorcerer".
+    /// Empty when nobody, as far as the lines told.
+    QString following;
+    /// The players that follow the character, in the order they began: "Budach". They take no
+    /// orders, and are in `followers` never.
+    QStringList players;
+    /// Whom the character has said it will try to protect; unset until a line stated it.
+    std::optional<QStringList> protecting;
 };
+
+/// Who leads, by what `state` holds: the one followed; else the player's character when a
+/// player or a bound follower follows it; else nothing, for nobody is known to lead.
+NODISCARD std::optional<FollowLeader> leaderOf(const CharFollowers &state);
 
 /// What of `change` is state to replay to a frontend that connects later: the followers still
 /// bound, without the answer to an order that is over.
@@ -199,6 +246,14 @@ NODISCARD CharFollowers lastingFollowers(const CharFollowers &change);
 /// behind, its arriving or being seen in the room that it is back, and "You failed to control
 /// X." that it refused an order. One whose bond was never seen made is taken in when it
 /// refuses an order.
+///
+/// The other way round: "You now follow X." and the "You follow X." of each move after a
+/// leader say whom the character follows, "You stop following X." and `follow self`'s "You
+/// will not follow anyone else now." that it follows nobody. A player who starts following is
+/// kept by name in `players` until "X stops following you." (or "X now follows Y."). MUME
+/// answers `follow` and `protect` in sentences of their own, never with "Ok.", so those
+/// commands need no pairing. `protect X` turns the protection of X on or off, a bare
+/// `protect` lists it and `protect self` ends it all.
 ///
 /// Orders: MUME answers `order` with "Ok." and, before or after it, one "You failed to
 /// control X." for each follower that refused; or with "You have no loyal subjects here.",
@@ -229,6 +284,13 @@ private:
     };
 
     std::vector<CharFollower> m_followers;
+    /// See CharFollowers::following, ::players and ::protecting.
+    QString m_following;
+    QStringList m_players;
+    std::optional<QStringList> m_protecting;
+    /// "You will try to protect:" was read, and the names after it so far.
+    bool m_protectListing = false;
+    QStringList m_protectListed;
     std::deque<Pending> m_pending;
     /// What the player was seen to ride or to stop riding: mounts, whatever their names.
     QStringList m_ridden;
@@ -244,6 +306,9 @@ public:
     NODISCARD std::optional<CharFollowers> receivePrompt(int64_t now);
     /// The followers still bound, in the order they became known.
     NODISCARD const std::vector<CharFollower> &followers() const { return m_followers; }
+    NODISCARD const QString &following() const { return m_following; }
+    NODISCARD const QStringList &players() const { return m_players; }
+    NODISCARD const std::optional<QStringList> &protecting() const { return m_protecting; }
     /// For a new session, or when the character leaves the game.
     void reset();
 
@@ -270,6 +335,9 @@ private:
     NODISCARD CharFollower *findByWord(const QString &word, int ordinal);
     NODISCARD FollowerKindEnum kindOf(const QString &name) const;
     NODISCARD Pending *firstOrder();
+    NODISCARD std::optional<CharFollowers> readLine(const QString &line, int64_t now);
+    /// Ends the list after "You will try to protect:", and says whether it changed anything.
+    NODISCARD bool endProtectList();
     /// The followers as they are, with `reply`; those that left or died are dropped after.
     NODISCARD CharFollowers take(std::optional<FollowerReply> reply);
 };
