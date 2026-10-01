@@ -88,6 +88,8 @@ MumeXmlParser::MumeXmlParser(MapData &md,
             return;
         }
         m_containerTracker.receiveCommand(line);
+        // `order` and `label`: what the next "Ok." answers.
+        m_followersTracker.receiveCommand(line, QDateTime::currentSecsSinceEpoch());
         m_itemTracker.receiveCommand(line);
         if (const auto command = m_itemCommands.receiveCommand(line,
                                                                QDateTime::currentMSecsSinceEpoch())) {
@@ -120,6 +122,16 @@ MumeXmlParser::MumeXmlParser(MapData &md,
         m_charTracker.reset();
         m_accountTracker.reset();
         m_tradeReaders.reset();
+        m_followersTracker.reset();
+    });
+    // The followers were this character's and this session's: forgotten, with nothing sent,
+    // when MMapper connects again and when the character leaves the game (a rent, a quit,
+    // MUME's menu). The frontend server drops what it would replay at the same signals.
+    m_observer.sig2_connected.connect(m_lifetime, [this]() { m_followersTracker.reset(); });
+    m_observer.sig2_gameStateChanged.connect(m_lifetime, [this](const GameStateEnum state) {
+        if (state != GameStateEnum::PLAYING) {
+            m_followersTracker.reset();
+        }
     });
 }
 
@@ -253,6 +265,12 @@ void MumeXmlParser::parse(const TelnetData &data, const bool isGoAhead)
             // burden line. Read whoever sent the command -- the player, an alias, or a frontend
             // asking quietly -- and left in the terminal as they are.
             publishCharReplies(m_charTracker.receiveLine(plain));
+            // Who follows the player and takes its orders: a bond made or ended, one left
+            // behind or back. The answer to an `order` goes out at the prompt that ends it.
+            if (const auto followers
+                = m_followersTracker.receiveLine(plain, QDateTime::currentSecsSinceEpoch())) {
+                m_observer.observeCharFollowers(*followers);
+            }
             // Shops, guilds, inns and trophies, read the same way.
             m_tradeReaders.receiveLine(plain);
         }
@@ -268,6 +286,10 @@ void MumeXmlParser::parse(const TelnetData &data, const bool isGoAhead)
         // Every prompt ends a listing, in XML mode and out of it; the pager line does not.
         publishItemBlocks(m_itemTracker.receivePrompt());
         publishCharReplies(m_charTracker.receivePrompt());
+        if (const auto followers
+            = m_followersTracker.receivePrompt(QDateTime::currentSecsSinceEpoch())) {
+            m_observer.observeCharFollowers(*followers);
+        }
         m_tradeReaders.receivePrompt();
         publishAccountReplies(m_accountTracker.receivePrompt());
     }

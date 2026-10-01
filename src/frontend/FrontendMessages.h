@@ -8,6 +8,7 @@
 #include "../map/RoomHandle.h"
 #include "../parser/AccountLines.h"
 #include "../parser/CharAffects.h"
+#include "../parser/CharFollowers.h"
 #include "../parser/CharLines.h"
 #include "../parser/CombatLines.h"
 #include "../parser/ContainerLines.h"
@@ -286,6 +287,19 @@ NODISCARD GmcpMessage makeCharWimpy(const CharWimpy &wimpy);
 /// effect, "stat" when only `stat`'s list did. State: replayed as last sent. See
 /// CharAffectsTracker.
 NODISCARD GmcpMessage makeCharAffects(const std::vector<CharAffect> &affects);
+
+/// MMapper.Char.Followers -- the creatures that follow the player's character and take its
+/// orders, whole, at each change: `{"followers": [{"name": "a mother eagle", "label": "one",
+/// "kind": "charmie", "here": true, "state": "following", "since": 1790842000, "lastOrder":
+/// "assist", "lastRefused": "ride donk"}], "reply": {"order": "assist", "who": "followers",
+/// "result": "failed", "failed": ["a mother eagle"]}}`. `kind` is charmie, mount, summoned or
+/// unknown; `state` following, refusing, lost, left or dead, the last two sent once and the
+/// follower in no message after; `label` is "" when none is known; `since` (unix seconds),
+/// `lastOrder` and `lastRefused` are left out when not known. `reply` is there only in the
+/// message an `order`'s answer caused: `result` ok, failed, none-here, syntax or asleep. State:
+/// replayed as lastingFollowers() of the last sent -- without `reply` and without those that
+/// left or died. See CharFollowersTracker.
+NODISCARD GmcpMessage makeCharFollowers(const CharFollowers &followers);
 
 /// MMapper.Account.Menu -- MUME's account menu: `commands`, each {`name` (the command word,
 /// lowercase), `usage` ("Play <name>"), `help`}, in the menu's order, and `sorts`, the sort

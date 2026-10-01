@@ -1441,6 +1441,145 @@ void TestFrontend::charAffectsTest()
     QVERIFY(replayed(cache, GmcpMessageTypeEnum::MMAPPER_CHAR_AFFECTS).isNull());
 }
 
+void TestFrontend::charFollowersTest()
+{
+    QCOMPARE(GmcpMessage::fromRawBytes(QByteArray{"MMapper.Char.Followers"}).getType(),
+             GmcpMessageTypeEnum::MMAPPER_CHAR_FOLLOWERS);
+
+    CharFollowersTracker tracker;
+    FrontendReplayCache cache;
+    QList<QByteArray> sent;
+    // What FrontendServer does with each change the tracker reports: the message goes out
+    // whole, and what lasts of it is what a frontend that connects later is told.
+    const auto publish = [&cache, &sent](const std::optional<CharFollowers> &change) {
+        if (!change.has_value()) {
+            return false;
+        }
+        cache.remember(frontend_messages::makeCharFollowers(lastingFollowers(*change)));
+        sent.append(frontend_messages::makeCharFollowers(*change).toRawBytes());
+        return true;
+    };
+    const auto line = [&tracker, &publish](const char *const text, const int64_t now) {
+        return publish(tracker.receiveLine(QString::fromUtf8(text), now));
+    };
+    const auto replay = [&cache]() {
+        const auto &messages = cache.messages();
+        const auto it = messages.find(GmcpMessageTypeEnum::MMAPPER_CHAR_FOLLOWERS);
+        return it == messages.end() ? QByteArray{} : it->second.toRawBytes();
+    };
+
+    // A bond made: the follower with what is known of it, and no reply.
+    QVERIFY(line("A mother eagle starts following you.", 1000));
+    QCOMPARE(sent.last(),
+             QByteArray(R"(MMapper.Char.Followers {"followers":[)"
+                        R"({"here":true,"kind":"charmie","label":"","name":"a mother eagle",)"
+                        R"("since":1000,"state":"following"}]})"));
+    FrontendSubscriptions subs;
+    QVERIFY(subs.applySupports(parse(R"(Core.Supports.Set [ "MMapper.Char 1" ])")));
+    QVERIFY(subs.wants(GmcpMessage::fromRawBytes(sent.last())));
+    QVERIFY(line("A trained horse (my) starts following you.", 1005));
+
+    // An order answered: the reply rides in the message its answer caused, and in none after.
+    tracker.receiveCommand(QStringLiteral("label eagle one"), 1010);
+    QVERIFY(line("Ok.", 1010));
+    QVERIFY(!publish(tracker.receivePrompt(1010)));
+    tracker.receiveCommand(QStringLiteral("order followers assist"), 1020);
+    QVERIFY(!line("You failed to control a mother eagle (one).", 1020));
+    QVERIFY(!line("Ok.", 1020));
+    QVERIFY(publish(tracker.receivePrompt(1020)));
+    QCOMPARE(sent.last(),
+             QByteArray(R"(MMapper.Char.Followers {"followers":[)"
+                        R"({"here":true,"kind":"charmie","label":"one","lastRefused":"assist",)"
+                        R"("name":"a mother eagle","since":1000,"state":"refusing"},)"
+                        R"({"here":true,"kind":"mount","label":"my","lastOrder":"assist",)"
+                        R"("name":"a trained horse","since":1005,"state":"following"}],)"
+                        R"("reply":{"failed":["a mother eagle"],"order":"assist",)"
+                        R"("result":"failed","who":"followers"}})"));
+    // Replay: a frontend that attaches late is told the followers, not the answer to an
+    // order that is over.
+    const QByteArray twoBound
+        = QByteArray(R"(MMapper.Char.Followers {"followers":[)"
+                     R"({"here":true,"kind":"charmie","label":"one","lastRefused":"assist",)"
+                     R"("name":"a mother eagle","since":1000,"state":"refusing"},)"
+                     R"({"here":true,"kind":"mount","label":"my","lastOrder":"assist",)"
+                     R"("name":"a trained horse","since":1005,"state":"following"}]})");
+    QCOMPARE(replay(), twoBound);
+
+    // The other results, with the followers unchanged.
+    tracker.receiveCommand(QStringLiteral("order followers"), 1030);
+    QVERIFY(!line("Order who to do what?", 1030));
+    QVERIFY(publish(tracker.receivePrompt(1030)));
+    QJsonObject reply = payloadOf(GmcpMessage::fromRawBytes(sent.last()))["reply"].toObject();
+    QCOMPARE(reply["result"].toString(), QStringLiteral("syntax"));
+    QCOMPARE(reply["order"].toString(), QString{});
+    QVERIFY(reply["failed"].isArray());
+    QVERIFY(reply["failed"].toArray().isEmpty());
+    tracker.receiveCommand(QStringLiteral("order followers hit orc"), 1031);
+    QVERIFY(!line("You have no loyal subjects here.", 1031));
+    QVERIFY(publish(tracker.receivePrompt(1031)));
+    reply = payloadOf(GmcpMessage::fromRawBytes(sent.last()))["reply"].toObject();
+    QCOMPARE(reply["result"].toString(), QStringLiteral("none-here"));
+    tracker.receiveCommand(QStringLiteral("order followers hit orc"), 1032);
+    QVERIFY(!line("In your dreams, or what?", 1032));
+    QVERIFY(publish(tracker.receivePrompt(1032)));
+    reply = payloadOf(GmcpMessage::fromRawBytes(sent.last()))["reply"].toObject();
+    QCOMPARE(reply["result"].toString(), QStringLiteral("asleep"));
+    tracker.receiveCommand(QStringLiteral("order one stand"), 1033);
+    QVERIFY(!line("Ok.", 1033));
+    QVERIFY(publish(tracker.receivePrompt(1033)));
+    reply = payloadOf(GmcpMessage::fromRawBytes(sent.last()))["reply"].toObject();
+    QCOMPARE(reply["result"].toString(), QStringLiteral("ok"));
+    QCOMPARE(reply["who"].toString(), QStringLiteral("one"));
+    QVERIFY(replay() != twoBound);
+    QVERIFY(!replay().contains("reply"));
+
+    // One left behind stays in the list and in the replay; `since` is left out for one whose
+    // bond was not seen made.
+    QVERIFY(line("ACK! A mother eagle didn't follow you, you lost her.", 1040));
+    QVERIFY(line("You failed to control Harle the Hobbit.", 1041));
+    const QJsonArray three = payloadOf(GmcpMessage::fromRawBytes(replay()))["followers"].toArray();
+    QCOMPARE(three.size(), 3);
+    QCOMPARE(three.at(0).toObject()["state"].toString(), QStringLiteral("lost"));
+    QCOMPARE(three.at(0).toObject()["here"].toBool(), false);
+    const QJsonObject harle = three.at(2).toObject();
+    QCOMPARE(harle["kind"].toString(), QStringLiteral("unknown"));
+    QCOMPARE(harle["state"].toString(), QStringLiteral("refusing"));
+    QVERIFY(!harle.contains("since"));
+    QVERIFY(!harle.contains("lastOrder"));
+    QVERIFY(!harle.contains("lastRefused"));
+
+    // One that leaves or dies is told once, with that state, and is not replayed.
+    QVERIFY(line("A trained horse (my) stops following you.", 1050));
+    QJsonArray told = payloadOf(GmcpMessage::fromRawBytes(sent.last()))["followers"].toArray();
+    QCOMPARE(told.size(), 3);
+    QCOMPARE(told.at(1).toObject()["state"].toString(), QStringLiteral("left"));
+    QCOMPARE(payloadOf(GmcpMessage::fromRawBytes(replay()))["followers"].toArray().size(), 2);
+    QVERIFY(line("A mother eagle (one) has arrived from the north.", 1055));
+    QVERIFY(line("A mother eagle (one) is dead! R.I.P.", 1060));
+    told = payloadOf(GmcpMessage::fromRawBytes(sent.last()))["followers"].toArray();
+    QCOMPARE(told.size(), 2);
+    QCOMPARE(told.at(0).toObject()["state"].toString(), QStringLiteral("dead"));
+    QCOMPARE(payloadOf(GmcpMessage::fromRawBytes(replay()))["followers"].toArray().size(), 1);
+    // The last one gone: an empty list is sent, and is what is replayed.
+    QVERIFY(line("Harle the Hobbit is dead! R.I.P.", 1070));
+    QCOMPARE(replay(), QByteArray(R"(MMapper.Char.Followers {"followers":[]})"));
+
+    // Reset: the character left the game, or another connection began. Nothing is replayed,
+    // nothing is known, and nothing is sent to say so.
+    QVERIFY(line("A mother eagle starts following you.", 2000));
+    const qsizetype before = sent.size();
+    cache.clearGame();
+    tracker.reset();
+    QVERIFY(replay().isEmpty());
+    QVERIFY(tracker.followers().empty());
+    QCOMPARE(sent.size(), before);
+    QVERIFY(!line("A mother eagle has arrived from the north.", 2001));
+    QVERIFY(line("A mother eagle starts following you.", 2002));
+    QVERIFY(!replay().isEmpty());
+    cache.clear();
+    QVERIFY(replay().isEmpty());
+}
+
 void TestFrontend::accountTest()
 {
     // powwow/logs/moria.gjurza.mov:31-37, hosts replaced.

@@ -11,6 +11,7 @@
 #include "../map/PromptFlags.h"
 #include "../observer/gameobserver.h"
 #include "AccountLines.h"
+#include "CharFollowers.h"
 #include "CharLines.h"
 #include "CombatLines.h"
 #include "ContainerLines.h"
@@ -80,6 +81,9 @@ private:
     /// MUME's replies to `stat`, `score` and `info`: the character's figures GMCP does not carry.
     /// See CharLinesTracker.
     CharLinesTracker m_charTracker;
+    /// The creatures that follow the player and take its orders, and the answers to `order`.
+    /// See CharFollowersTracker.
+    CharFollowersTracker m_followersTracker;
     /// See AccountLinesTracker.
     AccountLinesTracker m_accountTracker;
     ItemCommandTracker m_itemCommands;

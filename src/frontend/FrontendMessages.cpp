@@ -744,6 +744,37 @@ GmcpMessage makeCharAffects(const std::vector<CharAffect> &affects)
     return GmcpMessage{GmcpMessageTypeEnum::MMAPPER_CHAR_AFFECTS, toGmcpJson(obj)};
 }
 
+GmcpMessage makeCharFollowers(const CharFollowers &followers)
+{
+    const auto text = [](const std::string_view sv) {
+        return QString::fromUtf8(sv.data(), static_cast<qsizetype>(sv.size()));
+    };
+    QJsonArray rows;
+    for (const CharFollower &follower : followers.followers) {
+        QJsonObject row;
+        row["name"] = follower.name;
+        row["label"] = follower.label;
+        row["kind"] = text(to_string_view(follower.kind));
+        row["here"] = follower.here;
+        row["state"] = text(to_string_view(follower.state));
+        putNumber(row, "since", follower.since);
+        putText(row, "lastOrder", follower.lastOrder);
+        putText(row, "lastRefused", follower.lastRefused);
+        rows.append(row);
+    }
+    QJsonObject obj;
+    obj["followers"] = rows;
+    if (followers.reply.has_value()) {
+        QJsonObject reply;
+        reply["order"] = followers.reply->order;
+        reply["who"] = followers.reply->who;
+        reply["result"] = text(to_string_view(followers.reply->result));
+        reply["failed"] = QJsonArray::fromStringList(followers.reply->failed);
+        obj["reply"] = reply;
+    }
+    return GmcpMessage{GmcpMessageTypeEnum::MMAPPER_CHAR_FOLLOWERS, toGmcpJson(obj)};
+}
+
 GmcpMessage makeCharCommand(const ItemCommandObservation &command)
 {
     QJsonObject obj;

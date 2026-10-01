@@ -7,6 +7,7 @@
 #include "../global/Signal2.h"
 #include "../map/PromptFlags.h"
 #include "../parser/AccountLines.h"
+#include "../parser/CharFollowers.h"
 #include "../parser/CharLines.h"
 #include "../parser/CombatLines.h"
 #include "../parser/ContainerLines.h"
@@ -95,6 +96,9 @@ public:
     Signal2<CharBurden> sig2_charBurden;
     /// The wimpy as MUME last stated it: "Wimpy set to: 120", or a `stat` or `info` saying it.
     Signal2<CharWimpy> sig2_charWimpy;
+    /// The followers of the player's character after a change -- a bond made or ended, one left
+    /// behind or back, an order answered. See CharFollowersTracker.
+    Signal2<CharFollowers> sig2_charFollowers;
     /// The reply to CHAR_LEVEL_REQUEST, which is kept out of the terminal. See parseCharLevelLine.
     Signal2<CharLevel> sig2_charLevel;
     /// MUME's account menu, its `list` of characters and its one-line answers. See
@@ -166,6 +170,10 @@ public:
     void observeCharScore(const CharScore &score) { sig2_charScore.invoke(score); }
     void observeCharBurden(const CharBurden &burden) { sig2_charBurden.invoke(burden); }
     void observeCharWimpy(const CharWimpy &wimpy) { sig2_charWimpy.invoke(wimpy); }
+    void observeCharFollowers(const CharFollowers &followers)
+    {
+        sig2_charFollowers.invoke(followers);
+    }
     void observeCharLevel(const CharLevel &level) { sig2_charLevel.invoke(level); }
     void observeAccountMenu(const AccountMenu &menu) { sig2_accountMenu.invoke(menu); }
     void observeAccountChars(const AccountChars &chars) { sig2_accountChars.invoke(chars); }

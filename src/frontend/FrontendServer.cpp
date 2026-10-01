@@ -221,6 +221,14 @@ FrontendServer::FrontendServer(GameObserver &observer,
         publish(msg);
     });
 
+    // State: the followers of the player's character, whole at each change. What a frontend
+    // that connects later is told is what lasts of it: not the answer to an order that is
+    // over, nor a follower that left or died, which is in the one message that says so.
+    m_observer.sig2_charFollowers.connect(m_lifetime, [this](const CharFollowers &followers) {
+        m_replayCache.remember(frontend_messages::makeCharFollowers(lastingFollowers(followers)));
+        publish(frontend_messages::makeCharFollowers(followers));
+    });
+
     // State: the wimpy as MUME last stated it.
     m_observer.sig2_charWimpy.connect(m_lifetime, [this](const CharWimpy &wimpy) {
         const GmcpMessage msg = frontend_messages::makeCharWimpy(wimpy);

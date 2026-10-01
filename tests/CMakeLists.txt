@@ -229,6 +229,29 @@ set_target_properties(
 )
 add_test(NAME TestCharLines COMMAND TestCharLines)
 
+# The followers of the player's character, and the answers to `order`
+set(TestFollowers_SRCS
+    TestFollowers.cpp
+    TestFollowers.h
+    ../src/parser/CharFollowers.cpp
+    ../src/parser/CharFollowers.h
+    )
+add_executable(TestFollowers ${TestFollowers_SRCS})
+add_dependencies(TestFollowers mm_test mm_global)
+target_link_libraries(TestFollowers
+        mm_test
+        mm_global
+        Qt6::Test
+        coverage_config)
+set_target_properties(
+  TestFollowers PROPERTIES
+  CXX_STANDARD 20
+  CXX_STANDARD_REQUIRED ON
+  CXX_EXTENSIONS OFF
+  COMPILE_FLAGS "${WARNING_FLAGS}"
+)
+add_test(NAME TestFollowers COMMAND TestFollowers)
+
 # Shops, guilds, inns and trophies, the money in them, and MUME's pager
 set(TestTradeLines_SRCS
     TestTradeLines.cpp
@@ -381,6 +404,8 @@ if(WITH_FRONTEND)
         ../src/parser/AccountLines.h
         ../src/parser/CharAffects.cpp
         ../src/parser/CharAffects.h
+        ../src/parser/CharFollowers.cpp
+        ../src/parser/CharFollowers.h
         ../src/parser/CharLines.cpp
         ../src/parser/CharLines.h
         ../src/parser/CombatLines.cpp

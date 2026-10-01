@@ -32,6 +32,9 @@ NODISCARD bool isWholeState(const GmcpMessageTypeEnum type)
     // change, and the wimpy as last stated.
     case GmcpMessageTypeEnum::MMAPPER_CHAR_AFFECTS:
     case GmcpMessageTypeEnum::MMAPPER_CHAR_WIMPY:
+    // The followers, which CharFollowersTracker keeps and sends whole at each change. What is
+    // remembered is the lasting part of each message: see FrontendServer.
+    case GmcpMessageTypeEnum::MMAPPER_CHAR_FOLLOWERS:
     // The account menu and `list`'s characters: each printing is the whole of it.
     case GmcpMessageTypeEnum::MMAPPER_ACCOUNT_CHARS:
     case GmcpMessageTypeEnum::MMAPPER_ACCOUNT_MENU:
