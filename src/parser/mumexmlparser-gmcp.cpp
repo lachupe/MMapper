@@ -17,6 +17,9 @@
 #include <utility>
 
 #include <QByteArray>
+#include <QDateTime>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QString>
 
 namespace { // anonymous
@@ -37,6 +40,19 @@ void MumeXmlParser::slot_parseGmcpInput(const GmcpMessage &msg)
 
     if (!msg.getJsonDocument().has_value()) {
         return;
+    }
+
+    // The doors of the room, as MUME states them: Room.Info for the room entered or looked at,
+    // Room.UpdateExits for an exit that changed. See RoomDoorTracker.
+    if ((msg.isRoomInfo() || msg.isRoomUpdateExits()) && msg.getJson().has_value()) {
+        const QJsonObject json = QJsonDocument::fromJson(msg.getJson()->toQByteArray()).object();
+        const int64_t now = QDateTime::currentSecsSinceEpoch();
+        const auto doors = msg.isRoomInfo()
+                               ? m_doorTracker.receiveRoomInfo(parseRoomInfoDoors(json), now)
+                               : m_doorTracker.receiveUpdateExits(parseExitsObject(json), now);
+        if (doors.has_value()) {
+            m_observer.observeRoomDoors(*doors);
+        }
     }
 
     auto pObj = msg.getJsonDocument()->getObject();

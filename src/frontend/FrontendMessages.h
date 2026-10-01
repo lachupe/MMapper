@@ -9,6 +9,8 @@
 #include "../parser/AccountLines.h"
 #include "../parser/CharAffects.h"
 #include "../parser/CharFollowers.h"
+#include "../parser/CharRefused.h"
+#include "../parser/RoomDoors.h"
 #include "../parser/CharLines.h"
 #include "../parser/CombatLines.h"
 #include "../parser/ContainerLines.h"
@@ -102,6 +104,13 @@ NODISCARD GmcpMessage makeError(const QString &code, const QString &message);
 /// `fingerprint` is a hash of what the room shows (see RoomFingerprint.h), the same as the
 /// `fingerprint` attribute the XML export writes on the room, so that a frontend can find the
 /// room in its own export when serverId is absent and the export's ids differ from MMapper's.
+///
+/// `ridable` is what MMapper's map says of riding into the room: true, false, or null when the
+/// map does not say. `exits` has one entry per exit that leads to a room of the map, keyed by
+/// the side's letter (n e s w u d), with that room's `externalId`, its `serverId` when MUME
+/// gave one, and its `ridable`, so that a frontend can warn before a ride MUME would refuse. An
+/// exit to several rooms names the one with the lowest externalId, as the fingerprint does. No
+/// door's name is in it.
 ///
 /// The layout block is MMapper's classic map grid. It is one possible arrangement of the
 /// room graph, not a metric or canonical 3D embedding: a renderer may use it as a hint,
@@ -306,6 +315,26 @@ NODISCARD GmcpMessage makeCharAffects(const std::vector<CharAffect> &affects);
 /// replayed as lastingFollowers() of the last sent -- without `reply` and without those that
 /// left or died. See CharFollowersTracker.
 NODISCARD GmcpMessage makeCharFollowers(const CharFollowers &followers);
+
+/// MMapper.Char.Refused -- a command MUME refused, read off its sentence: `text` (the line),
+/// `reason` (a stable code: already, fighting, not-fighting, position, slept, self, queued, busy,
+/// no-target, no-space, afraid, silenced, no-skill, no-item, noride, no-control, unwilling,
+/// riding, guarded, door-moving, door-iced, door-blocked, door-locked, dark, water, not-here,
+/// unknown), and where the line or the command says them `action` (the frontend's action: move,
+/// flee, bash, cast, open ...), `target` (who or what the line names) and `dir` (the side of a
+/// move or a door, one letter). An event: not replayed. The refusals that are already
+/// MMapper.Combat.Event `refused`, MMapper.Char.Followers `reply`, MMapper.Guild.Practised or
+/// MMapper.Room.Container are not sent again here, except a ride refused. See CharRefused.
+NODISCARD GmcpMessage makeCharRefused(const CharRefused &refused);
+
+/// MMapper.Room.Door -- the doors of the room the character stands in, as MUME told the player
+/// on this visit: `doors`, each {`dir` (one letter; left out when not known), `name` (the
+/// door's keyword; left out when MUME has not shown it), `state` (open, closed, locked, iced,
+/// blocked, broken, molten, unknown), `since` (unix seconds of the state's last change)}, and
+/// `room`, MUME's id of the room, left out when it gave none. Never from MMapper's map. State:
+/// whole at each change, replayed as last sent, and empty again in another room. See
+/// RoomDoorTracker.
+NODISCARD GmcpMessage makeRoomDoor(const RoomDoors &doors);
 
 /// MMapper.Account.Menu -- MUME's account menu: `commands`, each {`name` (the command word,
 /// lowercase), `usage` ("Play <name>"), `help`}, in the menu's order, and `sorts`, the sort

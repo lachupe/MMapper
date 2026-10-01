@@ -13,6 +13,7 @@
 #include "../global/entities.h"
 #include "../global/logging.h"
 #include "../global/parserutils.h"
+#include "../map/ExitDirection.h"
 #include "../map/ExitsFlags.h"
 #include "../map/ParseTree.h"
 #include "../map/PromptFlags.h"
@@ -88,6 +89,8 @@ MumeXmlParser::MumeXmlParser(MapData &md,
             return;
         }
         m_containerTracker.receiveCommand(line);
+        // What a later line about a door that names none is about.
+        m_doorTracker.receiveCommand(line);
         // `order` and `label`: what the next "Ok." answers.
         m_followersTracker.receiveCommand(line, QDateTime::currentSecsSinceEpoch());
         m_itemTracker.receiveCommand(line);
@@ -123,16 +126,24 @@ MumeXmlParser::MumeXmlParser(MapData &md,
         m_accountTracker.reset();
         m_tradeReaders.reset();
         m_followersTracker.reset();
+        m_doorTracker.reset();
     });
     // The followers were this character's and this session's: forgotten, with nothing sent,
     // when MMapper connects again and when the character leaves the game (a rent, a quit,
     // MUME's menu). The frontend server drops what it would replay at the same signals.
-    m_observer.sig2_connected.connect(m_lifetime, [this]() { m_followersTracker.reset(); });
+    // The doors likewise: they are of the room the character stood in.
+    m_observer.sig2_connected.connect(m_lifetime, [this]() {
+        m_followersTracker.reset();
+        m_doorTracker.reset();
+    });
     m_observer.sig2_gameStateChanged.connect(m_lifetime, [this](const GameStateEnum state) {
         if (state != GameStateEnum::PLAYING) {
             m_followersTracker.reset();
+            m_doorTracker.reset();
         }
     });
+    // "X opens the chest." is told in a door's words: a word that names a container is no door.
+    m_doorTracker.setNotDoor([](const QString &word) { return namesContainer(word); });
 }
 
 MumeXmlParser::~MumeXmlParser() = default;
@@ -223,6 +234,13 @@ void MumeXmlParser::parse(const TelnetData &data, const bool isGoAhead)
         // Simplify the output and run actions
         QString tempStr = m_lineToUser;
         tempStr = normalizeStringCopy(tempStr.trimmed());
+        // The side of the oldest move MUME has not answered yet, which is the move a refusal
+        // on this line is about. Taken before the path machine's own actions drop that move.
+        QString moveDir;
+        if (const CommandQueue &queue = getQueue();
+            !queue.isEmpty() && isDirectionNESWUD(queue.head())) {
+            moveDir = QString(QLatin1Char(lowercaseDirection(getDirection(queue.head()))[0]));
+        }
         parseMudCommands(tempStr);
 
         // A fight's events are read off the text as well, and published as
@@ -253,6 +271,29 @@ void MumeXmlParser::parse(const TelnetData &data, const bool isGoAhead)
             m_itemCommands.receiveLine(plain);
             publishContainerEvents(
                 m_containerTracker.receiveLine(plain, QDateTime::currentSecsSinceEpoch()));
+            // The doors of the room: the answers to the player's door commands, which the
+            // container tracker paired, and the lines that tell of a door by themselves. And
+            // the refusals no other reader takes, a door's among them.
+            {
+                const int64_t now = QDateTime::currentSecsSinceEpoch();
+                for (const DoorReply &reply : m_containerTracker.takeDoorReplies()) {
+                    if (const auto doors = m_doorTracker.receiveDoorReply(reply, now)) {
+                        m_observer.observeRoomDoors(*doors);
+                    }
+                    if (const auto refused = refusedFromDoorReply(reply)) {
+                        m_observer.observeCharRefused(*refused);
+                    }
+                }
+                if (const auto doors = m_doorTracker.receiveLine(plain, moveDir, now)) {
+                    m_observer.observeRoomDoors(*doors);
+                }
+                if (auto refused = parseRefusedLine(plain)) {
+                    if (refused->action == QStringLiteral("move")) {
+                        refused->dir = moveDir;
+                    }
+                    m_observer.observeCharRefused(*refused);
+                }
+            }
             // What the player wears and carries: listings that name themselves in their first
             // line and end at a blank line or the prompt, and the one-line replies to wear,
             // remove, get, put, drop and give.
@@ -286,6 +327,7 @@ void MumeXmlParser::parse(const TelnetData &data, const bool isGoAhead)
         // Every prompt ends a listing, in XML mode and out of it; the pager line does not.
         publishItemBlocks(m_itemTracker.receivePrompt());
         publishCharReplies(m_charTracker.receivePrompt());
+        m_doorTracker.receivePrompt();
         if (const auto followers
             = m_followersTracker.receivePrompt(QDateTime::currentSecsSinceEpoch())) {
             m_observer.observeCharFollowers(*followers);
@@ -299,6 +341,13 @@ void MumeXmlParser::parse(const TelnetData &data, const bool isGoAhead)
     // earlier line arrives with the line that finally closes it, not the one that began it.
     for (const XmlElement &xml : m_xmlTracker.take()) {
         m_observer.observeSentToUserXml(xml);
+        // The door marks of a room display's exits line: "[north]", "(east)", "#up#".
+        if (xml.tag == XmlTagEnum::EXITS) {
+            if (const auto doors
+                = m_doorTracker.receiveExitsLine(xml.text, QDateTime::currentSecsSinceEpoch())) {
+                m_observer.observeRoomDoors(*doors);
+            }
+        }
         // The weather's prose, read once here: lightning seen, fog, frost, ice, snow lying,
         // storms and magic. The ground's state is complete at the prompt that ends a room
         // display, which comes after MMapper has moved the player, so it describes the room

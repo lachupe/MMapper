@@ -519,6 +519,8 @@ set(mmapper_SRCS
     parser/CharFollowers.h
     parser/CharLines.cpp
     parser/CharLines.h
+    parser/CharRefused.cpp
+    parser/CharRefused.h
     parser/CombatLines.cpp
     parser/CombatLines.h
     parser/CommandQueue.cpp
@@ -534,6 +536,8 @@ set(mmapper_SRCS
     parser/LineFlags.h
     parser/RoomContents.cpp
     parser/RoomContents.h
+    parser/RoomDoors.cpp
+    parser/RoomDoors.h
     parser/SendToUserSourceEnum.h
     parser/TradeLines.cpp
     parser/TradeLines.h

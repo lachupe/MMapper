@@ -836,10 +836,18 @@ bool TradeLinesTracker::readTableLine(const QString &raw, const QString &text)
             return false;
         }
         if (columns.size() >= 5) {
-            row.mana = toNumber(columns[4]);
-            row.casting = columns.size() >= 6 ? columns[5].simplified() : QString{};
-            if (!row.mana.has_value()) {
-                row.casting = columns[4].simplified();
+            // 2006 wrote the two in one column, "30, Very short"
+            // (logs/archives/log-2006.04.19-13.48.14.txt:118); today they are two.
+            static const QRegularExpression manaAndCasting{QStringLiteral(R"(^(\d+),\s*(.+)$)")};
+            if (const auto both = manaAndCasting.match(columns[4].simplified()); both.hasMatch()) {
+                row.mana = toNumber(both.captured(1));
+                row.casting = both.captured(2);
+            } else {
+                row.mana = toNumber(columns[4]);
+                row.casting = columns.size() >= 6 ? columns[5].simplified() : QString{};
+                if (!row.mana.has_value()) {
+                    row.casting = columns[4].simplified();
+                }
             }
         }
         m_skills->rows.push_back(std::move(row));

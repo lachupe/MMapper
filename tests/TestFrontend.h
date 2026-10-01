@@ -46,6 +46,10 @@ private Q_SLOTS:
     static void charWimpyTest();
     static void charAffectsTest();
     static void charFollowersTest();
+    static void charRefusedTest();
+    static void roomDoorTest();
+    static void mapPositionRidableTest();
+    static void charSkillsReplayTest();
     static void accountTest();
     static void itemObservationMetadataTest();
     static void replayChangedFieldsTest();

@@ -13,11 +13,13 @@
 #include "AccountLines.h"
 #include "CharFollowers.h"
 #include "CharLines.h"
+#include "CharRefused.h"
 #include "CombatLines.h"
 #include "ContainerLines.h"
 #include "ItemLines.h"
 #include "LineFlags.h"
 #include "RoomContents.h"
+#include "RoomDoors.h"
 #include "TradeLines.h"
 #include "WeatherLines.h"
 #include "XmlElementTracker.h"
@@ -84,6 +86,8 @@ private:
     /// The creatures that follow the player and take its orders, and the answers to `order`.
     /// See CharFollowersTracker.
     CharFollowersTracker m_followersTracker;
+    /// The doors of the current room as MUME told the player. See RoomDoorTracker.
+    RoomDoorTracker m_doorTracker;
     /// See AccountLinesTracker.
     AccountLinesTracker m_accountTracker;
     ItemCommandTracker m_itemCommands;

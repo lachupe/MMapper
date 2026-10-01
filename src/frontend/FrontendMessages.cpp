@@ -4,6 +4,7 @@
 #include "FrontendMessages.h"
 
 #include "../global/TextUtils.h"
+#include "../map/ExitDirection.h"
 #include "../map/RoomFingerprint.h"
 #include "../map/coordinate.h"
 #include "../map/mmapper2room.h"
@@ -242,6 +243,24 @@ GmcpMessage makeError(const QString &code, const QString &message)
     return GmcpMessage{GmcpMessageTypeEnum::MMAPPER_SESSION_ERROR, toGmcpJson(obj)};
 }
 
+namespace {
+
+/// What the map says of riding into a room: true, false, or null where it does not say.
+NODISCARD QJsonValue ridableValue(const RoomRidableEnum ridable)
+{
+    switch (ridable) {
+    case RoomRidableEnum::RIDABLE:
+        return true;
+    case RoomRidableEnum::NOT_RIDABLE:
+        return false;
+    case RoomRidableEnum::UNDEFINED:
+        break;
+    }
+    return QJsonValue::Null;
+}
+
+} // namespace
+
 GmcpMessage makeMapPosition(const RoomHandle &room)
 {
     QJsonObject obj;
@@ -259,6 +278,39 @@ GmcpMessage makeMapPosition(const RoomHandle &room)
     obj["name"] = room.getName().toQString();
     obj["area"] = room.getArea().toQString();
     obj["terrain"] = mmqt::toQStringUtf8(to_string_view(room.getTerrainType()));
+
+    // Whether a mount may go there, for this room and for the room each exit leads to: MUME
+    // refuses the ride only once the move is made ("Oops! You cannot go there riding!"), and
+    // the map knows beforehand. Null where the map does not say. No door is named here.
+    obj["ridable"] = ridableValue(room.getRidableType());
+    QJsonObject exits;
+    const Map map = room.getMap();
+    for (const ExitDirEnum dir : ALL_EXITS_NESWUD) {
+        const RawExit &exit = room.getExit(dir);
+        if (!exit.exitIsExit()) {
+            continue;
+        }
+        // The target with the lowest externalId, as the fingerprint takes it.
+        std::optional<RoomHandle> target;
+        for (const RoomId to : exit.getOutgoingSet()) {
+            if (RoomHandle candidate = map.findRoomHandle(to)) {
+                if (!target.has_value() || candidate.getIdExternal() < target->getIdExternal()) {
+                    target.emplace(std::move(candidate));
+                }
+            }
+        }
+        if (!target.has_value()) {
+            continue;
+        }
+        QJsonObject to;
+        to["externalId"] = static_cast<qint64>(target->getIdExternal().asUint32());
+        if (const ServerRoomId id = target->getServerId(); id != INVALID_SERVER_ROOMID) {
+            to["serverId"] = static_cast<qint64>(id.asUint32());
+        }
+        to["ridable"] = ridableValue(target->getRidableType());
+        exits[QString(QLatin1Char(lowercaseDirection(dir)[0]))] = to;
+    }
+    obj["exits"] = exits;
 
     // The same as the XML export's, so that a frontend can find the room in its own export
     // even when it has no serverId and the export numbers its rooms differently.
@@ -786,6 +838,34 @@ GmcpMessage makeCharFollowers(const CharFollowers &followers)
         obj["reply"] = reply;
     }
     return GmcpMessage{GmcpMessageTypeEnum::MMAPPER_CHAR_FOLLOWERS, toGmcpJson(obj)};
+}
+
+GmcpMessage makeCharRefused(const CharRefused &refused)
+{
+    QJsonObject obj;
+    putText(obj, "action", refused.action);
+    obj["reason"] = refused.reason;
+    obj["text"] = refused.text;
+    putText(obj, "target", refused.target);
+    putText(obj, "dir", refused.dir);
+    return GmcpMessage{GmcpMessageTypeEnum::MMAPPER_CHAR_REFUSED, toGmcpJson(obj)};
+}
+
+GmcpMessage makeRoomDoor(const RoomDoors &doors)
+{
+    QJsonArray rows;
+    for (const RoomDoor &door : doors.doors) {
+        QJsonObject row;
+        putText(row, "dir", door.dir);
+        putText(row, "name", door.name);
+        row["state"] = mmqt::toQStringUtf8(to_string_view(door.state));
+        row["since"] = static_cast<qint64>(door.since);
+        rows.append(row);
+    }
+    QJsonObject obj;
+    putNumber(obj, "room", doors.room);
+    obj["doors"] = rows;
+    return GmcpMessage{GmcpMessageTypeEnum::MMAPPER_ROOM_DOOR, toGmcpJson(obj)};
 }
 
 GmcpMessage makeCharCommand(const ItemCommandObservation &command)

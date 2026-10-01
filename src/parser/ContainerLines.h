@@ -76,6 +76,9 @@ struct NODISCARD ContainerCommand final
     QString item;
     /// False for a door, or anything else the verbs can name that is not a container.
     bool container = true;
+    /// The side a door was named by, one letter (n, e, s, w, u, d): "e" for "open exit e" and
+    /// "open gate east". Empty when the command gave none.
+    QString direction;
 };
 
 /// One item in a container's listing, or taken from or put into one.
@@ -98,6 +101,17 @@ struct NODISCARD ContainerEvent final
     QString text;
     /// The object in the room's list the command reached, or -1 when it could not be told.
     int index = -1;
+};
+
+/// MUME's answer to one command aimed at a door (open, close, unlock, lock or pick with a target
+/// that is no container): the same pairing as for a container, kept for RoomDoorTracker
+/// (MMapper.Room.Door) instead of being published as MMapper.Room.Container.
+struct NODISCARD DoorReply final
+{
+    ContainerCommand command;
+    ContainerResultEnum result = ContainerResultEnum::CANNOT;
+    /// The reply as MUME wrote it.
+    QString text;
 };
 
 /// The container command `input` is, or nullopt when it is not one of open, close, unlock,
@@ -147,8 +161,12 @@ private:
     /// with a line of its own after the click.
     std::optional<ContainerCommand> m_lastUnlock;
     bool m_changed = false;
+    /// The answers to door commands since takeDoorReplies() was last called.
+    std::vector<DoorReply> m_doorReplies;
 
 public:
+    /// The answers to the player's door commands read since the last call, oldest first.
+    NODISCARD std::vector<DoorReply> takeDoorReplies();
     /// Notes a command on its way to MUME. Anything that is not a container command is ignored.
     void receiveCommand(const QString &input);
     /// Reads one line of MUME's output, colour removed, and returns the events it completes.

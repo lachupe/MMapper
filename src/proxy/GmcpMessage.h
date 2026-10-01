@@ -97,6 +97,7 @@ class ParseEvent;
       "mmapper.char.followers", \
       "MMapper.Char.Followers") \
     X(MMAPPER_CHAR_LEVEL, MMapperCharLevel, "mmapper.char.level", "MMapper.Char.Level") \
+    X(MMAPPER_CHAR_REFUSED, MMapperCharRefused, "mmapper.char.refused", "MMapper.Char.Refused") \
     X(MMAPPER_CHAR_SCORE, MMapperCharScore, "mmapper.char.score", "MMapper.Char.Score") \
     X(MMAPPER_CHAR_SKILLS, MMapperCharSkills, "mmapper.char.skills", "MMapper.Char.Skills") \
     X(MMAPPER_CHAR_STAT, MMapperCharStat, "mmapper.char.stat", "MMapper.Char.Stat") \
@@ -116,6 +117,7 @@ class ParseEvent;
       "mmapper.room.container", \
       "MMapper.Room.Container") \
     X(MMAPPER_ROOM_CONTENTS, MMapperRoomContents, "mmapper.room.contents", "MMapper.Room.Contents") \
+    X(MMAPPER_ROOM_DOOR, MMapperRoomDoor, "mmapper.room.door", "MMapper.Room.Door") \
     X(MMAPPER_SESSION_ERROR, MMapperSessionError, "mmapper.session.error", "MMapper.Session.Error") \
     X(MMAPPER_SESSION_STATE, MMapperSessionState, "mmapper.session.state", "MMapper.Session.State") \
     X(MMAPPER_SHOP_DEAL, MMapperShopDeal, "mmapper.shop.deal", "MMapper.Shop.Deal") \
@@ -150,7 +152,7 @@ enum class NODISCARD GmcpMessageTypeEnum {
 #define X_COUNT(...) +1
 static constexpr const size_t NUM_GMCP_MESSAGES = XFOREACH_GMCP_MESSAGE_TYPE(X_COUNT);
 #undef X_COUNT
-static_assert(NUM_GMCP_MESSAGES == 79);
+static_assert(NUM_GMCP_MESSAGES == 81);
 DEFINE_ENUM_COUNT(GmcpMessageTypeEnum, NUM_GMCP_MESSAGES)
 
 namespace tags {

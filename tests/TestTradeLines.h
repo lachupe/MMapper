@@ -29,6 +29,7 @@ private Q_SLOTS:
     static void practisedTest();
     static void charSkillsTest();
     static void charSkillsPagedTest();
+    static void charSkillsOwnLogTest();
     static void innOfferTest();
     static void trophiesTest();
     static void trophiesPagedTest();

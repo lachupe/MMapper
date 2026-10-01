@@ -725,6 +725,81 @@ void TestTradeLines::charSkillsTest()
     QVERIFY(!starred.skills[0].rows[1].trained);
 }
 
+void TestTradeLines::charSkillsOwnLogTest()
+{
+    // /home/aza/data/powwow/logs/archives/log-2006.04.19-13.48.14.txt:110-133, the user's own
+    // `prac` of 2006: one space between "Difficulty" and "Class" in the heading, the mana and the
+    // casting time in one column with a comma ("30, Very short"), and the `*` of a skill that is
+    // not being trained before the knowledge word, a space after it.
+    const char *const lines[] = {
+        "You have 41 practice sessions left.",
+        "Skill / Spell          Knowledge  Difficulty Class      Mana Casting time",
+        "Climb                  Fair       Very easy  None      ",
+        "Track                  Superb     Normal     None      ",
+        "Armour                 Good       Hard       Magic User   30, Very short",
+        "Block door             Fair       Normal     Magic User   31, Very short",
+        "Bless                  Average    Normal     Cleric        5, Very short",
+        "Breath of briskness    Good       Hard       Cleric       25, Short",
+        "Dodge                  Bad        Hard       Thief     ",
+        "Bash                   Fair       Hard       Warrior   ",
+        "Concussion weapons   * Fair       Normal     Warrior   ",
+        "Endurance              Fair       Very hard  Warrior   ",
+        "Rescue               * Average    Easy       Warrior   ",
+        "",
+    };
+    // Whoever sent the `prac`: the reader goes by the heading, not by a command. First with no
+    // command seen at all, then with the bare `prac` a frontend sends on its own account
+    // (MMapper.Input.Command, or MMapper.Trade.Request guild.list), which names no skill and
+    // must not be taken for a `prac <name>` whose "practised" line is still to come.
+    for (const bool commandSeen : {false, true}) {
+        TradeLinesTracker tracker;
+        if (commandSeen) {
+            tracker.receiveCommand(QStringLiteral("prac"));
+        }
+        TradeReplies r;
+        for (const char *const line : lines) {
+            r.append(tracker.receiveLine(QString::fromUtf8(line)));
+        }
+        r.append(tracker.receivePrompt());
+        QCOMPARE(r.skills.size(), size_t{1});
+        QVERIFY(r.teachers.empty());
+        QVERIFY(r.practised.empty());
+        const CharSkills &s = r.skills.front();
+        QCOMPARE(s.sessionsLeft, std::optional<int64_t>{41});
+        QVERIFY(!s.paged);
+        QVERIFY(s.complete);
+        QCOMPARE(s.rows.size(), size_t{11});
+        QCOMPARE(s.rows[0].name, QStringLiteral("Climb"));
+        QCOMPARE(s.rows[0].knowledge, QStringLiteral("Fair"));
+        QCOMPARE(s.rows[0].difficulty, QStringLiteral("Very easy"));
+        QCOMPARE(s.rows[0].skillClass, QStringLiteral("None"));
+        QVERIFY(!s.rows[0].mana.has_value());
+        QVERIFY(s.rows[0].casting.isEmpty());
+        QCOMPARE(s.rows[2].name, QStringLiteral("Armour"));
+        QCOMPARE(s.rows[2].skillClass, QStringLiteral("Magic User"));
+        QCOMPARE(s.rows[2].mana, std::optional<int64_t>{30});
+        QCOMPARE(s.rows[2].casting, QStringLiteral("Very short"));
+        QCOMPARE(s.rows[4].mana, std::optional<int64_t>{5});
+        QCOMPARE(s.rows[5].name, QStringLiteral("Breath of briskness"));
+        QCOMPARE(s.rows[5].mana, std::optional<int64_t>{25});
+        QCOMPARE(s.rows[5].casting, QStringLiteral("Short"));
+        QCOMPARE(s.rows[7].name, QStringLiteral("Bash"));
+        QVERIFY(s.rows[7].trained);
+        QCOMPARE(s.rows[8].name, QStringLiteral("Concussion weapons"));
+        QCOMPARE(s.rows[8].knowledge, QStringLiteral("Fair"));
+        QVERIFY(!s.rows[8].trained);
+        QCOMPARE(s.rows[9].difficulty, QStringLiteral("Very hard"));
+        QCOMPARE(s.rows[10].knowledge, QStringLiteral("Average"));
+        QVERIFY(!s.rows[10].trained);
+
+        const QJsonObject obj = json(frontend_messages::makeCharSkills(s));
+        const QJsonObject armour = obj["rows"].toArray().at(2).toObject();
+        QCOMPARE(armour["mana"].toInteger(), 30);
+        QCOMPARE(armour["casting"].toString(), QStringLiteral("Very short"));
+        QCOMPARE(armour["knowledge"].toString(), QStringLiteral("Good"));
+    }
+}
+
 void TestTradeLines::charSkillsPagedTest()
 {
     // elvenrunes 2020-12-30_..._Aquator.txt:1716-1747, cut at 73% and continued.

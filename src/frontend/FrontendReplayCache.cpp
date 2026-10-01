@@ -35,6 +35,8 @@ NODISCARD bool isWholeState(const GmcpMessageTypeEnum type)
     // The followers, which CharFollowersTracker keeps and sends whole at each change. What is
     // remembered is the lasting part of each message: see FrontendServer.
     case GmcpMessageTypeEnum::MMAPPER_CHAR_FOLLOWERS:
+    // The doors of the current room, which RoomDoorTracker keeps and sends whole at each change.
+    case GmcpMessageTypeEnum::MMAPPER_ROOM_DOOR:
     // The account menu and `list`'s characters: each printing is the whole of it.
     case GmcpMessageTypeEnum::MMAPPER_ACCOUNT_CHARS:
     case GmcpMessageTypeEnum::MMAPPER_ACCOUNT_MENU:

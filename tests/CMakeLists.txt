@@ -252,6 +252,33 @@ set_target_properties(
 )
 add_test(NAME TestFollowers COMMAND TestFollowers)
 
+# The refusals no other reader takes, and the doors of the current room
+set(TestRefusedDoors_SRCS
+    TestRefusedDoors.cpp
+    TestRefusedDoors.h
+    ../src/parser/CharRefused.cpp
+    ../src/parser/CharRefused.h
+    ../src/parser/CombatLines.cpp
+    ../src/parser/CombatLines.h
+    ../src/parser/RoomDoors.cpp
+    ../src/parser/RoomDoors.h
+    )
+add_executable(TestRefusedDoors ${TestRefusedDoors_SRCS})
+add_dependencies(TestRefusedDoors mm_test mm_global)
+target_link_libraries(TestRefusedDoors
+        mm_test
+        mm_global
+        Qt6::Test
+        coverage_config)
+set_target_properties(
+  TestRefusedDoors PROPERTIES
+  CXX_STANDARD 20
+  CXX_STANDARD_REQUIRED ON
+  CXX_EXTENSIONS OFF
+  COMPILE_FLAGS "${WARNING_FLAGS}"
+)
+add_test(NAME TestRefusedDoors COMMAND TestRefusedDoors)
+
 # Shops, guilds, inns and trophies, the money in them, and MUME's pager
 set(TestTradeLines_SRCS
     TestTradeLines.cpp
@@ -408,6 +435,8 @@ if(WITH_FRONTEND)
         ../src/parser/CharFollowers.h
         ../src/parser/CharLines.cpp
         ../src/parser/CharLines.h
+        ../src/parser/CharRefused.cpp
+        ../src/parser/CharRefused.h
         ../src/parser/CombatLines.cpp
         ../src/parser/CombatLines.h
         ../src/parser/ContainerLines.cpp
@@ -416,6 +445,8 @@ if(WITH_FRONTEND)
         ../src/parser/ItemLines.h
         ../src/parser/RoomContents.cpp
         ../src/parser/RoomContents.h
+        ../src/parser/RoomDoors.cpp
+        ../src/parser/RoomDoors.h
         ../src/parser/WeatherLines.cpp
         ../src/parser/WeatherLines.h
         ../src/parser/XmlElement.cpp

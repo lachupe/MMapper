@@ -208,6 +208,7 @@ std::optional<ContainerCommand> parseContainerCommand(const QString &input)
         // "open door north" and "pick exit w" name a door by its side.
         if (words.size() >= 2 && isDirection(words.at(1))) {
             command.container = false;
+            command.direction = words.at(1).left(1);
         }
         break;
     case A::LOOK:
@@ -338,6 +339,11 @@ std::string_view to_string_view(const ContainerResultEnum result)
         return "cannot";
     }
     return "cannot";
+}
+
+std::vector<DoorReply> ContainerTracker::takeDoorReplies()
+{
+    return std::exchange(m_doorReplies, {});
 }
 
 void ContainerTracker::receiveCommand(const QString &input)
@@ -633,6 +639,20 @@ std::optional<ContainerEvent> ContainerTracker::finish(const ContainerCommand &c
                                                        const int64_t now)
 {
     if (!command.container) {
+        // A door: nothing for MMapper.Room.Container, but RoomDoorTracker wants the answer.
+        switch (command.action) {
+        case A::OPEN:
+        case A::CLOSE:
+        case A::UNLOCK:
+        case A::LOCK:
+        case A::PICK:
+            m_doorReplies.push_back(DoorReply{command, result, text});
+            break;
+        case A::LOOK:
+        case A::GET:
+        case A::PUT:
+            break;
+        }
         return std::nullopt;
     }
     ContainerEvent event;
@@ -800,4 +820,5 @@ void ContainerTracker::reset()
     m_roomOrder.clear();
     m_current = RoomContentsSnapshot{};
     m_changed = false;
+    m_doorReplies.clear();
 }

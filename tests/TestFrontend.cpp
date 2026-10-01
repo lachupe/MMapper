@@ -22,11 +22,13 @@
 #include "../src/observer/gameobserver.h"
 #include "../src/parser/AccountLines.h"
 #include "../src/parser/CharAffects.h"
+#include "../src/parser/CharRefused.h"
 #include "../src/parser/CombatLines.h"
 #include "../src/parser/ContainerLines.h"
 #include "../src/parser/GameStateLines.h"
 #include "../src/parser/ItemLines.h"
 #include "../src/parser/RoomContents.h"
+#include "../src/parser/RoomDoors.h"
 #include "../src/parser/WeatherLines.h"
 #include "../src/parser/XmlElement.h"
 #include "../src/proxy/GmcpMessage.h"
@@ -1796,6 +1798,263 @@ void TestFrontend::mumeMessageCoverageTest()
              GmcpMessageTypeEnum::ROOM_UPDATE_EXITS);
     QCOMPARE(GmcpMessage{GmcpMessageTypeEnum::ROOM_UPDATE_EXITS}.getName().toQString(),
              QStringLiteral("Room.UpdateExits"));
+}
+
+void TestFrontend::charRefusedTest()
+{
+    QCOMPARE(GmcpMessage::fromRawBytes(QByteArray{"MMapper.Char.Refused"}).getType(),
+             GmcpMessageTypeEnum::MMAPPER_CHAR_REFUSED);
+
+    // A line that names its command: log-2005.09.15-21.01.17.txt:90756.
+    QCOMPARE(frontend_messages::makeCharRefused(
+                 *parseRefusedLine(QStringLiteral("Rest while fighting? Are you MAD?")))
+                 .toRawBytes(),
+             QByteArray(R"(MMapper.Char.Refused {"action":"rest","reason":"fighting",)"
+                        R"("text":"Rest while fighting? Are you MAD?"})"));
+    // One that answers several commands has no action: log-2005.08.31-14.00.43.txt:1353.
+    QCOMPARE(frontend_messages::makeCharRefused(
+                 *parseRefusedLine(QStringLiteral("You are too afraid.")))
+                 .toRawBytes(),
+             QByteArray(R"(MMapper.Char.Refused {"reason":"afraid","text":"You are too afraid."})"));
+    // One that names somebody: log-2005.11.07-05.28.32.txt:10776.
+    QCOMPARE(frontend_messages::makeCharRefused(
+                 *parseRefusedLine(QStringLiteral("A pack horse doesn't want to follow you!")))
+                 .toRawBytes(),
+             QByteArray(R"(MMapper.Char.Refused {"action":"lead","reason":"unwilling",)"
+                        R"("target":"A pack horse","text":"A pack horse doesn't want to follow you!"})"));
+    // A ride refused, with the side the parser takes from the oldest move still unanswered:
+    // log-2005.08.31-14.00.43.txt:1305.
+    CharRefused ride = *parseRefusedLine(QStringLiteral("Oops! You cannot go there riding!"));
+    ride.dir = QStringLiteral("n");
+    QCOMPARE(frontend_messages::makeCharRefused(ride).toRawBytes(),
+             QByteArray(R"(MMapper.Char.Refused {"action":"move","dir":"n","reason":"noride",)"
+                        R"("text":"Oops! You cannot go there riding!"})"));
+
+    // A door's refusal comes from the answer paired with its command, as ContainerTracker pairs
+    // it: `open exit e` / "It seems to be locked." (log-2006.08.03-19.24.37.txt:18504-18505).
+    ContainerTracker containers;
+    containers.receiveCommand(QStringLiteral("open exit e"));
+    QVERIFY(containers.receiveLine(QStringLiteral("It seems to be locked."), 1000).empty());
+    const std::vector<DoorReply> replies = containers.takeDoorReplies();
+    QCOMPARE(replies.size(), size_t{1});
+    QCOMPARE(replies[0].command.direction, QStringLiteral("e"));
+    QCOMPARE(frontend_messages::makeCharRefused(*refusedFromDoorReply(replies[0])).toRawBytes(),
+             QByteArray(R"(MMapper.Char.Refused {"action":"open","dir":"e","reason":"door-locked",)"
+                        R"("text":"It seems to be locked."})"));
+    QVERIFY(containers.takeDoorReplies().empty());
+    // The same sentence about a chest is MMapper.Room.Container's, and no door reply.
+    containers.receiveCommand(QStringLiteral("open chest"));
+    QCOMPARE(containers.receiveLine(QStringLiteral("It seems to be locked."), 1001).size(),
+             size_t{1});
+    QVERIFY(containers.takeDoorReplies().empty());
+
+    // An event: nothing of it is kept for a frontend that connects later.
+    FrontendReplayCache cache;
+    cache.remember(frontend_messages::makeCharRefused(ride));
+    QVERIFY(cache.messages().empty());
+}
+
+void TestFrontend::roomDoorTest()
+{
+    QCOMPARE(GmcpMessage::fromRawBytes(QByteArray{"MMapper.Room.Door"}).getType(),
+             GmcpMessageTypeEnum::MMAPPER_ROOM_DOOR);
+
+    RoomDoorTracker tracker;
+    tracker.setNotDoor([](const QString &word) { return namesContainer(word); });
+    ContainerTracker containers;
+    FrontendReplayCache cache;
+    QList<QByteArray> sent;
+    // What MumeXmlParser and FrontendServer do with each change the tracker reports.
+    const auto publish = [&cache, &sent](const std::optional<RoomDoors> &change) {
+        if (!change.has_value()) {
+            return false;
+        }
+        const GmcpMessage msg = frontend_messages::makeRoomDoor(*change);
+        cache.remember(msg);
+        sent.append(msg.toRawBytes());
+        return true;
+    };
+    const auto gmcp = [](const char *const raw) {
+        return QJsonDocument::fromJson(parse(raw).getJson()->toQByteArray()).object();
+    };
+    const auto command = [&tracker, &containers](const char *const input) {
+        containers.receiveCommand(QString::fromLatin1(input));
+        tracker.receiveCommand(QString::fromLatin1(input));
+    };
+    const auto line = [&tracker, &containers, &publish](const char *const text, const int64_t now) {
+        bool changed = false;
+        std::ignore = containers.receiveLine(QString::fromUtf8(text), now);
+        for (const DoorReply &reply : containers.takeDoorReplies()) {
+            changed = publish(tracker.receiveDoorReply(reply, now)) || changed;
+        }
+        return publish(tracker.receiveLine(QString::fromUtf8(text), QString{}, now)) || changed;
+    };
+    const auto replay = [&cache]() {
+        const auto &messages = cache.messages();
+        const auto it = messages.find(GmcpMessageTypeEnum::MMAPPER_ROOM_DOOR);
+        return it == messages.end() ? QByteArray{} : it->second.toRawBytes();
+    };
+
+    // The Backroom of the Unqalome crypt (log-2005.11.02-01.27.58.txt:23462-23494), with the
+    // Room.Info MUME sends today (help gmcp_room).
+    QVERIFY(publish(tracker.receiveRoomInfo(
+        parseRoomInfoDoors(gmcp(R"(Room.Info {"id":5988992,"name":"Backroom","exits":)"
+                                R"({"w":{"id":12925987,"name":"door"}}})")),
+        1000)));
+    QCOMPARE(sent.last(),
+             QByteArray(R"(MMapper.Room.Door {"doors":[)"
+                        R"({"dir":"w","name":"door","since":1000,"state":"open"}],)"
+                        R"("room":5988992})"));
+    QVERIFY(line("The door slams shut, and a thick layer of ice covers it.", 1010));
+    QCOMPARE(sent.last(),
+             QByteArray(R"(MMapper.Room.Door {"doors":[)"
+                        R"({"dir":"w","name":"door","since":1010,"state":"iced"}],)"
+                        R"("room":5988992})"));
+    QVERIFY(!publish(tracker.receiveUpdateExits(
+        parseExitsObject(gmcp(R"(Room.UpdateExits {"w":{"id":12925987,"name":"door",)"
+                              R"("flags":["closed"]}})")),
+        1010)));
+    command("open exit w");
+    QVERIFY(!line("The ice layer is too thick and prevents you from reaching it.", 1011));
+    command("cast normal 'burning hands' door");
+    QVERIFY(!line("You aim your spell at the ice layer.", 1015));
+    QVERIFY(!line("Some of the ice melts down.", 1015));
+    QVERIFY(line("The ice layer is completely molten!", 1020));
+    const QByteArray molten = QByteArray(R"(MMapper.Room.Door {"doors":[)"
+                                         R"({"dir":"w","name":"door","since":1020,"state":"molten"}],)"
+                                         R"("room":5988992})");
+    QCOMPARE(sent.last(), molten);
+    // State: a frontend that connects now is told the doors as they are.
+    QCOMPARE(replay(), molten);
+    // The pending `open exit w` was never answered in a door's words; this one is.
+    command("open exit w");
+    QVERIFY(line("Ok.", 1021));
+    QCOMPARE(sent.last(),
+             QByteArray(R"(MMapper.Room.Door {"doors":[)"
+                        R"({"dir":"w","name":"door","since":1021,"state":"open"}],)"
+                        R"("room":5988992})"));
+
+    // A door known by a line alone has no side, and one known by its side alone no name.
+    QVERIFY(publish(tracker.receiveRoomInfo(
+        parseRoomInfoDoors(gmcp(R"(Room.Info {"id":12925987,"exits":{"e":{"id":5988992,)"
+                                R"("flags":["closed"]}}})")),
+        1030)));
+    QVERIFY(line("The trapdoor gave away under the pressure.", 1031));
+    QCOMPARE(sent.last(),
+             QByteArray(R"(MMapper.Room.Door {"doors":[)"
+                        R"({"dir":"e","since":1030,"state":"closed"},)"
+                        R"({"name":"trapdoor","since":1031,"state":"broken"}],)"
+                        R"("room":12925987})"));
+    // A chest is no door, whoever opens it.
+    QVERIFY(!line("Stolb opens the chest.", 1032));
+
+    // A room without a door: one message that says so, which is also what is replayed.
+    QVERIFY(publish(tracker.receiveRoomInfo(
+        parseRoomInfoDoors(gmcp(R"(Room.Info {"id":77,"exits":{"n":{"id":78}}})")), 1040)));
+    QCOMPARE(sent.last(), QByteArray(R"(MMapper.Room.Door {"doors":[],"room":77})"));
+    QCOMPARE(replay(), sent.last());
+
+    // Forgotten with the rest of the game's state when the character leaves it.
+    cache.clearGame();
+    QCOMPARE(replay(), QByteArray{});
+}
+
+void TestFrontend::mapPositionRidableTest()
+{
+    mmqt::HideQDebug forThisTest;
+    // A stable (1) with a field north of it (2, ridable), a hall east (3, not ridable) and a
+    // cellar below (4, the map does not say); an exit west that leads nowhere on the map.
+    const auto makeRoom = [](const uint32_t id, const char *const name, const RoomRidableEnum ride) {
+        ExternalRawRoom room;
+        room.setId(ExternalRoomId{id});
+        room.setPosition(Coordinate{static_cast<int>(id), 0, 0});
+        room.setName(RoomName{name});
+        room.setRidableType(ride);
+        room.status = RoomStatusEnum::Permanent;
+        return room;
+    };
+    ExternalRawRoom stable = makeRoom(1, "A stable", RoomRidableEnum::RIDABLE);
+    ExternalRawRoom field = makeRoom(2, "A field", RoomRidableEnum::RIDABLE);
+    field.setServerId(ServerRoomId{222});
+    ExternalRawRoom hall = makeRoom(3, "A hall", RoomRidableEnum::NOT_RIDABLE);
+    ExternalRawRoom cellar = makeRoom(4, "A cellar", RoomRidableEnum::UNDEFINED);
+    const auto link = [](ExternalRawRoom &from, const ExitDirEnum dir, const uint32_t to) {
+        from.exits[dir].addExitFlags(ExitFlagEnum::EXIT);
+        from.exits[dir].outgoing.insert(ExternalRoomId{to});
+    };
+    link(stable, ExitDirEnum::NORTH, 2);
+    link(stable, ExitDirEnum::EAST, 3);
+    link(stable, ExitDirEnum::DOWN, 4);
+    stable.exits[ExitDirEnum::WEST].addExitFlags(ExitFlagEnum::EXIT);
+    // A hidden door on the way east: its name is no part of the package.
+    stable.exits[ExitDirEnum::EAST].addExitFlags(ExitFlagEnum::DOOR);
+    stable.exits[ExitDirEnum::EAST].addDoorFlags(DoorFlagEnum::HIDDEN);
+    stable.exits[ExitDirEnum::EAST].setDoorName(DoorName{"secretpanel"});
+    link(field, ExitDirEnum::SOUTH, 1);
+    link(hall, ExitDirEnum::WEST, 1);
+    link(cellar, ExitDirEnum::UP, 1);
+
+    ProgressCounter pc;
+    const Map map = Map::fromRooms(pc, {stable, field, hall, cellar}, {}).modified;
+
+    const GmcpMessage msg = frontend_messages::makeMapPosition(
+        map.findRoomHandle(ExternalRoomId{1}));
+    const QJsonObject obj = payloadOf(msg);
+    QCOMPARE(obj["ridable"], QJsonValue{true});
+    const QJsonObject exits = obj["exits"].toObject();
+    QCOMPARE(exits.keys(), (QStringList{QStringLiteral("d"), QStringLiteral("e"), QStringLiteral("n")}));
+    QCOMPARE(exits["n"].toObject()["ridable"], QJsonValue{true});
+    QCOMPARE(exits["n"].toObject()["externalId"].toInteger(), 2);
+    QCOMPARE(exits["n"].toObject()["serverId"].toInteger(), 222);
+    QCOMPARE(exits["e"].toObject()["ridable"], QJsonValue{false});
+    QCOMPARE(exits["e"].toObject()["externalId"].toInteger(), 3);
+    QVERIFY(!exits["e"].toObject().contains("serverId"));
+    // The map does not say: null, not false.
+    QVERIFY(exits["d"].toObject().contains("ridable"));
+    QVERIFY(exits["d"].toObject()["ridable"].isNull());
+    QVERIFY(!msg.toRawBytes().contains("secretpanel"));
+
+    const QJsonObject inHall = payloadOf(
+        frontend_messages::makeMapPosition(map.findRoomHandle(ExternalRoomId{3})));
+    QCOMPARE(inHall["ridable"], QJsonValue{false});
+    QCOMPARE(inHall["exits"].toObject()["w"].toObject()["ridable"], QJsonValue{true});
+    const QJsonObject inCellar = payloadOf(
+        frontend_messages::makeMapPosition(map.findRoomHandle(ExternalRoomId{4})));
+    QVERIFY(inCellar.contains("ridable"));
+    QVERIFY(inCellar["ridable"].isNull());
+
+    // A room with no exits has an empty `exits`, and what the map does not say is null.
+    const Map lone = makeOneRoomMap(ServerRoomId{812345});
+    const QJsonObject alone = payloadOf(
+        frontend_messages::makeMapPosition(lone.findRoomHandle(ExternalRoomId{1})));
+    QVERIFY(alone["exits"].toObject().isEmpty());
+    QVERIFY(alone["ridable"].isNull());
+}
+
+void TestFrontend::charSkillsReplayTest()
+{
+    // MMapper.Char.Skills is state: each `prac` away from a guild lists the table whole, whoever
+    // sent the command, and the last one is what a frontend that connects later is told.
+    FrontendReplayCache cache;
+    const char *const first = R"(MMapper.Char.Skills {"complete":true,"paged":false,)"
+                              R"("rows":[{"class":"Warrior","difficulty":"Hard","knowledge":"Fair",)"
+                              R"("name":"Bash","trained":true}],"sessionsLeft":41,"text":"..."})";
+    const char *const second = R"(MMapper.Char.Skills {"complete":true,"paged":false,)"
+                               R"("rows":[{"class":"Warrior","difficulty":"Hard","knowledge":"Good",)"
+                               R"("name":"Bash","trained":true}],"sessionsLeft":40,"text":"..."})";
+    cache.remember(parse(first));
+    QCOMPARE(replayed(cache, GmcpMessageTypeEnum::MMAPPER_CHAR_SKILLS)
+                 .object()["sessionsLeft"]
+                 .toInteger(),
+             41);
+    cache.remember(parse(second));
+    const QJsonObject now = replayed(cache, GmcpMessageTypeEnum::MMAPPER_CHAR_SKILLS).object();
+    QCOMPARE(now["sessionsLeft"].toInteger(), 40);
+    QCOMPARE(now["rows"].toArray().size(), 1);
+    QCOMPARE(now["rows"].toArray().at(0).toObject()["knowledge"].toString(), QStringLiteral("Good"));
+    // Another character's skills are not this one's.
+    cache.clearGame();
+    QVERIFY(!cache.messages().contains(GmcpMessageTypeEnum::MMAPPER_CHAR_SKILLS));
 }
 
 QTEST_MAIN(TestFrontend)

@@ -236,6 +236,18 @@ FrontendServer::FrontendServer(GameObserver &observer,
         publish(msg);
     });
 
+    // An event: one sentence that refused one command.
+    m_observer.sig2_charRefused.connect(m_lifetime, [this](const CharRefused &refused) {
+        publish(frontend_messages::makeCharRefused(refused));
+    });
+
+    // State: the doors of the current room as MUME told the player, whole at each change.
+    m_observer.sig2_roomDoors.connect(m_lifetime, [this](const RoomDoors &doors) {
+        const GmcpMessage msg = frontend_messages::makeRoomDoor(doors);
+        m_replayCache.remember(msg);
+        publish(msg);
+    });
+
     // State: the level, experience and travel points, as the last reply to CHAR_LEVEL_REQUEST
     // gave them.
     m_observer.sig2_charLevel.connect(m_lifetime, [this](const CharLevel &level) {
