@@ -275,6 +275,219 @@ void TestAccountLines::listInGameTest()
     QCOMPARE(out.lists.front().chars.at(3).deletion, QStringLiteral("55 days"));
 }
 
+namespace {
+
+// The user's `list` of 2026-10-02 (hosts replaced by "host.example"): the header with its
+// "Sub" column, MUME's pager after twenty rows, and the rest after the player's Return.
+const std::vector<const char *> LIST_2026_FIRST_PAGE = {
+        "Characters in account \"dmitry\"",
+        "Name         Rce Sub Lvl   Logon Area     Rent    Delete Host",
+        "Porien                Mc 11 days Valinor    free   never host.example",
+        "Agronom      man dún  29  2 yrs  Valinor    free retired host.example",
+        "Broga        man roh C34  3 yrs  Valinor    free retired host.example",
+        "Druin        dwa      41  3 yrs  Valinor    free retired host.example",
+        "Duj          man eri W30  3 yrs  Rivendl    free retired host.example",
+        "Ennor        dwa fir  71 11 mths Valinor    free retired host.example",
+        "Finadriel    elf nol T31  3 yrs  Valinor    free retired host.example",
+        "Idwar        man eri  02  3 days Fornost  8 mths 13 days host.example",
+        "Lator        h-e      43  2 yrs  Valinor    free retired host.example",
+        "Rumata       dwa     W68  2 yrs  Rivendl    free retired host.example",
+        "Tauriel      elf sil  28  1 yrs  Valinor    free retired host.example",
+        "Vasilisa     elf sil  44  3 yrs  Rivendl    free retired host.example",
+        "Azazello     orc tar 100  1 yrs  DolGldr    free retired host.example",
+        "Baba         orc tar  50  3 yrs  DolGldr    free retired host.example",
+        "Bimba        tro cav W31  3 yrs  DolGldr    free retired host.example",
+        "Burunduk     tro cav W34  3 yrs  DolGldr    free retired host.example",
+        "Gjurza       orc tar  56  3 yrs  DolGldr    free retired host.example",
+        "Kochurma     orc tar W55  3 yrs  DolGldr    free retired host.example",
+        "Kolbasjenish  bn      57  1 yrs  DolGldr    free retired host.example",
+        "Sardar       orc tar  50  3 yrs  DolGldr    free retired host.example",
+        "",
+        "*** Return: continue, b: back, r: redisplay, q: quit (84%) *** ",
+        "> ",
+        PROMPT,
+};
+const std::vector<const char *> LIST_2026_REST = {
+        "Shaihulut    tro cav  26  4 yrs  Warrens forever retired host.example",
+        "Vsevolod     orc tar  40  3 yrs  GoblinT forever retired host.example",
+        "Woland        bn     100  9 mths DolGldr    free retired host.example",
+        "Abramovich   zau      37 11 yrs  Misties    free retired host.example",
+        "",
+        "Account> ",
+};
+
+} // namespace
+
+void TestAccountLines::listSubTest()
+{
+    // The page before the pager, alone: the "Sub" column, a race with a dash, empty race and
+    // subrace columns, a name as wide as its column, a level with no class and "Mc".
+    AccountLinesTracker tracker;
+    AccountReplies out;
+    for (const char *const line : LIST_2026_FIRST_PAGE) {
+        if (QByteArray{line} == QByteArray{PROMPT}) {
+            out.append(tracker.receivePrompt());
+        } else {
+            out.append(tracker.receiveLine(QString::fromUtf8(line)));
+        }
+    }
+    QVERIFY(!out.lists.empty());
+    const AccountChars &list = out.lists.back();
+    QCOMPARE(list.account, QStringLiteral("dmitry"));
+    QCOMPARE(list.chars.size(), size_t{20});
+    QVERIFY(list.more);
+    QCOMPARE(list.percent, std::optional<int64_t>{84});
+
+    const AccountChar &porien = list.chars.at(0);
+    QCOMPARE(porien.name, QStringLiteral("Porien"));
+    QVERIFY(porien.race.isEmpty());
+    QVERIFY(porien.sub.isEmpty());
+    QCOMPARE(porien.lvl, QStringLiteral("Mc"));
+    QVERIFY(!porien.level.has_value());
+    QCOMPARE(porien.logon, QStringLiteral("11 days"));
+    QCOMPARE(porien.area, QStringLiteral("Valinor"));
+    QCOMPARE(porien.rent, QStringLiteral("free"));
+    QCOMPARE(porien.deletion, QStringLiteral("never"));
+
+    const AccountChar &agronom = list.chars.at(1);
+    QCOMPARE(agronom.race, QStringLiteral("man"));
+    QCOMPARE(agronom.sub, QString::fromUtf8("d\xc3\xban"));
+    QCOMPARE(agronom.level, std::optional<int64_t>{29});
+    QVERIFY(agronom.cls.isEmpty());
+    QCOMPARE(agronom.logon, QStringLiteral("2 yrs"));
+    QCOMPARE(agronom.deletion, QStringLiteral("retired"));
+
+    const AccountChar &broga = list.chars.at(2);
+    QCOMPARE(broga.sub, QStringLiteral("roh"));
+    QCOMPARE(broga.cls, QStringLiteral("C"));
+    QCOMPARE(broga.level, std::optional<int64_t>{34});
+
+    const AccountChar &idwar = list.chars.at(7);
+    QCOMPARE(idwar.name, QStringLiteral("Idwar"));
+    QCOMPARE(idwar.lvl, QStringLiteral("02"));
+    QCOMPARE(idwar.area, QStringLiteral("Fornost"));
+    QCOMPARE(idwar.rent, QStringLiteral("8 mths"));
+    QCOMPARE(idwar.deletion, QStringLiteral("13 days"));
+
+    const AccountChar &lator = list.chars.at(8);
+    QCOMPARE(lator.race, QStringLiteral("h-e"));
+    QVERIFY(lator.sub.isEmpty());
+    QCOMPARE(lator.level, std::optional<int64_t>{43});
+
+    const AccountChar &azazello = list.chars.at(12);
+    QCOMPARE(azazello.sub, QStringLiteral("tar"));
+    QCOMPARE(azazello.level, std::optional<int64_t>{100});
+
+    const AccountChar &kolbasjenish = list.chars.at(18);
+    QCOMPARE(kolbasjenish.name, QStringLiteral("Kolbasjenish"));
+    QCOMPARE(kolbasjenish.race, QStringLiteral("bn"));
+    QVERIFY(kolbasjenish.sub.isEmpty());
+    QCOMPARE(kolbasjenish.level, std::optional<int64_t>{57});
+    QCOMPARE(kolbasjenish.area, QStringLiteral("DolGldr"));
+
+    // No host is kept anywhere.
+    for (const AccountChar &row : list.chars) {
+        QVERIFY(!row.deletion.contains(QStringLiteral("host")));
+    }
+}
+
+void TestAccountLines::listPagerTest()
+{
+    AccountLinesTracker tracker;
+    const auto feedLines = [&tracker](const std::vector<const char *> &lines) {
+        AccountReplies all;
+        for (const char *const line : lines) {
+            if (QByteArray{line} == QByteArray{PROMPT}) {
+                all.append(tracker.receivePrompt());
+            } else {
+                all.append(tracker.receiveLine(QString::fromUtf8(line)));
+            }
+        }
+        return all;
+    };
+
+    // Up to the pager: the list as it stands, last of all with `more` set. The pager's own
+    // prompt does not end it.
+    const AccountReplies first = feedLines(LIST_2026_FIRST_PAGE);
+    QVERIFY(!first.lists.empty());
+    QVERIFY(first.lists.back().more);
+    QCOMPARE(first.lists.back().chars.size(), size_t{20});
+
+    // After the player's Return: the rest with no title and no header, one list of all 24.
+    const AccountReplies rest = feedLines(LIST_2026_REST);
+    QCOMPARE(rest.lists.size(), size_t{1});
+    const AccountChars &whole = rest.lists.front();
+    QVERIFY(!whole.more);
+    QVERIFY(!whole.percent.has_value());
+    QCOMPARE(whole.account, QStringLiteral("dmitry"));
+    QCOMPARE(whole.chars.size(), size_t{24});
+    QCOMPARE(whole.chars.at(0).name, QStringLiteral("Porien"));
+    QCOMPARE(whole.chars.at(19).name, QStringLiteral("Sardar"));
+    QCOMPARE(whole.chars.at(20).name, QStringLiteral("Shaihulut"));
+    QCOMPARE(whole.chars.at(20).rent, QStringLiteral("forever"));
+    QCOMPARE(whole.chars.at(22).name, QStringLiteral("Woland"));
+    QCOMPARE(whole.chars.at(22).race, QStringLiteral("bn"));
+    QCOMPARE(whole.chars.at(22).level, std::optional<int64_t>{100});
+    QCOMPARE(whole.chars.at(23).name, QStringLiteral("Abramovich"));
+    QCOMPARE(whole.chars.at(23).race, QStringLiteral("zau"));
+    QCOMPARE(whole.chars.at(23).logon, QStringLiteral("11 yrs"));
+
+    // The prompt ended it: a row after it is nobody's.
+    QVERIFY(tracker
+                .receiveLine(QStringLiteral(
+                    "Vsevolod     orc tar  40  3 yrs  GoblinT forever retired host.example"))
+                .empty());
+
+    // The pager right after a row (no blank line before it), a page shown again ("r"), and
+    // the pager left with "q": the rows shown twice are in the list once.
+    AccountLinesTracker again;
+    AccountReplies out;
+    for (const char *const line :
+         {"Characters in account \"dmitry\"",
+          "Name         Rce Sub Lvl   Logon Area     Rent    Delete Host",
+          "Gjurza       orc tar  56  3 yrs  DolGldr    free retired host.example",
+          "Sardar       orc tar  50  3 yrs  DolGldr    free retired host.example",
+          "*** Return: continue, b: back, r: redisplay, q: quit (50%) *** "}) {
+        out.append(again.receiveLine(QString::fromUtf8(line)));
+    }
+    out.append(again.receivePrompt());
+    QCOMPARE(out.lists.size(), size_t{1});
+    QVERIFY(out.lists.front().more);
+    QCOMPARE(out.lists.front().percent, std::optional<int64_t>{50});
+    QCOMPARE(out.lists.front().chars.size(), size_t{2});
+
+    AccountReplies shown;
+    for (const char *const line :
+         {"Characters in account \"dmitry\"",
+          "Name         Rce Sub Lvl   Logon Area     Rent    Delete Host",
+          "Gjurza       orc tar  57  3 yrs  DolGldr    free retired host.example",
+          "Sardar       orc tar  50  3 yrs  DolGldr    free retired host.example",
+          "",
+          "*** Return: continue, b: back, r: redisplay, q: quit (50%) *** "}) {
+        shown.append(again.receiveLine(QString::fromUtf8(line)));
+    }
+    QVERIFY(!shown.lists.empty());
+    QVERIFY(shown.lists.back().more);
+    QCOMPARE(shown.lists.back().chars.size(), size_t{2});
+    QCOMPARE(shown.lists.back().chars.at(0).level, std::optional<int64_t>{57});
+    // "q": back at the menu's prompt, and the pager is done with.
+    QVERIFY(again.receiveLine(QStringLiteral("Account> ")).lists.empty());
+    QVERIFY(again
+                .receiveLine(QStringLiteral(
+                    "Vsevolod     orc tar  40  3 yrs  GoblinT forever retired host.example"))
+                .empty());
+
+    // The pager's line is read wherever it stands; elsewhere it is nothing.
+    QCOMPARE(parseAccountPagerLine(QStringLiteral(
+                 "*** Return: continue, b: back, r: redisplay, q: quit (84%) *** ")),
+             std::optional<int64_t>{84});
+    QVERIFY(!parseAccountPagerLine(QStringLiteral("*** Return: continue ***")).has_value());
+    AccountLinesTracker idle;
+    QVERIFY(idle.receiveLine(QStringLiteral(
+                                 "*** Return: continue, b: back, r: redisplay, q: quit (10%) ***"))
+                .empty());
+}
+
 void TestAccountLines::rowTest()
 {
     // The header's "Rce" says where the columns are.
@@ -296,6 +509,16 @@ void TestAccountLines::rowTest()
                  QStringLiteral("A large orc is standing here, guarding the door to the north."),
                  14)
                  .has_value());
+    // With the "Sub" column the rest stands four further right; a row of one layout is not
+    // a row of the other.
+    const QString sub = QStringLiteral(
+        "Broga        man roh C34  3 yrs  Valinor    free retired host.example");
+    const auto broga = parseAccountCharRow(sub, 13, true);
+    QVERIFY(broga.has_value());
+    QCOMPARE(broga->sub, QStringLiteral("roh"));
+    QCOMPARE(broga->cls, QStringLiteral("C"));
+    QVERIFY(!parseAccountCharRow(sub, 13, false).has_value());
+    QVERIFY(!parseAccountCharRow(wide, 14, true).has_value());
 }
 
 void TestAccountLines::repliesTest()

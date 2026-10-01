@@ -21,6 +21,8 @@ private Q_SLOTS:
     static void listNarrowTest();
     static void listWideTest();
     static void listInGameTest();
+    static void listSubTest();
+    static void listPagerTest();
     static void rowTest();
     static void repliesTest();
     static void notAccountTest();

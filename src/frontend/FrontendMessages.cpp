@@ -658,6 +658,7 @@ GmcpMessage makeAccountChars(const AccountChars &chars)
         QJsonObject c;
         c["name"] = row.name;
         putText(c, "race", row.race);
+        putText(c, "sub", row.sub);
         c["lvl"] = row.lvl;
         putText(c, "class", row.cls);
         putNumber(c, "level", row.level);
@@ -671,6 +672,11 @@ GmcpMessage makeAccountChars(const AccountChars &chars)
     QJsonObject obj;
     putText(obj, "account", chars.account);
     obj["chars"] = rows;
+    // MUME's pager waits: the list goes on when the player answers it. Absent otherwise.
+    if (chars.more) {
+        obj["more"] = true;
+        putNumber(obj, "percent", chars.percent);
+    }
     return GmcpMessage{GmcpMessageTypeEnum::MMAPPER_ACCOUNT_CHARS, toGmcpJson(obj)};
 }
 

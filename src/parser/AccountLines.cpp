@@ -14,9 +14,17 @@ constexpr int MAX_BLOCK_LINES = 200;
 /// Lines between `Characters in account "..."` and the header before the list is given up.
 constexpr int MAX_LINES_BEFORE_HEADER = 3;
 
+/// Lines after a list closed within which MUME's pager line still belongs to it (the blank
+/// line before the pager closes the list), and lines the rows after the pager may take to come.
+constexpr int MAX_LINES_BEFORE_PAGER = 2;
+constexpr int MAX_LINES_AFTER_PAGER = 40;
+
 // The columns of a row, from the start of "Rce" (see AccountLines.h). Each is followed by
-// one space.
+// one space. With a "Sub" column, three wide, after "Rce", the rest stand SUB_SHIFT further.
 constexpr qsizetype RACE_WIDTH = 3;
+constexpr qsizetype SUB_OFFSET = 4;
+constexpr qsizetype SUB_WIDTH = 3;
+constexpr qsizetype SUB_SHIFT = 4;
 constexpr qsizetype LVL_OFFSET = 4;
 constexpr qsizetype LVL_WIDTH = 3;
 constexpr qsizetype LOGON_OFFSET = 8;
@@ -42,7 +50,14 @@ NODISCARD bool spaceAt(const QString &line, const qsizetype index)
 
 NODISCARD const QRegularExpression &listHeaderPattern()
 {
-    static const QRegularExpression re{QStringLiteral(R"(^Name +Rce +Lvl\b)")};
+    static const QRegularExpression re{QStringLiteral(R"(^Name +Rce +(Sub +)?Lvl\b)")};
+    return re;
+}
+
+NODISCARD const QRegularExpression &pagerPattern()
+{
+    static const QRegularExpression re{
+        QStringLiteral(R"(^\*\*\* Return: continue\b.*\((\d+)%\) \*\*\*$)")};
     return re;
 }
 
@@ -87,20 +102,34 @@ const char *accountReplyKindName(const AccountReplyKindEnum kind)
     return "unknown";
 }
 
-std::optional<AccountChar> parseAccountCharRow(const QString &line, const qsizetype raceColumn)
+std::optional<int64_t> parseAccountPagerLine(const QString &line)
+{
+    const QRegularExpressionMatch m = pagerPattern().match(line.trimmed());
+    if (!m.hasMatch()) {
+        return std::nullopt;
+    }
+    return m.captured(1).toLongLong();
+}
+
+std::optional<AccountChar> parseAccountCharRow(const QString &line,
+                                               const qsizetype raceColumn,
+                                               const bool withSub)
 {
     const qsizetype c = raceColumn;
+    // Where the columns after the race stand: four further with a "Sub" column.
+    const qsizetype d = c + (withSub ? SUB_SHIFT : 0);
     // Up to the deletion column at least; the host after it may be missing.
-    if (c < 2 || line.size() < c + DELETE_OFFSET + 4) {
+    if (c < 2 || line.size() < d + DELETE_OFFSET + 4) {
         return std::nullopt;
     }
     for (const qsizetype gap : {c - 1,
                                 c + RACE_WIDTH,
-                                c + LVL_OFFSET + LVL_WIDTH,
-                                c + LOGON_OFFSET + LOGON_WIDTH,
-                                c + AREA_OFFSET + AREA_WIDTH,
-                                c + RENT_OFFSET + RENT_WIDTH,
-                                c + DELETE_OFFSET + DELETE_WIDTH}) {
+                                d + LVL_OFFSET - 1,
+                                d + LVL_OFFSET + LVL_WIDTH,
+                                d + LOGON_OFFSET + LOGON_WIDTH,
+                                d + AREA_OFFSET + AREA_WIDTH,
+                                d + RENT_OFFSET + RENT_WIDTH,
+                                d + DELETE_OFFSET + DELETE_WIDTH}) {
         if (!spaceAt(line, gap)) {
             return std::nullopt;
         }
@@ -109,17 +138,23 @@ std::optional<AccountChar> parseAccountCharRow(const QString &line, const qsizet
     AccountChar row;
     row.name = line.left(c).trimmed();
     row.race = column(line, c, RACE_WIDTH);
-    row.lvl = column(line, c + LVL_OFFSET, LVL_WIDTH);
-    row.logon = column(line, c + LOGON_OFFSET, LOGON_WIDTH);
-    row.area = column(line, c + AREA_OFFSET, AREA_WIDTH);
-    row.rent = column(line, c + RENT_OFFSET, RENT_WIDTH);
-    row.deletion = column(line, c + DELETE_OFFSET, DELETE_WIDTH);
+    if (withSub) {
+        row.sub = column(line, c + SUB_OFFSET, SUB_WIDTH);
+    }
+    row.lvl = column(line, d + LVL_OFFSET, LVL_WIDTH);
+    row.logon = column(line, d + LOGON_OFFSET, LOGON_WIDTH);
+    row.area = column(line, d + AREA_OFFSET, AREA_WIDTH);
+    row.rent = column(line, d + RENT_OFFSET, RENT_WIDTH);
+    row.deletion = column(line, d + DELETE_OFFSET, DELETE_WIDTH);
 
     static const QRegularExpression nameRe{QStringLiteral(R"(^\w+$)")};
-    static const QRegularExpression raceRe{QStringLiteral(R"(^[a-z]*$)")};
+    // "h-e", the half-elves, has a dash.
+    static const QRegularExpression raceRe{QStringLiteral(R"(^[a-z-]*$)")};
+    // A subrace is letters, some not ASCII ("dún"): anything without a space or a digit.
+    static const QRegularExpression subRe{QStringLiteral(R"(^[^\s\d]*$)")};
     if (!nameRe.match(row.name).hasMatch() || !raceRe.match(row.race).hasMatch()
-        || row.lvl.isEmpty() || row.logon.isEmpty() || row.rent.isEmpty()
-        || row.deletion.isEmpty()) {
+        || !subRe.match(row.sub).hasMatch() || row.lvl.isEmpty() || row.logon.isEmpty()
+        || row.rent.isEmpty() || row.deletion.isEmpty()) {
         return std::nullopt;
     }
 
@@ -183,9 +218,11 @@ AccountReplies AccountLinesTracker::receiveLine(const QString &line)
     AccountReplies out;
 
     // The prompt, as a line of its own or glued to the line after it ("Account> pl woland",
-    // "Account> You must wait ..."), closes the menu and the list.
+    // "Account> You must wait ..."), closes the menu and the list, and ends a paged list: the
+    // pager was answered to its end, or left.
     if (const QString lead = line.trimmed(); lead.startsWith(PROMPT_WORD)) {
         out = closeAll();
+        m_page.reset();
         const QString rest = lead.mid(PROMPT_WORD.size()).trimmed();
         if (!rest.isEmpty()) {
             out.append(receiveLine(rest));
@@ -201,25 +238,87 @@ AccountReplies AccountLinesTracker::receiveLine(const QString &line)
     const QString text = line.trimmed();
     if (text == QStringLiteral("Account menu")) {
         out = closeAll();
+        m_page.reset();
         m_menu = AccountMenu{};
         m_lines = 0;
         return out;
     }
+
+    // MUME's pager: the list goes on after it. It comes after the blank line that closed the
+    // list, or right after a row; the list so far is published with `more` set, and kept.
+    if (const auto percent = parseAccountPagerLine(line)) {
+        if (m_list.has_value() && m_raceColumn.has_value()) {
+            publishList(out);
+            out.lists.clear();
+        }
+        if (m_page.has_value()) {
+            m_page->waiting = true;
+            m_page->lines = 0;
+            AccountChars shown = m_page->list;
+            shown.more = true;
+            shown.percent = *percent;
+            out.lists.push_back(std::move(shown));
+        }
+        return out;
+    }
+
+    const bool paged = m_page.has_value() && m_page->waiting;
     if (const QRegularExpressionMatch m = listTitlePattern().match(text); m.hasMatch()) {
+        // The pager showing a page again repeats the title: the same list goes on.
+        if (paged && m_page->list.account == m.captured(1)) {
+            return out;
+        }
         out = closeAll();
+        m_page.reset();
         m_list = AccountChars{};
         m_list->account = m.captured(1);
         m_raceColumn.reset();
+        m_withSub = false;
         m_lines = 0;
         return out;
     }
-    if (listHeaderPattern().match(line).hasMatch()) {
+    if (const QRegularExpressionMatch m = listHeaderPattern().match(line); m.hasMatch()) {
+        const qsizetype raceColumn = line.indexOf(QStringLiteral("Rce"));
+        const bool withSub = !m.captured(1).isEmpty();
+        if (paged && !m_list.has_value()) {
+            // And the header: its columns are read again, the rows kept.
+            m_page->raceColumn = raceColumn;
+            m_page->withSub = withSub;
+            return out;
+        }
         if (!m_list.has_value() || m_raceColumn.has_value()) {
             out = closeAll();
+            m_page.reset();
             m_list = AccountChars{};
         }
-        m_raceColumn = line.indexOf(QStringLiteral("Rce"));
+        m_raceColumn = raceColumn;
+        m_withSub = withSub;
         m_lines = 0;
+        return out;
+    }
+
+    // The rows after the pager come with no title and no header: the first of them takes
+    // the list up again. Anything else while the pager waits (its own prompt, a blank line)
+    // is passed over; a closed list whose pager line does not come at once is let go.
+    if (m_page.has_value() && !m_list.has_value() && !m_menu.has_value()) {
+        Page &page = *m_page;
+        ++page.lines;
+        if (!page.waiting) {
+            if (page.lines > MAX_LINES_BEFORE_PAGER) {
+                m_page.reset();
+            }
+            return out;
+        }
+        if (auto row = parseAccountCharRow(line, page.raceColumn, page.withSub)) {
+            m_list = std::move(page.list);
+            m_raceColumn = page.raceColumn;
+            m_withSub = page.withSub;
+            m_lines = 0;
+            m_page.reset();
+            addRow(*m_list, std::move(*row));
+        } else if (page.lines > MAX_LINES_AFTER_PAGER) {
+            m_page.reset();
+        }
         return out;
     }
 
@@ -239,16 +338,12 @@ AccountReplies AccountLinesTracker::receiveLine(const QString &line)
             return out;
         }
         if (text.isEmpty()) {
-            AccountReplies done;
-            done.lists.push_back(std::move(*m_list));
-            m_list.reset();
-            m_raceColumn.reset();
-            out.append(std::move(done));
+            publishList(out);
             return out;
         }
         // A line that is not a row is the end of a host too long for its line.
-        if (auto row = parseAccountCharRow(line, *m_raceColumn)) {
-            m_list->chars.push_back(std::move(*row));
+        if (auto row = parseAccountCharRow(line, *m_raceColumn, m_withSub)) {
+            addRow(*m_list, std::move(*row));
         }
         return out;
     }
@@ -288,8 +383,34 @@ void AccountLinesTracker::readMenuLine(const QString &line)
     // Anything else (a line a packet split) is not the menu's.
 }
 
+void AccountLinesTracker::addRow(AccountChars &list, AccountChar &&row)
+{
+    // A page shown again repeats its rows.
+    for (AccountChar &have : list.chars) {
+        if (have.name == row.name) {
+            have = std::move(row);
+            return;
+        }
+    }
+    list.chars.push_back(std::move(row));
+}
+
+void AccountLinesTracker::publishList(AccountReplies &out)
+{
+    Page page;
+    page.list = *m_list;
+    page.raceColumn = *m_raceColumn;
+    page.withSub = m_withSub;
+    m_page = std::move(page);
+    out.lists.push_back(std::move(*m_list));
+    m_list.reset();
+    m_raceColumn.reset();
+    m_withSub = false;
+}
+
 AccountReplies AccountLinesTracker::receivePrompt()
 {
+    // The pager's own prompt, or the player's answer echoed, is not the end of a paged list.
     return closeAll();
 }
 
@@ -305,9 +426,15 @@ AccountReplies AccountLinesTracker::closeAll()
         out.menus.push_back(std::move(*m_menu));
     }
     if (m_list.has_value() && m_raceColumn.has_value()) {
-        out.lists.push_back(std::move(*m_list));
+        publishList(out);
     }
-    reset();
+    // What is open is closed; the page a pager may still take up (m_page) is kept: the
+    // `Account> ` prompt, a new title and a new session are what end it.
+    m_menu.reset();
+    m_list.reset();
+    m_raceColumn.reset();
+    m_withSub = false;
+    m_lines = 0;
     return out;
 }
 
@@ -316,5 +443,7 @@ void AccountLinesTracker::reset()
     m_menu.reset();
     m_list.reset();
     m_raceColumn.reset();
+    m_withSub = false;
+    m_page.reset();
     m_lines = 0;
 }

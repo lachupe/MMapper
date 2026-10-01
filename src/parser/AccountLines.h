@@ -35,6 +35,23 @@
 ///   The name column was 14 wide in 2005 and 13 in 2006; every other column keeps its place
 ///   relative to "Rce", so the header's "Rce" says where the row's columns are. A host too
 ///   long for the line wraps onto a line of its own, which is not a row.
+///
+///   Since then (seen 2026-10-02) the header is "Name  Rce Sub Lvl   Logon Area     Rent
+///   Delete Host": a subrace column, three wide, stands between the race and the level, and
+///   every column after it is four further right:
+///
+///       Agronom      man dún  29  2 yrs  Valinor    free retired host...
+///       Lator        h-e      43  2 yrs  Valinor    free retired host...
+///       Kolbasjenish  bn      57  1 yrs  DolGldr    free retired host...
+///
+///   The header says which it is, by where "Lvl" stands after "Rce".
+/// - MUME's pager, where the list is longer than the screen: a blank line, then
+///   "*** Return: continue, b: back, r: redisplay, q: quit (84%) ***" and nothing more until
+///   the player answers; the rows after it come with no title and no header, up to the blank
+///   line and the `Account> ` prompt (or another pager line). The list is published as it
+///   stands with `more` set while the pager waits, and whole once its rest has come. A page
+///   shown again (back, redisplay) repeats rows: a name already in the list replaces its row.
+///   Nothing is ever sent to answer the pager.
 /// - "You must wait  6 mins before you can log in this character!" after `play`, and
 ///   "Unknown account command 'look'".
 ///
@@ -65,8 +82,11 @@ struct NODISCARD AccountChar final
 {
     QString name;
     /// MUME's three-letter abbreviation, as printed: "orc", "dwa", "elf", "bn", "man", "zau",
-    /// "tro", "hob". Empty when the column is (Porien, a Maia, in the logs).
+    /// "tro", "hob", "h-e". Empty when the column is (Porien, a Maia, in the logs).
     QString race;
+    /// The subrace column as printed ("dún", "roh", "eri", "fir", "nol", "sil", "tar", "cav");
+    /// empty when the column is, or when the list has none (the logs of 2005-2006).
+    QString sub;
     /// The Lvl column as printed: "W40", "100", "M".
     QString lvl;
     /// The dominant class's letter ("W", "M", "C", "T") when `lvl` begins with one.
@@ -92,6 +112,10 @@ struct NODISCARD AccountChars final
     /// The account's name, from `Characters in account "dmitry"`; empty if that line was missed.
     QString account;
     std::vector<AccountChar> chars;
+    /// MUME's pager waits after these rows: the list goes on once the player answers it.
+    bool more = false;
+    /// How far the pager says the list has come ("(84%)"), while `more` is set.
+    std::optional<int64_t> percent;
 };
 
 enum class NODISCARD AccountReplyKindEnum : uint8_t {
@@ -117,8 +141,14 @@ struct NODISCARD AccountReply final
 NODISCARD const char *accountReplyKindName(AccountReplyKindEnum kind);
 
 /// A row of `list`'s reply, whose "Rce" column starts at `raceColumn` (the header's), or
-/// nullopt when `line` is not one.
-NODISCARD std::optional<AccountChar> parseAccountCharRow(const QString &line, qsizetype raceColumn);
+/// nullopt when `line` is not one. `withSub`: the list has the "Sub" column after "Rce".
+NODISCARD std::optional<AccountChar> parseAccountCharRow(const QString &line,
+                                                          qsizetype raceColumn,
+                                                          bool withSub = false);
+
+/// How far MUME's pager line says the listing has come, in percent ("*** Return: continue,
+/// b: back, r: redisplay, q: quit (84%) ***"), or nullopt when `line` is not one.
+NODISCARD std::optional<int64_t> parseAccountPagerLine(const QString &line);
 
 /// A one-line answer of the account menu, or nullopt.
 NODISCARD std::optional<AccountReply> parseAccountReplyLine(const QString &line);
@@ -140,7 +170,9 @@ struct NODISCARD AccountReplies final
 /// sends it without a GO-AHEAD, so it may come glued to what follows) or as a prompt. The list
 /// opens on `Characters in account "..."` or on its header, and closes at the blank line after
 /// its rows, or the prompt. Each is published only when complete: a menu with commands, a
-/// list whose header came (an account with no characters gives an empty list).
+/// list whose header came (an account with no characters gives an empty list). A list MUME's
+/// pager interrupts is published again with `more` set, and once more, whole, when the rows
+/// after the pager have come; only the `Account> ` prompt or a new session ends that.
 class NODISCARD AccountLinesTracker final
 {
 private:
@@ -148,7 +180,22 @@ private:
     std::optional<AccountChars> m_list;
     /// Where the header's "Rce" starts; unset until the header came.
     std::optional<qsizetype> m_raceColumn;
+    /// The header had "Sub" between "Rce" and "Lvl".
+    bool m_withSub = false;
     int m_lines = 0;
+    /// The list as last published at its blank line or at the pager, with its columns: what a
+    /// pager line right after the blank line, or the rows after the pager, go on from.
+    struct NODISCARD Page final
+    {
+        AccountChars list;
+        qsizetype raceColumn = 0;
+        bool withSub = false;
+        /// The pager's line came: the rows after it belong to `list`.
+        bool waiting = false;
+        /// Lines since: bounds how long a closed list can still be taken up.
+        int lines = 0;
+    };
+    std::optional<Page> m_page;
 
 public:
     /// Reads one line of MUME's output, colour removed, not trimmed (the rows are columns).
@@ -161,4 +208,7 @@ public:
 private:
     NODISCARD AccountReplies closeAll();
     void readMenuLine(const QString &line);
+    /// Publishes the open list and keeps it as the page a pager line may take up.
+    void publishList(AccountReplies &out);
+    static void addRow(AccountChars &list, AccountChar &&row);
 };

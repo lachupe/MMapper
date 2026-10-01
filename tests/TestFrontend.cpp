@@ -1635,6 +1635,28 @@ void TestFrontend::accountTest()
                         R"("race":"dwa","rent":"free"}]})"));
     QVERIFY(!chars.toRawBytes().contains("secret-host"));
 
+    // A list MUME's pager interrupts says so, and a row's subrace is given where it has one.
+    AccountChars paged;
+    paged.account = QStringLiteral("dmitry");
+    AccountChar gjurza;
+    gjurza.name = QStringLiteral("Gjurza");
+    gjurza.race = QStringLiteral("orc");
+    gjurza.sub = QStringLiteral("tar");
+    gjurza.lvl = QStringLiteral("56");
+    gjurza.level = 56;
+    gjurza.logon = QStringLiteral("3 yrs");
+    gjurza.area = QStringLiteral("DolGldr");
+    gjurza.rent = QStringLiteral("free");
+    gjurza.deletion = QStringLiteral("retired");
+    paged.chars.push_back(gjurza);
+    paged.more = true;
+    paged.percent = 84;
+    QCOMPARE(frontend_messages::makeAccountChars(paged).toRawBytes(),
+             QByteArray(R"(MMapper.Account.Chars {"account":"dmitry","chars":[)"
+                        R"({"area":"DolGldr","delete":"retired","level":56,"logon":"3 yrs",)"
+                        R"("lvl":"56","name":"Gjurza","playing":false,"race":"orc",)"
+                        R"("rent":"free","sub":"tar"}],"more":true,"percent":84})"));
+
     AccountMenu menu;
     AccountMenuCommand play;
     play.name = QStringLiteral("play");
