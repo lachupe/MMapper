@@ -84,6 +84,13 @@ GraphicsPage::GraphicsPage(QWidget *parent)
         setConfig().canvas.showUnsavedChanges.set(ui->drawUnsavedChanges->isChecked());
         graphicsSettingsChanged();
     });
+#ifdef MMAPPER_NO_FRONTEND
+    ui->pauseWhileFrontendAttached->hide();
+#endif
+    connect(ui->pauseWhileFrontendAttached, &QCheckBox::stateChanged, this, [this](int /*unused*/) {
+        setConfig().canvas.pauseWhileFrontendAttached.set(
+            ui->pauseWhileFrontendAttached->isChecked());
+    });
     connect(ui->drawNeedsUpdate,
             &QCheckBox::stateChanged,
             this,
@@ -187,6 +194,7 @@ void GraphicsPage::slot_loadConfig()
     ui->drawNeedsUpdate->setChecked(settings.showMissingMapId.get());
     ui->drawNotMappedExits->setChecked(settings.showUnmappedExits.get());
     ui->drawDoorNames->setChecked(settings.drawDoorNames);
+    ui->pauseWhileFrontendAttached->setChecked(settings.pauseWhileFrontendAttached.get());
 
     syncMapFontButton();
 

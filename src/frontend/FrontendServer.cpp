@@ -348,6 +348,7 @@ void FrontendServer::onNewConnection()
         log(QString("Frontend connected, %1 (%2 total)")
                 .arg(driving ? "driving" : "observing")
                 .arg(m_clients.size()));
+        emit sig_clientCountChanged(static_cast<int>(m_clients.size()));
     }
 }
 
@@ -360,6 +361,7 @@ void FrontendServer::onDisconnected(QWebSocket *const socket)
     utils::erase_if(m_clients, [socket](const Client &c) { return c.socket == socket; });
     updateViewerClaim();
     log(QString("Frontend disconnected (%1 remaining)").arg(m_clients.size()));
+    emit sig_clientCountChanged(static_cast<int>(m_clients.size()));
     socket->deleteLater();
 
     // The freed session is picked up by offerSession(), once the proxy teardown started by

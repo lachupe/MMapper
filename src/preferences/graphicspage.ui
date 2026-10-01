@@ -145,6 +145,16 @@
         </property>
        </widget>
       </item>
+      <item row="4" column="0" colspan="4">
+       <widget class="QCheckBox" name="pauseWhileFrontendAttached">
+        <property name="toolTip">
+         <string>While a frontend protocol client (e.g. mume3d) is connected, MMapper draws no map at all and frees the GPU for it. The map itself stays up to date and is drawn again when the last client disconnects.</string>
+        </property>
+        <property name="text">
+         <string>Pause map rendering while a frontend client is attached</string>
+        </property>
+       </widget>
+      </item>
       <item row="1" column="3">
        <spacer name="horizontalSpacer_2">
         <property name="orientation">
@@ -443,6 +453,7 @@
  <tabstops>
   <tabstop>antialiasingSamplesComboBox</tabstop>
   <tabstop>trilinearFilteringCheckBox</tabstop>
+  <tabstop>pauseWhileFrontendAttached</tabstop>
   <tabstop>mapFontPushButton</tabstop>
   <tabstop>drawUpperLayersTextured</tabstop>
   <tabstop>drawDoorNames</tabstop>

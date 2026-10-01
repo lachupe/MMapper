@@ -1410,6 +1410,15 @@ void MapCanvas::slot_requestUpdate()
     m_frameManager.requestUpdate();
 }
 
+void MapCanvas::setRenderingPaused(const bool paused)
+{
+    if (paused) {
+        cancelLongPress();
+        stopFlick();
+    }
+    m_frameManager.setPaused(paused);
+}
+
 void MapCanvas::screenChanged()
 {
     auto &gl = getOpenGL();

@@ -685,6 +685,7 @@ if(WITH_FRONTEND)
         frontend/FrontendMessages.h
         frontend/FrontendReplayCache.cpp
         frontend/FrontendReplayCache.h
+        frontend/FrontendRenderPause.h
         frontend/FrontendServer.cpp
         frontend/FrontendServer.h
         frontend/FrontendSession.cpp

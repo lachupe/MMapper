@@ -376,6 +376,7 @@ if(WITH_FRONTEND)
         ../src/frontend/FrontendMessages.h
         ../src/frontend/FrontendReplayCache.cpp
         ../src/frontend/FrontendReplayCache.h
+        ../src/frontend/FrontendRenderPause.h
         ../src/parser/AccountLines.cpp
         ../src/parser/AccountLines.h
         ../src/parser/CharLines.cpp

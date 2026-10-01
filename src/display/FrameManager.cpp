@@ -98,8 +98,28 @@ void FrameManager::requestUpdate()
     requestFrame();
 }
 
+void FrameManager::setPaused(const bool paused)
+{
+    if (m_paused == paused) {
+        return;
+    }
+    m_paused = paused;
+    if (paused) {
+        m_heartbeatTimer.stop();
+        return;
+    }
+    // Whatever was asked for while paused was only remembered in m_dirty; ask
+    // regardless, since the host may have lost its last frame meanwhile.
+    requestUpdate();
+}
+
 std::optional<FrameManager::Frame> FrameManager::beginFrame()
 {
+    if (m_paused) {
+        // m_dirty is kept for the frame that follows setPaused(false).
+        return std::nullopt;
+    }
+
     const auto now = std::chrono::steady_clock::now();
     const bool hasLastUpdate = (m_lastUpdateTime.time_since_epoch().count() != 0);
 
@@ -148,7 +168,7 @@ float FrameManager::getElapsedTime() const
 
 void FrameManager::onHeartbeat()
 {
-    if (!needsHeartbeat()) {
+    if (m_paused || !needsHeartbeat()) {
         m_heartbeatTimer.stop();
         return;
     }
@@ -184,6 +204,10 @@ void FrameManager::recordFramePainted()
 
 void FrameManager::requestFrame()
 {
+    if (m_paused) {
+        return;
+    }
+
     const auto delay = getTimeUntilNextFrame();
     if (delay == std::chrono::nanoseconds::zero()) {
         // We are ready to paint now. Stop any pending timer and request an update.

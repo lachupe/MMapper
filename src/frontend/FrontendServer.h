@@ -200,6 +200,9 @@ public:
 
 signals:
     void sig_log(const QString &mod, const QString &msg);
+    /// A frontend connected or disconnected; `count` is how many are attached now. MainWindow
+    /// pauses the map canvas while there is one (FrontendRenderPause).
+    void sig_clientCountChanged(int count);
 
 private:
     void onNewConnection();

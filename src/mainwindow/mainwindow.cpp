@@ -52,6 +52,7 @@
 #include "roomeditattrdlg.h"
 #include "utils.h"
 
+#include <algorithm>
 #include <array>
 #include <memory>
 #include <mutex>
@@ -367,6 +368,23 @@ MainWindow::MainWindow()
                 return;
             }
             m_frontendServer = frontend;
+
+            // MMapper's own map is not needed while a frontend shows the world, and costs
+            // GPU time the frontend wants: draw nothing from the first frontend to connect
+            // until the last one disconnects, unless the user turned that off.
+            auto &pauseSetting = setConfig().canvas.pauseWhileFrontendAttached;
+            std::ignore = m_frontendRenderPause.setEnabled(pauseSetting.get());
+            pauseSetting.registerChangeCallback(m_lifetime, [this]() {
+                const bool enabled = getConfig().canvas.pauseWhileFrontendAttached.get();
+                if (m_frontendRenderPause.setEnabled(enabled)) {
+                    updateFrontendRenderPause();
+                }
+            });
+            connect(frontend, &FrontendServer::sig_clientCountChanged, this, [this](int count) {
+                if (m_frontendRenderPause.setClientCount(static_cast<size_t>(std::max(0, count)))) {
+                    updateFrontendRenderPause();
+                }
+            });
 
             // Follow MMapper's confirmed position rather than typed movement commands.
             connect(m_pathMachine,
@@ -1284,14 +1302,27 @@ void MainWindow::hideCanvas(const bool hide)
     // REVISIT: It seems that updates don't work if the canvas is hidden,
     // so we may want to save mapChanged() and other similar requests
     // and send them after we show the canvas.
-    if (MapCanvasWindow *const canvas = getCanvas()) {
-        if (hide) {
-            canvas->hide();
-        } else {
-            canvas->show();
-        }
+    // MapWindow keeps it hidden while rendering is paused for a frontend.
+    if (m_mapWindow != nullptr) {
+        m_mapWindow->setCanvasHidden(hide);
     }
 }
+
+#ifndef MMAPPER_NO_FRONTEND
+void MainWindow::updateFrontendRenderPause()
+{
+    const bool paused = m_frontendRenderPause.isPaused();
+    deref(m_mapWindow)
+        .setRenderingPaused(paused,
+                            tr("Map rendering is paused: a frontend client is attached.\n"
+                               "(Preferences > Graphics: \"Pause map rendering while a frontend "
+                               "client is attached\")"));
+    slot_log("Frontend",
+             paused ? QString("Map rendering paused (%1 attached)")
+                          .arg(m_frontendRenderPause.clientCount())
+                    : QString("Map rendering resumed"));
+}
+#endif
 
 void MainWindow::setupMenuBar()
 {

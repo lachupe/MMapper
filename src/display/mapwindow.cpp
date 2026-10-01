@@ -184,6 +184,55 @@ MapWindow::MapWindow(MapData &mapData,
             &MapWindow::slot_applyScrollStep);
 }
 
+void MapWindow::setCanvasHidden(const bool hidden)
+{
+    m_canvasHidden = hidden;
+    updateCanvasVisibility();
+}
+
+void MapWindow::setRenderingPaused(const bool paused, const QString &reason)
+{
+    if (paused && m_pausedLabel == nullptr) {
+        m_pausedLabel = mmqt::makeQPointer<QLabel>(this);
+        m_pausedLabel->setAlignment(Qt::AlignCenter);
+        m_pausedLabel->setWordWrap(true);
+        // Opaque: the splash image may still be underneath.
+        m_pausedLabel->setAutoFillBackground(true);
+        m_pausedLabel->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Ignored);
+        m_gridLayout->addWidget(m_pausedLabel, 0, 0, 1, 1);
+    }
+    if (paused) {
+        m_pausedLabel->setText(reason);
+    }
+
+    if (m_renderingPaused == paused) {
+        return;
+    }
+    m_renderingPaused = paused;
+
+    MapCanvasWindow &canvas = deref(m_canvas);
+    if (paused) {
+        // Pause first, so that hiding cannot provoke one more frame.
+        canvas.setRenderingPaused(true);
+        updateCanvasVisibility();
+        m_pausedLabel->show();
+        m_pausedLabel->raise();
+    } else {
+        m_pausedLabel->hide();
+        updateCanvasVisibility();
+        // Asks for a frame: what changed meanwhile was only remembered.
+        canvas.setRenderingPaused(false);
+    }
+}
+
+void MapWindow::updateCanvasVisibility()
+{
+    // The container goes with the pause, so that the message has the place to
+    // itself; showing it shows the canvas, hence the order.
+    deref(m_canvasContainer).setVisible(!m_renderingPaused);
+    deref(m_canvas).setVisible(!m_renderingPaused && !m_canvasHidden);
+}
+
 void MapWindow::hideSplashImage()
 {
     if (m_splashWidget) {

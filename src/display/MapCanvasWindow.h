@@ -129,6 +129,8 @@ public:
     void userPressedEscape(bool pressed) { m_core.userPressedEscape(pressed); }
     void screenChanged() { m_core.screenChanged(); }
     void graphicsSettingsChanged() { m_core.graphicsSettingsChanged(); }
+    void setRenderingPaused(bool paused) { m_core.setRenderingPaused(paused); }
+    NODISCARD bool isRenderingPaused() const { return m_core.isRenderingPaused(); }
 
 signals:
     void sig_onCenter(glm::vec2 worldCoord);

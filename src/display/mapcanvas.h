@@ -371,6 +371,10 @@ public:
     void layerChanged();
     void slot_mapChanged();
     void slot_requestUpdate();
+    // Stops (or resumes) all painting: no frames, no animation heartbeat, no
+    // touch flick. Everything else keeps working and is drawn on resume.
+    void setRenderingPaused(bool paused);
+    NODISCARD bool isRenderingPaused() const { return m_frameManager.isPaused(); }
     void screenChanged();
     void selectionChanged();
     void graphicsSettingsChanged();

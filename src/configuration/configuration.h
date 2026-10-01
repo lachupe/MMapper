@@ -185,6 +185,9 @@ public:
         NamedConfig<bool> showMissingMapId{"SHOW_MISSING_MAPID", false};
         NamedConfig<bool> showUnsavedChanges{"SHOW_UNSAVED_CHANGES", false};
         NamedConfig<bool> showUnmappedExits{"SHOW_UNMAPPED_EXITS", false};
+        // Draw nothing while a frontend protocol client is attached; see
+        // FrontendRenderPause.
+        NamedConfig<bool> pauseWhileFrontendAttached{"PAUSE_WHILE_FRONTEND_ATTACHED", true};
         NamedConfig<QString> mapFontFamily{"MAP_FONT_FAMILY", QStringLiteral("Cantarell")};
         NamedConfig<int> mapFontPointSize{"MAP_FONT_POINT_SIZE", platformPointSize(11)};
         bool drawUpperLayersTextured = false;

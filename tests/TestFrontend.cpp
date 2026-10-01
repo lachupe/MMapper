@@ -5,6 +5,7 @@
 
 #include "../src/frontend/FrontendMapIdentity.h"
 #include "../src/frontend/FrontendMessages.h"
+#include "../src/frontend/FrontendRenderPause.h"
 #include "../src/frontend/FrontendReplayCache.h"
 #include "../src/frontend/FrontendSubscriptions.h"
 #include "../src/global/HideQDebug.h"
@@ -469,6 +470,42 @@ void TestFrontend::mapIdentityPacingTest()
     QCOMPARE(identity.announceDelayMs(9000), static_cast<int64_t>(0));
     identity.announced(9000);
     QCOMPARE(identity.announceDelayMs(9999), static_cast<int64_t>(1));
+}
+
+void TestFrontend::renderPauseTest()
+{
+    // Nothing attached: MMapper draws its map, whatever the setting says.
+    FrontendRenderPause pause;
+    QVERIFY(pause.isEnabled());
+    QVERIFY(!pause.isPaused());
+    QVERIFY(!pause.setClientCount(0));
+
+    // The first frontend to attach pauses, a second changes nothing, and only the last one
+    // to leave resumes. The setters report exactly the changes of isPaused().
+    QVERIFY(pause.setClientCount(1));
+    QVERIFY(pause.isPaused());
+    QVERIFY(!pause.setClientCount(2));
+    QVERIFY(pause.isPaused());
+    QVERIFY(!pause.setClientCount(1));
+    QVERIFY(pause.isPaused());
+    QVERIFY(pause.setClientCount(0));
+    QVERIFY(!pause.isPaused());
+
+    // Turned off in the preferences: frontends come and go and the map is drawn throughout.
+    QVERIFY(!pause.setEnabled(false));
+    QVERIFY(!pause.setClientCount(1));
+    QVERIFY(!pause.isPaused());
+    QCOMPARE(pause.clientCount(), size_t{1});
+
+    // Turned on (and off again) while a frontend is attached takes effect at once.
+    QVERIFY(pause.setEnabled(true));
+    QVERIFY(pause.isPaused());
+    QVERIFY(!pause.setEnabled(true));
+    QVERIFY(pause.setEnabled(false));
+    QVERIFY(!pause.isPaused());
+    QVERIFY(!pause.setClientCount(0));
+    QVERIFY(!pause.setEnabled(true));
+    QVERIFY(!pause.isPaused());
 }
 
 void TestFrontend::xmlElementTest()

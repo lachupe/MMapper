@@ -65,6 +65,7 @@ private:
     QTimer m_heartbeatTimer;
     RequestUpdateCallback m_requestUpdate;
     bool m_dirty = true;
+    bool m_paused = false;
     float m_elapsedTime = 0.0f;
     Legacy::UboManager &m_uboManager;
 
@@ -111,6 +112,16 @@ public:
      * @brief Mark the view state as dirty and request a frame.
      */
     void requestUpdate();
+
+    /**
+     * @brief Stop or resume rendering.
+     *
+     * While paused no frame is requested or started and the heartbeat timer is
+     * stopped, so animations stand still; update requests are only remembered.
+     * Resuming requests a frame, whether or not anything changed meanwhile.
+     */
+    void setPaused(bool paused);
+    NODISCARD bool isPaused() const { return m_paused; }
 
     /**
      * @brief Check if enough time has passed to render a new frame.

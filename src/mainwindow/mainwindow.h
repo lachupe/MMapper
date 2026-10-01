@@ -6,6 +6,7 @@
 // Author: Nils Schimmelmann <nschimme@gmail.com> (Jahara)
 
 #include "../display/CanvasMouseModeEnum.h"
+#include "../frontend/FrontendRenderPause.h"
 #include "../global/Signal2.h"
 #include "../global/macros.h"
 #include "../group/mmapper2group.h"
@@ -96,6 +97,7 @@ private:
     std::unique_ptr<GameObserver> m_gameObserver;
 #ifndef MMAPPER_NO_FRONTEND
     QPointer<FrontendServer> m_frontendServer;
+    FrontendRenderPause m_frontendRenderPause;
 #endif
     AutoLogger *m_logger = nullptr;
     ConnectionListener *m_listener = nullptr;
@@ -391,6 +393,10 @@ private:
         DELETE_CTORS_AND_ASSIGN_OPS(CanvasHider);
     };
     void hideCanvas(bool hide);
+#ifndef MMAPPER_NO_FRONTEND
+    // Applies m_frontendRenderPause to the map window.
+    void updateFrontendRenderPause();
+#endif
 
     NODISCARD MapCanvasWindow *getCanvas() const;
     void mapChanged() const;

@@ -42,6 +42,8 @@ protected:
     QPointer<MapCanvasWindow> m_canvas;
     QPointer<QWidget> m_canvasContainer;
     QPointer<QWidget> m_splashWidget;
+    // Shown in the canvas's place while rendering is paused.
+    QPointer<QLabel> m_pausedLabel;
 
 private:
     // Scroll math (world<->scroll-unit conversion) and the continuous-scroll
@@ -51,6 +53,9 @@ private:
     MapScroller *m_scroller = nullptr;
     // Compact layout: drag-to-pan makes the bars dead weight on a phone.
     bool m_scrollBarsSuppressed = false;
+    // The two reasons the canvas may be hidden; see updateCanvasVisibility().
+    bool m_canvasHidden = false;
+    bool m_renderingPaused = false;
 
 public:
     explicit MapWindow(MapData &mapData,
@@ -74,7 +79,16 @@ public:
     NODISCARD float getZoom() const;
     void hideSplashImage();
 
+    // Hides the canvas while a map is loaded (MainWindow::hideCanvas()).
+    void setCanvasHidden(bool hidden);
+    // Stops the canvas from drawing and puts a plain message in its place,
+    // e.g. while a frontend client that draws the world itself is attached.
+    // The canvas is hidden, so it gets no frames, no exposes and no input.
+    void setRenderingPaused(bool paused, const QString &reason = QString());
+    NODISCARD bool isRenderingPaused() const { return m_renderingPaused; }
+
 private:
+    void updateCanvasVisibility();
     void centerOnScrollPos(glm::ivec2 scrollPos);
 
 signals:
