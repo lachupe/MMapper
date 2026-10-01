@@ -10,6 +10,7 @@
 #include "../parser/CharAffects.h"
 #include "../parser/CharFollowers.h"
 #include "../parser/CharRefused.h"
+#include "../parser/ExitLooks.h"
 #include "../parser/RoomDoors.h"
 #include "../parser/CharLines.h"
 #include "../parser/CombatLines.h"
@@ -335,6 +336,17 @@ NODISCARD GmcpMessage makeCharRefused(const CharRefused &refused);
 /// whole at each change, replayed as last sent, and empty again in another room. See
 /// RoomDoorTracker.
 NODISCARD GmcpMessage makeRoomDoor(const RoomDoors &doors);
+
+/// MMapper.Room.Look -- MUME's answer to a look at a side, paired with the look whichever client
+/// sent it: `room` (MUME's id of the room it was sent in; left out when Room.Info gave none),
+/// `dir` (north, east, south, west, up, down), `command` (the line as sent), `kind`
+/// (description, nothing, door, dark, no-exit, empty, other), `text` (the answer, its lines
+/// joined with "\n", MUME's own asynchronous lines left out), `lines`, `door` {`name`, `state`
+/// (open, closed, broken)} when the answer named one, `uncertain` and `reasons` (extra-prompt,
+/// fight, room-display, moved, empty, other, lost), `dropped` (the lines left out of `text`) and
+/// `raw` (every line from the look to the prompt that closed it). An event: not replayed. Sent
+/// to every subscriber of MMapper.Room, driving or observing. See ExitLookTracker.
+NODISCARD GmcpMessage makeRoomLook(const ExitLook &look);
 
 /// MMapper.Account.Menu -- MUME's account menu: `commands`, each {`name` (the command word,
 /// lowercase), `usage` ("Play <name>"), `help`}, in the menu's order, and `sorts`, the sort

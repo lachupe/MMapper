@@ -529,6 +529,8 @@ set(mmapper_SRCS
     parser/ContainerLines.h
     parser/DoorAction.cpp
     parser/DoorAction.h
+    parser/ExitLooks.cpp
+    parser/ExitLooks.h
     parser/GameStateLines.cpp
     parser/GameStateLines.h
     parser/ItemLines.cpp

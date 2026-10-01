@@ -279,6 +279,31 @@ set_target_properties(
 )
 add_test(NAME TestRefusedDoors COMMAND TestRefusedDoors)
 
+# MUME's answers to looks at a side, paired with the looks (MMapper.Room.Look)
+set(TestExitLooks_SRCS
+    TestExitLooks.cpp
+    TestExitLooks.h
+    ../src/parser/ExitLooks.cpp
+    ../src/parser/ExitLooks.h
+    ../src/parser/RoomDoors.cpp
+    ../src/parser/RoomDoors.h
+    )
+add_executable(TestExitLooks ${TestExitLooks_SRCS})
+add_dependencies(TestExitLooks mm_test mm_global)
+target_link_libraries(TestExitLooks
+        mm_test
+        mm_global
+        Qt6::Test
+        coverage_config)
+set_target_properties(
+  TestExitLooks PROPERTIES
+  CXX_STANDARD 20
+  CXX_STANDARD_REQUIRED ON
+  CXX_EXTENSIONS OFF
+  COMPILE_FLAGS "${WARNING_FLAGS}"
+)
+add_test(NAME TestExitLooks COMMAND TestExitLooks)
+
 # Shops, guilds, inns and trophies, the money in them, and MUME's pager
 set(TestTradeLines_SRCS
     TestTradeLines.cpp
@@ -441,6 +466,8 @@ if(WITH_FRONTEND)
         ../src/parser/CombatLines.h
         ../src/parser/ContainerLines.cpp
         ../src/parser/ContainerLines.h
+        ../src/parser/ExitLooks.cpp
+        ../src/parser/ExitLooks.h
         ../src/parser/ItemLines.cpp
         ../src/parser/ItemLines.h
         ../src/parser/RoomContents.cpp

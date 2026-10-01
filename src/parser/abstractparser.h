@@ -394,6 +394,9 @@ private:
 
     void showDoorCommandHelp();
     void showMumeTime();
+    /// `_lookexits`: one `look <side>` for each exit of MUME's last Room.Info, hidden ones left
+    /// out; sent at once, on the player's command only. See ExitLookTracker.
+    void doLookExits();
     void showHelp();
     void showMiscHelp();
     void showCommandPrefix();

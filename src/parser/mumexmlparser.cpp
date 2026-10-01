@@ -91,6 +91,13 @@ MumeXmlParser::MumeXmlParser(MapData &md,
         m_containerTracker.receiveCommand(line);
         // What a later line about a door that names none is about.
         m_doorTracker.receiveCommand(line);
+        // Each line is one more prompt to come; a look at a side waits for its answer
+        // (MMapper.Room.Look). A string may hold several lines.
+        for (const QString &one : line.split(QLatin1Char('\n'), Qt::SkipEmptyParts)) {
+            if (!one.trimmed().isEmpty()) {
+                m_exitLooks.receiveCommand(one);
+            }
+        }
         // `order` and `label`: what the next "Ok." answers.
         m_followersTracker.receiveCommand(line, QDateTime::currentSecsSinceEpoch());
         m_itemTracker.receiveCommand(line);
@@ -115,6 +122,9 @@ MumeXmlParser::MumeXmlParser(MapData &md,
             m_itemTracker.reset();
             m_charTracker.reset();
             m_tradeReaders.reset();
+            // A line typed with echo off is not reported, but MUME answers it: the count of
+            // prompts to come starts again.
+            m_exitLooks.reset();
         }
     });
     m_observer.sig2_disconnected.connect(m_lifetime, [this]() {
@@ -127,6 +137,7 @@ MumeXmlParser::MumeXmlParser(MapData &md,
         m_tradeReaders.reset();
         m_followersTracker.reset();
         m_doorTracker.reset();
+        m_exitLooks.reset();
     });
     // The followers were this character's and this session's: forgotten, with nothing sent,
     // when MMapper connects again and when the character leaves the game (a rent, a quit,
@@ -135,6 +146,7 @@ MumeXmlParser::MumeXmlParser(MapData &md,
     m_observer.sig2_connected.connect(m_lifetime, [this]() {
         m_followersTracker.reset();
         m_doorTracker.reset();
+        m_exitLooks.reset();
     });
     m_observer.sig2_gameStateChanged.connect(m_lifetime, [this](const GameStateEnum state) {
         if (state != GameStateEnum::PLAYING) {
@@ -339,8 +351,44 @@ void MumeXmlParser::parse(const TelnetData &data, const bool isGoAhead)
     // Published after the terminal output of the line that closed them, so a client can
     // line each element up against text it has already been given. An element opened on an
     // earlier line arrives with the line that finally closes it, not the one that began it.
+    // What this line is to a look at a side waiting for its answer (MMapper.Room.Look): a line of
+    // a room display, a fight's, MUME's own speech, movement, magic or weather, or text.
+    const QString lookLine = chunk.plain.trimmed();
+    LineKindEnum lookKind = LineKindEnum::TEXT;
+    if (m_lineFlags.isRoom()
+        || (m_xmlMode != XmlModeEnum::NONE && m_xmlMode != XmlModeEnum::PROMPT)) {
+        lookKind = LineKindEnum::ROOM;
+    } else if (!isGoAhead && !lookLine.isEmpty() && parseCombatLine(chunk.plain).has_value()) {
+        lookKind = LineKindEnum::COMBAT;
+    }
     for (const XmlElement &xml : m_xmlTracker.take()) {
         m_observer.observeSentToUserXml(xml);
+        if (lookKind == LineKindEnum::TEXT && !lookLine.isEmpty()) {
+            const QString elementText = xml.text.trimmed();
+            const bool covers = !elementText.isEmpty()
+                                && (elementText.contains(lookLine) || lookLine.contains(elementText));
+            switch (toXmlCategory(xml.tag)) {
+            case XmlCategoryEnum::ROOM:
+                lookKind = LineKindEnum::ROOM;
+                break;
+            case XmlCategoryEnum::COMBAT:
+                lookKind = covers ? LineKindEnum::COMBAT : lookKind;
+                break;
+            case XmlCategoryEnum::COMMUNICATION:
+            case XmlCategoryEnum::MOVEMENT:
+            case XmlCategoryEnum::MAGIC:
+            case XmlCategoryEnum::PROGRESS:
+                lookKind = covers ? LineKindEnum::ASYNC : lookKind;
+                break;
+            case XmlCategoryEnum::STATUS:
+                lookKind = covers && xml.tag == XmlTagEnum::WEATHER ? LineKindEnum::ASYNC : lookKind;
+                break;
+            case XmlCategoryEnum::ENTITY:
+            case XmlCategoryEnum::FORMATTING:
+            case XmlCategoryEnum::UNKNOWN:
+                break;
+            }
+        }
         // The door marks of a room display's exits line: "[north]", "(east)", "#up#".
         if (xml.tag == XmlTagEnum::EXITS) {
             if (const auto doors
@@ -387,6 +435,14 @@ void MumeXmlParser::parse(const TelnetData &data, const bool isGoAhead)
             RoomContentsSnapshot changed = m_containerTracker.current();
             changed.entered = false;
             m_observer.observeRoomContents(changed);
+        }
+    }
+    if (!isGoAhead) {
+        m_exitLooks.receiveLine(lookLine, lookKind);
+    }
+    if (isRealPrompt) {
+        for (const ExitLook &look : m_exitLooks.receivePrompt()) {
+            m_observer.observeExitLook(look);
         }
     }
     if (isRealPrompt) {

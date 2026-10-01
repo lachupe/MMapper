@@ -53,6 +53,10 @@ void MumeXmlParser::slot_parseGmcpInput(const GmcpMessage &msg)
         if (doors.has_value()) {
             m_observer.observeRoomDoors(*doors);
         }
+        // The room the looks at its sides are sent in (MMapper.Room.Look). See ExitLookTracker.
+        if (msg.isRoomInfo()) {
+            m_exitLooks.receiveRoom(parseRoomInfoDoors(json).room);
+        }
     }
 
     auto pObj = msg.getJsonDocument()->getObject();

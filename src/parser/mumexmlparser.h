@@ -16,6 +16,7 @@
 #include "CharRefused.h"
 #include "CombatLines.h"
 #include "ContainerLines.h"
+#include "ExitLooks.h"
 #include "ItemLines.h"
 #include "LineFlags.h"
 #include "RoomContents.h"
@@ -88,6 +89,8 @@ private:
     CharFollowersTracker m_followersTracker;
     /// The doors of the current room as MUME told the player. See RoomDoorTracker.
     RoomDoorTracker m_doorTracker;
+    /// MUME's answers to `look <side>`, paired with the looks. See ExitLookTracker.
+    ExitLookTracker m_exitLooks;
     /// See AccountLinesTracker.
     AccountLinesTracker m_accountTracker;
     ItemCommandTracker m_itemCommands;

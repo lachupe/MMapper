@@ -204,6 +204,8 @@ const Abbrev cmdGenerateBaseMap{"generate-base-map"};
 const Abbrev cmdGroup{"group", 2};
 const Abbrev cmdHelp{"help", 2};
 const Abbrev cmdHotkey{"hotkey", 3};
+// One `look <side>` for each exit MUME listed (MMapper.Room.Look).
+const Abbrev cmdLookExits{"lookexits", 5};
 const Abbrev cmdMap{"map"};
 const Abbrev cmdMark{"mark", 3};
 // TODO: move this to a sub-command of _map
@@ -1289,6 +1291,18 @@ void AbstractParser::initSpecialCommandMap()
             return true;
         },
         makeSimpleHelp("Displays the current MUME time."));
+    add(
+        cmdLookExits,
+        [this](const View<StringView> /*s*/, StringView rest) {
+            if (!rest.isEmpty()) {
+                return false;
+            }
+            this->doLookExits();
+            return true;
+        },
+        makeSimpleHelp("Sends `look <side>` once for each exit MUME listed in this room's "
+                       "Room.Info, now, as an alias would; a hidden exit is left out. The "
+                       "answers go to frontends as MMapper.Room.Look."));
     add(
         cmdVote,
         [this](const View<StringView> /*s*/, StringView rest) {

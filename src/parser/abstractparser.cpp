@@ -801,6 +801,31 @@ void AbstractParser::showMumeTime()
     sendToUser(SendToUserSourceEnum::FromMMapper, data);
 }
 
+void AbstractParser::doLookExits()
+{
+    // The exits MUME itself listed for this room, never the map's: a hidden exit the player has
+    // not found must not be named or looked along by MMapper (RoomDoors.h, HIDDEN DOORS), and one
+    // MUME flags hidden is left for the player to look at by hand.
+    QStringList sides;
+    for (const ExitDirEnum dir : ALL_EXITS_NESWUD) {
+        const RawExit &exit = m_commonData.roomExits[dir];
+        if (!exit.exitIsExit() || exit.getDoorFlags().isHidden()) {
+            continue;
+        }
+        sides.append(QString::fromLatin1(lowercaseDirection(dir)));
+    }
+    if (sides.isEmpty()) {
+        sendToUser(SendToUserSourceEnum::FromMMapper,
+                   QString("MUME has listed no exits for this room yet.\n"));
+        return;
+    }
+    for (const QString &side : sides) {
+        sendToMud(QString("look %1\n").arg(side));
+    }
+    sendToUser(SendToUserSourceEnum::FromMMapper,
+               QString("Looking %1.\n").arg(sides.join(QStringLiteral(", "))));
+}
+
 void AbstractParser::showDoorCommandHelp()
 {
     showHeader("MMapper door help");

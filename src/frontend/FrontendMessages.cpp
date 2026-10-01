@@ -868,6 +868,28 @@ GmcpMessage makeRoomDoor(const RoomDoors &doors)
     return GmcpMessage{GmcpMessageTypeEnum::MMAPPER_ROOM_DOOR, toGmcpJson(obj)};
 }
 
+GmcpMessage makeRoomLook(const ExitLook &look)
+{
+    QJsonObject obj;
+    putNumber(obj, "room", look.room);
+    obj["dir"] = look.dir;
+    obj["command"] = look.command;
+    obj["kind"] = mmqt::toQStringUtf8(to_string_view(look.kind));
+    obj["text"] = look.text;
+    obj["lines"] = QJsonArray::fromStringList(look.lines);
+    if (!look.door.isEmpty()) {
+        QJsonObject door;
+        door["name"] = look.door;
+        putText(door, "state", look.doorState);
+        obj["door"] = door;
+    }
+    obj["uncertain"] = look.uncertain;
+    obj["reasons"] = QJsonArray::fromStringList(look.reasons);
+    obj["dropped"] = QJsonArray::fromStringList(look.dropped);
+    obj["raw"] = QJsonArray::fromStringList(look.raw);
+    return GmcpMessage{GmcpMessageTypeEnum::MMAPPER_ROOM_LOOK, toGmcpJson(obj)};
+}
+
 GmcpMessage makeCharCommand(const ItemCommandObservation &command)
 {
     QJsonObject obj;

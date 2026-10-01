@@ -25,6 +25,7 @@
 #include "../src/parser/CharRefused.h"
 #include "../src/parser/CombatLines.h"
 #include "../src/parser/ContainerLines.h"
+#include "../src/parser/ExitLooks.h"
 #include "../src/parser/GameStateLines.h"
 #include "../src/parser/ItemLines.h"
 #include "../src/parser/RoomContents.h"
@@ -1851,6 +1852,39 @@ void TestFrontend::charRefusedTest()
     // An event: nothing of it is kept for a frontend that connects later.
     FrontendReplayCache cache;
     cache.remember(frontend_messages::makeCharRefused(ride));
+    QVERIFY(cache.messages().empty());
+}
+
+void TestFrontend::roomLookTest()
+{
+    QCOMPARE(GmcpMessage::fromRawBytes(QByteArray{"MMapper.Room.Look"}).getType(),
+             GmcpMessageTypeEnum::MMAPPER_ROOM_LOOK);
+
+    // A say inside the answer (log-2005.09.03-02.28.34.txt:11384-11388), as MumeXmlParser
+    // hands it on.
+    ExitLookTracker tracker;
+    tracker.receiveRoom(1101);
+    tracker.receiveCommand(QStringLiteral("l n"));
+    tracker.receiveLine(QStringLiteral("The giant, thick wooden is open."), LineKindEnum::TEXT);
+    tracker.receiveLine(QStringLiteral("*Stolb the Orc* [stolb] says 'yawn'"), LineKindEnum::ASYNC);
+    const auto done = tracker.receivePrompt();
+    QCOMPARE(done.size(), size_t{1});
+    const GmcpMessage msg = frontend_messages::makeRoomLook(done[0]);
+    QCOMPARE(msg.toRawBytes(),
+             QByteArray(R"(MMapper.Room.Look {"command":"l n","dir":"north",)"
+                        R"("door":{"name":"giant, thick wooden","state":"open"},)"
+                        R"("dropped":["*Stolb the Orc* [stolb] says 'yawn'"],"kind":"door",)"
+                        R"("lines":["The giant, thick wooden is open."],)"
+                        R"("raw":["The giant, thick wooden is open.",)"
+                        R"("*Stolb the Orc* [stolb] says 'yawn'"],"reasons":[],"room":1101,)"
+                        R"("text":"The giant, thick wooden is open.","uncertain":false})"));
+
+    // To every subscriber of MMapper.Room, observers too; an event, not replayed.
+    FrontendSubscriptions subs;
+    QVERIFY(subs.applySupports(parse(R"(Core.Supports.Set [ "MMapper.Room 1" ])")));
+    QVERIFY(subs.wants(msg));
+    FrontendReplayCache cache;
+    cache.remember(msg);
     QVERIFY(cache.messages().empty());
 }
 

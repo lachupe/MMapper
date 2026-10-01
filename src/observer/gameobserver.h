@@ -9,6 +9,7 @@
 #include "../parser/AccountLines.h"
 #include "../parser/CharFollowers.h"
 #include "../parser/CharRefused.h"
+#include "../parser/ExitLooks.h"
 #include "../parser/RoomDoors.h"
 #include "../parser/CharLines.h"
 #include "../parser/CombatLines.h"
@@ -105,6 +106,9 @@ public:
     Signal2<CharRefused> sig2_charRefused;
     /// The doors of the room the character stands in, whole, after a change. See RoomDoorTracker.
     Signal2<RoomDoors> sig2_roomDoors;
+    /// MUME's answer to a look at a side, paired with the look, whichever client sent it. An
+    /// event. See ExitLookTracker.
+    Signal2<ExitLook> sig2_exitLook;
     /// The reply to CHAR_LEVEL_REQUEST, which is kept out of the terminal. See parseCharLevelLine.
     Signal2<CharLevel> sig2_charLevel;
     /// MUME's account menu, its `list` of characters and its one-line answers. See
@@ -182,6 +186,7 @@ public:
     }
     void observeCharRefused(const CharRefused &refused) { sig2_charRefused.invoke(refused); }
     void observeRoomDoors(const RoomDoors &doors) { sig2_roomDoors.invoke(doors); }
+    void observeExitLook(const ExitLook &look) { sig2_exitLook.invoke(look); }
     void observeCharLevel(const CharLevel &level) { sig2_charLevel.invoke(level); }
     void observeAccountMenu(const AccountMenu &menu) { sig2_accountMenu.invoke(menu); }
     void observeAccountChars(const AccountChars &chars) { sig2_accountChars.invoke(chars); }

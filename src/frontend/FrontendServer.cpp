@@ -248,6 +248,12 @@ FrontendServer::FrontendServer(GameObserver &observer,
         publish(msg);
     });
 
+    // Event: MUME's answer to a look at a side, whichever client sent the look; to every
+    // subscriber, observers included. Not replayed.
+    m_observer.sig2_exitLook.connect(m_lifetime, [this](const ExitLook &look) {
+        publish(frontend_messages::makeRoomLook(look));
+    });
+
     // State: the level, experience and travel points, as the last reply to CHAR_LEVEL_REQUEST
     // gave them.
     m_observer.sig2_charLevel.connect(m_lifetime, [this](const CharLevel &level) {
