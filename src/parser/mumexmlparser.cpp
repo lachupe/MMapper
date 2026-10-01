@@ -134,6 +134,7 @@ MumeXmlParser::MumeXmlParser(MapData &md,
         m_itemTracker.reset();
         m_charTracker.reset();
         m_accountTracker.reset();
+        m_loginTracker.reset();
         m_tradeReaders.reset();
         m_followersTracker.reset();
         m_doorTracker.reset();
@@ -147,11 +148,16 @@ MumeXmlParser::MumeXmlParser(MapData &md,
         m_followersTracker.reset();
         m_doorTracker.reset();
         m_exitLooks.reset();
+        m_loginTracker.reset();
     });
     m_observer.sig2_gameStateChanged.connect(m_lifetime, [this](const GameStateEnum state) {
         if (state != GameStateEnum::PLAYING) {
             m_followersTracker.reset();
             m_doorTracker.reset();
+        } else {
+            // In the game: no login prompt stands. The frontend server drops its own copy at
+            // the same signal.
+            m_loginTracker.reset();
         }
     });
     // "X opens the chest." is told in a door's words: a word that names a container is no door.
@@ -267,6 +273,16 @@ void MumeXmlParser::parse(const TelnetData &data, const bool isGoAhead)
             m_ownCastTracker.attribute(*combat);
             m_ownCastTracker.receiveEvent(*combat);
             m_observer.observeSentToUserCombat(*combat);
+        }
+        // MUME's login: the name prompt, the pass phrase prompt and its refusals, for a
+        // frontend that asks in a window of its own (MMapper.Session.State's `login`). Read
+        // before the game state, so that the state that says "menu" for the name prompt
+        // already says which prompt it is; and never in the game, where a line may end in
+        // "password:" and mean nothing.
+        if (m_observer.getGameState() != GameStateEnum::PLAYING) {
+            if (const auto loginPrompt = m_loginTracker.receiveLine(plain)) {
+                m_observer.observeLoginPrompt(*loginPrompt);
+            }
         }
         // A rent, camp rent or quit, or MUME's menu: the character has left the game with the
         // connection still open, which nothing in GMCP says. Prompts too, for "Account> ".

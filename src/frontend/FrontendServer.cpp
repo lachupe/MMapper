@@ -77,6 +77,7 @@ FrontendServer::FrontendServer(GameObserver &observer,
 
     m_observer.sig2_connected.connect(m_lifetime, [this]() {
         m_upstreamConnected = true;
+        m_loginPrompt = LoginPrompt{};
         // A new game session invalidates everything we cached from the previous one.
         m_replayCache.clear();
         m_charAffects.reset();
@@ -90,6 +91,7 @@ FrontendServer::FrontendServer(GameObserver &observer,
 
     m_observer.sig2_disconnected.connect(m_lifetime, [this]() {
         m_upstreamConnected = false;
+        m_loginPrompt = LoginPrompt{};
         m_charEquipment.reset();
         m_charInventory.reset();
         m_charContainers.clear();
@@ -111,12 +113,23 @@ FrontendServer::FrontendServer(GameObserver &observer,
             m_charEquipment.reset();
             m_charInventory.reset();
             m_charContainers.clear();
+        } else {
+            // A character is in the game: no login prompt stands.
+            m_loginPrompt = LoginPrompt{};
         }
         publishSessionState();
     });
 
     m_observer.sig2_toggledEchoMode.connect(m_lifetime, [this](const bool echo) {
         m_echo = echo;
+        publishSessionState();
+    });
+
+    // State: the login prompt MUME waits at, in MMapper.Session.State's `login`, so that it
+    // comes with `game` and `echo` in one message and is replayed with them. Sent at every
+    // prompt, the same one again too: that is how a refusal is told.
+    m_observer.sig2_loginPrompt.connect(m_lifetime, [this](const LoginPrompt &prompt) {
+        m_loginPrompt = prompt;
         publishSessionState();
     });
 
@@ -531,7 +544,8 @@ GmcpMessage FrontendServer::sessionStateFor(const Client &client) const
                                                m_echo,
                                                m_driver != nullptr && m_driver == client.socket,
                                                m_observer.getGameState(),
-                                               m_trade.viewerState());
+                                               m_trade.viewerState(),
+                                               m_loginPrompt);
 }
 
 void FrontendServer::handleInput(Client &client, const GmcpMessage &msg)

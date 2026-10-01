@@ -16,6 +16,7 @@
 #include "../parser/ContainerLines.h"
 #include "../parser/GameStateLines.h"
 #include "../parser/ItemLines.h"
+#include "../parser/LoginLines.h"
 #include "../parser/RoomContents.h"
 #include "../parser/SendToUserSourceEnum.h"
 #include "../parser/TradeLines.h"
@@ -116,6 +117,9 @@ public:
     Signal2<AccountMenu> sig2_accountMenu;
     Signal2<AccountChars> sig2_accountChars;
     Signal2<AccountReply> sig2_accountReply;
+    /// The login prompt MUME waits at, each time it prints one, and a prompt of kind NONE when
+    /// the login is over. See LoginLinesTracker. Never what the player answered.
+    Signal2<LoginPrompt> sig2_loginPrompt;
     /// MUME's replies at shops, guilds and inns, and to `trop`, complete. See TradeLinesTracker.
     /// The tables and deals come at the real prompt that ends them, before sig2_realPrompt; a
     /// practised line at once, an inn quote once its "You have enough money" line came.
@@ -191,6 +195,7 @@ public:
     void observeAccountMenu(const AccountMenu &menu) { sig2_accountMenu.invoke(menu); }
     void observeAccountChars(const AccountChars &chars) { sig2_accountChars.invoke(chars); }
     void observeAccountReply(const AccountReply &reply) { sig2_accountReply.invoke(reply); }
+    void observeLoginPrompt(const LoginPrompt &prompt) { sig2_loginPrompt.invoke(prompt); }
     void observeShopList(const ShopList &list) { sig2_shopList.invoke(list); }
     void observeShopDeal(const ShopDeal &deal) { sig2_shopDeal.invoke(deal); }
     void observeGuildTeacher(const GuildTeacher &teacher) { sig2_guildTeacher.invoke(teacher); }

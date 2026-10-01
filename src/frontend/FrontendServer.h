@@ -7,6 +7,7 @@
 #include "../global/macros.h"
 #include "../map/roomid.h"
 #include "../parser/CharAffects.h"
+#include "../parser/LoginLines.h"
 #include "../proxy/GmcpMessage.h"
 #include "FrontendMapIdentity.h"
 #include "FrontendReplayCache.h"
@@ -112,6 +113,8 @@ private:
 
     bool m_upstreamConnected = false;
     bool m_echo = true;
+    /// The login prompt MUME waits at, MMapper.Session.State's `login`; NONE for none.
+    LoginPrompt m_loginPrompt;
 
     /// The loaded map as MMapper.Session.State names it, and when it may next announce a change.
     FrontendMapIdentity m_mapIdentity;

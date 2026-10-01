@@ -11,6 +11,7 @@
 #include "../map/PromptFlags.h"
 #include "../observer/gameobserver.h"
 #include "AccountLines.h"
+#include "LoginLines.h"
 #include "CharFollowers.h"
 #include "CharLines.h"
 #include "CharRefused.h"
@@ -93,6 +94,8 @@ private:
     ExitLookTracker m_exitLooks;
     /// See AccountLinesTracker.
     AccountLinesTracker m_accountTracker;
+    /// See LoginLinesTracker.
+    LoginLinesTracker m_loginTracker;
     ItemCommandTracker m_itemCommands;
     /// MUME's replies at shops, guilds and inns and to `trop`, and the pager, which is told
     /// from the real prompt here for every reader. See TradeReaders.

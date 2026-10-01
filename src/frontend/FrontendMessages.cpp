@@ -215,7 +215,8 @@ GmcpMessage makeSessionState(const bool upstreamConnected,
                              const bool echo,
                              const bool driving,
                              const GameStateEnum game,
-                             const QString &viewer)
+                             const QString &viewer,
+                             const LoginPrompt &login)
 {
     QJsonObject obj;
     obj["itemCommands"] = 6;
@@ -232,6 +233,20 @@ GmcpMessage makeSessionState(const bool upstreamConnected,
     // Only in the game while MUME is there at all.
     obj["game"] = mmqt::toQStringUtf8(
         gameStateName(upstreamConnected ? game : GameStateEnum::UNKNOWN));
+    // Only while MUME waits at a login prompt; a frontend that finds none asks nothing.
+    if (upstreamConnected && login.kind != LoginPromptKindEnum::NONE) {
+        QJsonObject prompt;
+        prompt["kind"] = mmqt::toQStringUtf8(loginPromptKindName(login.kind));
+        prompt["text"] = login.text;
+        prompt["serial"] = login.serial;
+        if (!login.refusedReason.isEmpty()) {
+            QJsonObject refused;
+            refused["reason"] = login.refusedReason;
+            refused["text"] = login.refusedText;
+            prompt["refused"] = refused;
+        }
+        obj["login"] = prompt;
+    }
     return GmcpMessage{GmcpMessageTypeEnum::MMAPPER_SESSION_STATE, toGmcpJson(obj)};
 }
 

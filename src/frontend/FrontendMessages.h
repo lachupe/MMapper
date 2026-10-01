@@ -17,6 +17,7 @@
 #include "../parser/ContainerLines.h"
 #include "../parser/GameStateLines.h"
 #include "../parser/ItemLines.h"
+#include "../parser/LoginLines.h"
 #include "../parser/RoomContents.h"
 #include "../parser/SendToUserSourceEnum.h"
 #include "../parser/WeatherLines.h"
@@ -78,12 +79,19 @@ struct NODISCARD MapIdentity final
 /// `trade` is the version of the trade operations MMapper.Trade.Request runs (TradeOperations),
 /// 1 today. `viewer` is MUME's `change viewer` setting as far as MMapper knows it: "external",
 /// "simple", "off" or "unknown" (TradeOperations::viewerState()).
+///
+/// `login` is there only while MUME waits at a login prompt (LoginLinesTracker): `kind` "name"
+/// or "password", `text` (the prompt as MUME printed it), `serial` (one more for every prompt
+/// MUME prints, to tell a prompt printed again from the state sent again) and, when MUME asks
+/// again, `refused` {`reason` "wrong-password", "no-such-name" or "illegal-name", `text` MUME's
+/// words}. It never holds what the player answered.
 NODISCARD GmcpMessage makeSessionState(bool upstreamConnected,
                                        const MapIdentity &map,
                                        bool echo,
                                        bool driving,
                                        GameStateEnum game = GameStateEnum::UNKNOWN,
-                                       const QString &viewer = QStringLiteral("unknown"));
+                                       const QString &viewer = QStringLiteral("unknown"),
+                                       const LoginPrompt &login = LoginPrompt{});
 
 /// MMapper.Session.Error — a protocol error reported to one frontend.
 ///

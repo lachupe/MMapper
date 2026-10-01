@@ -536,6 +536,8 @@ set(mmapper_SRCS
     parser/ItemLines.cpp
     parser/ItemLines.h
     parser/LineFlags.h
+    parser/LoginLines.cpp
+    parser/LoginLines.h
     parser/RoomContents.cpp
     parser/RoomContents.h
     parser/RoomDoors.cpp

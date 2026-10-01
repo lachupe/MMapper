@@ -57,6 +57,8 @@ add_library(mm_test STATIC
     ../src/observer/gameobserver.h
     ../src/parser/GameStateLines.cpp
     ../src/parser/GameStateLines.h
+    ../src/parser/LoginLines.cpp
+    ../src/parser/LoginLines.h
     ../src/proxy/GmcpMessage.cpp
     ../src/proxy/GmcpMessage.h
 )
@@ -210,6 +212,24 @@ set_target_properties(
   COMPILE_FLAGS "${WARNING_FLAGS}"
 )
 add_test(NAME TestAccountLines COMMAND TestAccountLines)
+
+# MUME's login prompts and their refusals (LoginLines itself is in mm_test, for the observer)
+set(TestLoginLines_SRCS TestLoginLines.cpp)
+add_executable(TestLoginLines ${TestLoginLines_SRCS})
+add_dependencies(TestLoginLines mm_test mm_global)
+target_link_libraries(TestLoginLines
+        mm_test
+        mm_global
+        Qt6::Test
+        coverage_config)
+set_target_properties(
+  TestLoginLines PROPERTIES
+  CXX_STANDARD 20
+  CXX_STANDARD_REQUIRED ON
+  CXX_EXTENSIONS OFF
+  COMPILE_FLAGS "${WARNING_FLAGS}"
+)
+add_test(NAME TestLoginLines COMMAND TestLoginLines)
 
 # The character's figures: stat, score and info
 set(TestCharLines_SRCS TestCharLines.cpp ../src/parser/CharLines.cpp ../src/parser/CharLines.h)
