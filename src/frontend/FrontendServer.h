@@ -10,6 +10,7 @@
 #include "../parser/LoginLines.h"
 #include "../proxy/GmcpMessage.h"
 #include "FrontendMapIdentity.h"
+#include "FrontendMessages.h"
 #include "FrontendReplayCache.h"
 #include "FrontendSession.h"
 #include "FrontendSubscriptions.h"
@@ -60,6 +61,11 @@ class QWebSocketServer;
 /// MMapper.Input.Reply and not to the terminal. MUME's viewer is claimed while the driving
 /// frontend subscribes to MMapper.View.
 ///
+/// Any frontend, driving or not, may send MMapper.Terminal.Filter to be spared parts of its own
+/// MMapper.Terminal.Output (a room's description): kept per connection, and of no effect on any
+/// other frontend, on MMapper's own client or on a telnet client. What was kept from a terminal
+/// is told in MMapper.Terminal.Hidden.
+///
 /// Subscribing brings a frontend up to date: its MMapper.Session.State, then the state MUME
 /// has described so far (see FrontendReplayCache), the game clock and the mapped position.
 /// Events -- terminal output, XML elements, combat events -- are not replayed. The session
@@ -73,7 +79,8 @@ class QWebSocketServer;
 /// instead), "unsupported" (a package frontends may not send),
 /// "read-only" (input from a frontend that is observing), "invalid-command" (an
 /// MMapper.Input.Command without a `text` string), "invalid-trade" (an MMapper.Trade.Request
-/// or .Cancel without an `id` string) and "invalid-quiet" (an MMapper.Input.Quiet without one).
+/// or .Cancel without an `id` string), "invalid-quiet" (an MMapper.Input.Quiet without one) and
+/// "invalid-filter" (an MMapper.Terminal.Filter that is no object of booleans).
 /// Like every package it only reaches a
 /// frontend subscribed to its module, MMapper.Session. Only an oversized frame closes the
 /// connection.
@@ -87,6 +94,8 @@ private:
         QWebSocket *socket = nullptr;
         FrontendSubscriptions subscriptions;
         QString name;
+        /// What this frontend asked to be spared in its terminal output: nothing, to begin with.
+        frontend_messages::TerminalFilter filter;
     };
 
 private:
@@ -236,6 +245,10 @@ private:
     void handleTrade(Client &client, const GmcpMessage &msg);
     /// MMapper.Input.Quiet.
     void handleQuiet(Client &client, const GmcpMessage &msg);
+    /// MMapper.Terminal.Filter.
+    void handleFilter(Client &client, const GmcpMessage &msg);
+    /// MMapper.Terminal.Output, to each frontend as its filter has it.
+    void publishTerminal(const TerminalOutput &out);
     /// What TradeOperations is told of the session with a request.
     NODISCARD TradeOperations::Context tradeContext() const;
     /// Works out again whether the driving frontend claims MUME's viewer (claimsViewer()).

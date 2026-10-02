@@ -24,7 +24,36 @@
 #include "../parser/XmlElement.h"
 #include "../proxy/GmcpMessage.h"
 
+#include <cstdint>
+#include <optional>
+#include <vector>
+
 #include <QString>
+
+/// A part of a terminal chunk's text: `length` characters from `start`.
+struct NODISCARD TerminalSpan final
+{
+    qsizetype start = 0;
+    qsizetype length = 0;
+};
+
+/// What MMapper kept out of a terminal, for a frontend to say so and to show on demand
+/// (MMapper.Terminal.Hidden).
+enum class NODISCARD TerminalHiddenEnum : uint8_t {
+    /// A room's description, left out for the frontends that asked (MMapper.Terminal.Filter).
+    ROOM_DESCRIPTION,
+    /// The reply to CHAR_LEVEL_REQUEST, the MMXP line, which no terminal is sent.
+    CHAR_LEVEL
+};
+
+struct NODISCARD TerminalHidden final
+{
+    TerminalHiddenEnum kind = TerminalHiddenEnum::ROOM_DESCRIPTION;
+    /// The text, colour removed, its lines joined by a newline and none at its end.
+    QString text;
+    /// MUME's id of the room a description is of, as far as MMapper knew it then.
+    std::optional<uint32_t> roomId;
+};
 
 /// A chunk of downstream terminal output, exactly as it was handed to UserTelnet.
 ///
@@ -39,6 +68,10 @@ struct NODISCARD TerminalOutput final
     /// True when the chunk ends at a telnet GO-AHEAD, i.e. it is a prompt or twiddler
     /// rather than a newline-terminated line.
     bool goAhead = false;
+    /// The parts of `text` that are a room's description, in order; none for most chunks. The
+    /// telnet client is sent them like the rest; a frontend may ask to be spared them
+    /// (MMapper.Terminal.Filter).
+    std::vector<TerminalSpan> roomDescription;
 };
 
 class NODISCARD GameObserver final
@@ -146,6 +179,8 @@ public:
     /// signal.
     Signal2<QString> sig2_quietLine;
     Signal2<> sig2_quietEnded;
+    /// Something that was, or for some frontends is, kept out of the terminal. See TerminalHidden.
+    Signal2<TerminalHidden> sig2_terminalHidden;
     /// A text MUME showed through its viewer, published instead of MMapper's own window while a
     /// frontend has claimed the viewer. See setViewerClaimed().
     Signal2<ViewText> sig2_viewText;
@@ -174,6 +209,14 @@ private:
     PromptFogEnum m_fog = PromptFogEnum::NO_FOG;
     GameStateEnum m_gameState = GameStateEnum::UNKNOWN;
     bool m_viewerClaimed = false;
+    /// What the parser said of the chunk it is about to send to the user: its text, to know the
+    /// chunk by, and the parts of it that are a room's description. See observeTerminalSpans().
+    struct NODISCARD PendingSpans final
+    {
+        QString text;
+        std::vector<TerminalSpan> roomDescription;
+    };
+    std::optional<PendingSpans> m_pendingSpans;
 
 public:
     void observeConnected();
@@ -181,6 +224,12 @@ public:
     void observeSentToMud(const QString &ba);
     void observeSentToUser(const QString &ba);
     void observeSentToUserTerminal(SendToUserSourceEnum source, const QString &text, bool goAhead);
+    /// Said by the parser just before it sends MUME's chunk `text` to the user: which parts of it
+    /// are a room's description. The next chunk of MUME's that reaches the terminal carries them
+    /// in sig2_sentToUserTerminal if it is that text; they are forgotten otherwise. This goes
+    /// beside the output path and not through it, so that nothing between the parser and the
+    /// user's telnet has to know of it.
+    void observeTerminalSpans(const QString &text, std::vector<TerminalSpan> roomDescription);
     void observeSentToUserGmcp(const GmcpMessage &m);
     void observeSentToUserXml(const XmlElement &element);
     void observeSentToUserCombat(const CombatEvent &event);
@@ -221,6 +270,7 @@ public:
     void observeQuietCommand(const QuietCommandEnum what) { sig2_quietCommand.invoke(what); }
     void observeQuietLine(const QString &plain) { sig2_quietLine.invoke(plain); }
     void observeQuietEnded() { sig2_quietEnded.invoke(); }
+    void observeTerminalHidden(const TerminalHidden &hidden) { sig2_terminalHidden.invoke(hidden); }
     void observeViewText(const ViewText &view) { sig2_viewText.invoke(view); }
     /// Whether a frontend has claimed MUME's viewer: viewed texts then go out as sig2_viewText
     /// and MMapper opens no window of its own for them.

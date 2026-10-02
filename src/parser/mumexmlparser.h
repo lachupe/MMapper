@@ -64,6 +64,9 @@ private:
     XmlModeEnum m_xmlMode = XmlModeEnum::NONE;
     LineFlags m_lineFlags{};
     QString m_lineToUser;
+    /// The parts of m_lineToUser that are the room's description, which a frontend may ask to
+    /// be spared (MMapper.Terminal.Filter). The user's telnet is sent the whole line.
+    std::vector<TerminalSpan> m_descriptionSpans;
     QString m_tempCharacters;
     QString m_tempTag;
     QString m_stringBuffer;
@@ -138,6 +141,8 @@ public:
 private:
     void parseMudCommands(const QString &str);
     NODISCARD QString characters(QString &ch);
+    /// Appends what characters() makes of `ch` to m_lineToUser, noting a room's description.
+    void appendToLine(QString &ch);
     NODISCARD bool element(const QString &);
     void setMove(CommandEnum dir);
     void move();

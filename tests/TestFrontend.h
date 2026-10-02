@@ -21,6 +21,10 @@ private Q_SLOTS:
     static void subscriptionMalformedTest();
     static void relayFilterTest();
     static void terminalOutputTest();
+    static void terminalFilterTest();
+    static void terminalFilterPayloadTest();
+    static void terminalHiddenTest();
+    static void terminalSpansTest();
     static void sessionStateTest();
     static void gameStateTest();
     static void inputSubscriptionTest();

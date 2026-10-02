@@ -6,6 +6,8 @@
 
 #include "../global/parserutils.h"
 
+#include <utility>
+
 void GameObserver::observeConnected()
 {
     m_gameState = GameStateEnum::UNKNOWN;
@@ -46,7 +48,24 @@ void GameObserver::observeSentToUserTerminal(const SendToUserSourceEnum source,
                                              const QString &text,
                                              const bool goAhead)
 {
-    sig2_sentToUserTerminal.invoke(TerminalOutput{source, text, goAhead});
+    TerminalOutput out;
+    out.source = source;
+    out.text = text;
+    out.goAhead = goAhead;
+    // MMapper's own chunks (the newline it adds after a prompt) come between and take nothing.
+    if (source == SendToUserSourceEnum::FromMud && m_pendingSpans.has_value()) {
+        if (m_pendingSpans->text == text) {
+            out.roomDescription = std::move(m_pendingSpans->roomDescription);
+        }
+        m_pendingSpans.reset();
+    }
+    sig2_sentToUserTerminal.invoke(out);
+}
+
+void GameObserver::observeTerminalSpans(const QString &text,
+                                        std::vector<TerminalSpan> roomDescription)
+{
+    m_pendingSpans = PendingSpans{text, std::move(roomDescription)};
 }
 
 void GameObserver::observeSentToUserGmcp(const GmcpMessage &m)

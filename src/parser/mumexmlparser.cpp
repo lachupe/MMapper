@@ -190,6 +190,7 @@ void MumeXmlParser::slot_parseNewMudInput(const TelnetData &data)
 void MumeXmlParser::parse(const TelnetData &data, const bool isGoAhead)
 {
     m_lineToUser.clear();
+    m_descriptionSpans.clear();
     m_lineFlags.remove(LineFlagEnum::NONE);
 
     std::string_view utf8 = mmqt::toStdStringViewRaw(data.line.getQByteArray());
@@ -214,7 +215,7 @@ void MumeXmlParser::parse(const TelnetData &data, const bool isGoAhead)
                 // characters() decodes entities in place, so the tracker is fed afterwards
                 // and sees the same text the user does -- including the parts characters()
                 // routes elsewhere rather than returning, such as the exits block.
-                m_lineToUser.append(characters(m_tempCharacters));
+                appendToLine(m_tempCharacters);
                 m_xmlTracker.receiveText(m_tempCharacters);
                 m_tempCharacters.clear();
 
@@ -226,7 +227,7 @@ void MumeXmlParser::parse(const TelnetData &data, const bool isGoAhead)
     });
 
     if (!m_readingTag) {
-        m_lineToUser.append(characters(m_tempCharacters));
+        appendToLine(m_tempCharacters);
         m_xmlTracker.receiveText(m_tempCharacters);
         m_tempCharacters.clear();
     }
@@ -240,10 +241,19 @@ void MumeXmlParser::parse(const TelnetData &data, const bool isGoAhead)
             m_observer.observeCharLevel(*level);
             // Asked by a quiet command, it is a line of that reply like any other, though no
             // reader below is given it: without it the reply would seem never to have come.
-            if (m_tradeReaders.captureQuietLine(plain)) {
+            const bool quiet = m_tradeReaders.captureQuietLine(plain);
+            if (quiet) {
                 m_observer.observeQuietLine(plain);
             }
             m_lineToUser.clear();
+            m_descriptionSpans.clear();
+            // For a frontend that says what was hidden; a quiet command says so itself.
+            if (!quiet) {
+                TerminalHidden hidden;
+                hidden.kind = TerminalHiddenEnum::CHAR_LEVEL;
+                hidden.text = plain.trimmed();
+                m_observer.observeTerminalHidden(hidden);
+            }
         }
     }
     // What the chunk is, decided once for every reader: a line, MUME's pager line (on a GA, but
@@ -280,6 +290,9 @@ void MumeXmlParser::parse(const TelnetData &data, const bool isGoAhead)
             m_observer.observeQuietLine(chunk.plain);
         }
         if (!chunk.hidden) {
+            if (!m_descriptionSpans.empty()) {
+                m_observer.observeTerminalSpans(m_lineToUser, m_descriptionSpans);
+            }
             sendToUser(SendToUserSourceEnum::FromMud, m_lineToUser, isGoAhead);
         }
 
@@ -436,6 +449,33 @@ void MumeXmlParser::parse(const TelnetData &data, const bool isGoAhead)
             case XmlCategoryEnum::FORMATTING:
             case XmlCategoryEnum::UNKNOWN:
                 break;
+            }
+        }
+        // The room's description, whole, once its display has closed: what a frontend that
+        // was spared it in the terminal (MMapper.Terminal.Filter) can still show. A snooped
+        // room lies inside <snoop>, and is not reported.
+        if (xml.tag == XmlTagEnum::ROOM || xml.tag == XmlTagEnum::DESCRIPTION) {
+            const XmlElement *description = xml.tag == XmlTagEnum::DESCRIPTION ? &xml : nullptr;
+            for (const XmlElement &child : xml.children) {
+                if (child.tag == XmlTagEnum::DESCRIPTION) {
+                    description = &child;
+                }
+            }
+            if (description != nullptr) {
+                TerminalHidden hidden;
+                hidden.kind = TerminalHiddenEnum::ROOM_DESCRIPTION;
+                hidden.text = description->text;
+                ParserUtils::removeAnsiMarksInPlace(hidden.text);
+                hidden.text.remove(QLatin1Char('\r'));
+                while (hidden.text.endsWith(QLatin1Char('\n'))) {
+                    hidden.text.chop(1);
+                }
+                if (m_serverId != INVALID_SERVER_ROOMID) {
+                    hidden.roomId = m_serverId.asUint32();
+                }
+                if (!hidden.text.isEmpty()) {
+                    m_observer.observeTerminalHidden(hidden);
+                }
             }
         }
         // The door marks of a room display's exits line: "[north]", "(east)", "#up#".
@@ -797,6 +837,21 @@ bool MumeXmlParser::element(const QString &line)
     }
 
     return true;
+}
+
+void MumeXmlParser::appendToLine(QString &ch)
+{
+    // As characters() reads the flags: a prompt, the exits and the name come before the
+    // description. A snooped room's is somebody else's output, and left alone.
+    const bool description = m_lineFlags.isDescription() && !m_lineFlags.isPrompt()
+                             && !m_lineFlags.isExits() && !m_lineFlags.isName()
+                             && !m_lineFlags.isSnoop();
+    const qsizetype start = m_lineToUser.size();
+    m_lineToUser.append(characters(ch));
+    const qsizetype length = m_lineToUser.size() - start;
+    if (description && length > 0) {
+        m_descriptionSpans.push_back(TerminalSpan{start, length});
+    }
 }
 
 QString MumeXmlParser::characters(QString &ch)

@@ -120,6 +120,18 @@ GmcpMessage makeQuietReply(const QuietReplyState &state)
                        GmcpJson{QString::fromUtf8(json)}};
 }
 
+GmcpMessage makeQuietHidden(const QuietReplyState &state)
+{
+    QJsonObject obj;
+    obj["kind"] = QStringLiteral("quiet.command");
+    obj["id"] = state.id;
+    obj["command"] = state.text;
+    obj["count"] = static_cast<int>(state.lines.size());
+    const QByteArray json = QJsonDocument{obj}.toJson(QJsonDocument::Compact);
+    return GmcpMessage{GmcpMessageTypeEnum::MMAPPER_TERMINAL_HIDDEN,
+                       GmcpJson{QString::fromUtf8(json)}};
+}
+
 bool claimsViewer(const FrontendSubscriptions &subscriptions, const bool driving)
 {
     return driving && subscriptions.subscribes("MMapper.View");
@@ -561,6 +573,11 @@ void TradeOperations::finish(const TradeStatusEnum status,
         }
         reply.paged = op.pages > 0;
         reply.complete = status == TradeStatusEnum::DONE && !op.truncated;
+        // What was kept from the terminal is said once, for whoever lists such things, before
+        // the reply that carries it.
+        if (!reply.lines.isEmpty()) {
+            m_publish(makeQuietHidden(reply));
+        }
         m_publish(makeQuietReply(reply));
         return;
     }

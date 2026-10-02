@@ -739,6 +739,59 @@ void TestTradeOperations::quietReplyMessageTest()
                         R"("reason":"","status":"done","text":"prac"})"));
 }
 
+void TestTradeOperations::quietHiddenTest()
+{
+    // One MMapper.Terminal.Hidden for a quiet command whose reply was kept from the terminal:
+    // which command, whose request, how many lines. The lines are in the reply, not here too.
+    QuietReplyState state;
+    state.id = QStringLiteral("k1");
+    state.text = QStringLiteral("prac");
+    state.lines << QStringLiteral("You have 0 practice sessions left.") << QStringLiteral("Skill");
+    const GmcpMessage msg = makeQuietHidden(state);
+    QVERIFY(msg.isMMapperTerminalHidden());
+    QCOMPARE(msg.toRawBytes(),
+             QByteArray(R"(MMapper.Terminal.Hidden {"command":"prac","count":2,"id":"k1",)"
+                        R"("kind":"quiet.command"})"));
+
+    Mume mume;
+    mume.requestQuiet(R"({"id":"k","text":"prac"})");
+    mume.flush();
+    mume.quietLine(QStringLiteral("You have 0 practice sessions left."));
+    mume.quietLine(QStringLiteral("Skill / Spell        Knowledge  Difficulty  Class"));
+    mume.quietPrompt();
+    QCOMPARE(mume.names,
+             (std::vector<QString>{QStringLiteral("MMapper.Terminal.Hidden"),
+                                   QStringLiteral("MMapper.Input.Reply")}));
+    QCOMPARE(mume.ops.front()["kind"].toString(), QStringLiteral("quiet.command"));
+    QCOMPARE(mume.ops.front()["id"].toString(), QStringLiteral("k"));
+    QCOMPARE(mume.ops.front()["command"].toString(), QStringLiteral("prac"));
+    QCOMPARE(mume.ops.front()["count"].toInt(), 2);
+    QVERIFY(!mume.ops.front().contains("lines"));
+    QVERIFY(!mume.ops.front().contains("text"));
+
+    // Stopped with a part of the reply hidden: said as well.
+    Mume held;
+    held.requestQuiet(R"({"id":"l","text":"prac"})");
+    held.flush();
+    held.quietLine(QStringLiteral("You have 0 practice sessions left."));
+    held.quietPager(40);
+    held.player(QStringLiteral("flee"));
+    QCOMPARE(held.status(), QStringLiteral("stopped"));
+    QCOMPARE(held.names.front(), QStringLiteral("MMapper.Terminal.Hidden"));
+    QCOMPARE(held.ops.front()["count"].toInt(), 1);
+
+    // Nothing was hidden: nothing is said. A timeout with no line, and a refusal.
+    Mume late;
+    late.requestQuiet(R"({"id":"m","text":"prac"})");
+    late.flush();
+    late.clock += TradeOperations::QUIET_TIMEOUT_MS;
+    late.trade->expire();
+    QCOMPARE(late.names, std::vector<QString>{QStringLiteral("MMapper.Input.Reply")});
+    Mume refused;
+    refused.requestQuiet(R"({"id":"n","text":""})");
+    QCOMPARE(refused.names, std::vector<QString>{QStringLiteral("MMapper.Input.Reply")});
+}
+
 void TestTradeOperations::quietCommandTest()
 {
     // The quiet command: MMapper sends the frontend's line itself and tells the parser once
@@ -764,7 +817,9 @@ void TestTradeOperations::quietCommandTest()
     mume.quietLine(QStringLiteral("Bandage              Average    Easy        None"));
     mume.quietLine(QStringLiteral(""));
     mume.quietPrompt();
-    QCOMPARE(mume.ops.size(), size_t{1});
+    // What was hidden is said first, then the reply.
+    QCOMPARE(mume.ops.size(), size_t{2});
+    QCOMPARE(mume.names.front(), QStringLiteral("MMapper.Terminal.Hidden"));
     QCOMPARE(mume.names.back(), QStringLiteral("MMapper.Input.Reply"));
     QCOMPARE(mume.last()["id"].toString(), QStringLiteral("k"));
     QCOMPARE(mume.last()["text"].toString(), QStringLiteral("prac"));
@@ -1195,7 +1250,8 @@ void TestTradeOperations::quietWholeTest()
                     ""});
         mume.prompt();
         QCOMPARE(mume.shown, QStringList{"o W C Mana:Hot>"});
-        QCOMPARE(mume.packages, (QStringList{"skills:2:1", "MMapper.Input.Reply"}));
+        QCOMPARE(mume.packages,
+                 (QStringList{"skills:2:1", "MMapper.Terminal.Hidden", "MMapper.Input.Reply"}));
         QCOMPARE(mume.status(), QStringLiteral("done"));
         QCOMPARE(mume.replyLines().size(), qsizetype{4});
         QCOMPARE(mume.replyLines().front(), QStringLiteral("You have 0 practice sessions left."));
@@ -1217,7 +1273,8 @@ void TestTradeOperations::quietWholeTest()
         mume.lines(g_pageTwo);
         mume.prompt();
         QVERIFY(mume.shown.isEmpty());
-        QCOMPARE(mume.packages, (QStringList{"skills:4:1", "MMapper.Input.Reply"}));
+        QCOMPARE(mume.packages,
+                 (QStringList{"skills:4:1", "MMapper.Terminal.Hidden", "MMapper.Input.Reply"}));
         QCOMPARE(mume.status(), QStringLiteral("done"));
         QVERIFY(mume.last()["paged"].toBool());
         QVERIFY(mume.last()["complete"].toBool());
@@ -1237,7 +1294,8 @@ void TestTradeOperations::quietWholeTest()
                     ""});
         mume.prompt();
         QVERIFY(mume.shown.isEmpty());
-        QCOMPARE(mume.packages, (QStringList{"stat:131", "MMapper.Input.Reply"}));
+        QCOMPARE(mume.packages,
+                 (QStringList{"stat:131", "MMapper.Terminal.Hidden", "MMapper.Input.Reply"}));
         QCOMPARE(mume.replyLines(),
                  (QStringList{"OB: 131%, DB: 24%, PB: 0%, Armour: 0%. Wimpy: 111. Mood: wimpy.",
                               "Needed: 1,108,995 xp, 0 tp. Gold: 0. Alert: normal."}));
@@ -1261,7 +1319,8 @@ void TestTradeOperations::quietWholeTest()
         QCOMPARE(mume.shown,
                  (QStringList{"Gandalf tells you 'are you there?'\n", "o W C Mana:Hot>"}));
         QCOMPARE(mume.sent, (QStringList{"prac", ""}));
-        QCOMPARE(mume.packages, (QStringList{"skills:4:1", "MMapper.Input.Reply"}));
+        QCOMPARE(mume.packages,
+                 (QStringList{"skills:4:1", "MMapper.Terminal.Hidden", "MMapper.Input.Reply"}));
         QCOMPARE(mume.status(), QStringLiteral("done"));
         QVERIFY(!mume.replyLines().contains(QStringLiteral("Gandalf tells you 'are you there?'")));
     }

@@ -224,6 +224,269 @@ void TestFrontend::terminalOutputTest()
     QCOMPARE(payloadOf(own)["source"].toString(), QStringLiteral("mmapper"));
 }
 
+namespace {
+
+/// The chunks MumeXmlParser::parse() makes of `document`, with the parts it marks as a room's
+/// description: a chunk ends at each newline, the tags are taken out, and a run of text inside
+/// <description> is noted with where it stands in the chunk. What is left at the end is the
+/// prompt.
+NODISCARD std::vector<TerminalOutput> chunksOf(const QString &document)
+{
+    std::vector<TerminalOutput> chunks;
+    TerminalOutput chunk;
+    QString run;
+    bool inDescription = false;
+    const auto endRun = [&chunk, &run, &inDescription]() {
+        if (!run.isEmpty() && inDescription) {
+            chunk.roomDescription.push_back(TerminalSpan{chunk.text.size(), run.size()});
+        }
+        chunk.text += run;
+        run.clear();
+    };
+    qsizetype i = 0;
+    while (i < document.size()) {
+        const QChar c = document.at(i);
+        if (c == QLatin1Char('<')) {
+            endRun();
+            const qsizetype end = document.indexOf(QLatin1Char('>'), i);
+            const QString tag = document.mid(i + 1, end - i - 1);
+            if (tag == QStringLiteral("description")) {
+                inDescription = true;
+            } else if (tag == QStringLiteral("/description")) {
+                inDescription = false;
+            }
+            i = end + 1;
+            continue;
+        }
+        run += c;
+        ++i;
+        if (c == QLatin1Char('\n')) {
+            endRun();
+            chunks.push_back(std::exchange(chunk, TerminalOutput{}));
+        }
+    }
+    endRun();
+    if (!chunk.text.isEmpty()) {
+        chunk.goAhead = true;
+        chunks.push_back(chunk);
+    }
+    return chunks;
+}
+
+/// What a frontend with `filter` is sent of `chunks`: each message's text, in order.
+NODISCARD QStringList textsFor(const std::vector<TerminalOutput> &chunks,
+                               const frontend_messages::TerminalFilter &filter)
+{
+    QStringList texts;
+    for (const TerminalOutput &chunk : chunks) {
+        if (const auto msg = frontend_messages::makeTerminalOutput(chunk, filter)) {
+            texts << payloadOf(*msg)["text"].toString();
+        }
+    }
+    return texts;
+}
+
+} // namespace
+
+void TestFrontend::terminalFilterTest()
+{
+    frontend_messages::TerminalFilter off;
+    frontend_messages::TerminalFilter on;
+    on.roomDescriptions = true;
+
+    // A room as MUME sends it in XML mode (the shape of TestWeatherLines' rooms: MUME's colour
+    // and the line end are inside the elements), its description two lines long, with an
+    // object lying in it and the prompt after it.
+    const QString room = QStringLiteral(
+        "<room><name>\x1b[32mRolling Hills\x1b[0m\n</name>"
+        "<description>\x1b[34mThe land gently rises and falls around here creating some\n"
+        "pleasant hills.\x1b[0m\n</description>A lantern lies here.\n</room>"
+        "<prompt>*. CRW HP:Fine></prompt>");
+    const std::vector<TerminalOutput> chunks = chunksOf(room);
+    QCOMPARE(chunks.size(), size_t{5});
+    QVERIFY(chunks[0].roomDescription.empty());
+    QCOMPARE(chunks[1].roomDescription.size(), size_t{1});
+    QCOMPARE(chunks[2].roomDescription.size(), size_t{1});
+    QVERIFY(chunks[3].roomDescription.empty());
+    QVERIFY(chunks[4].goAhead);
+
+    // The filter off: every chunk goes, byte for byte what it was before there was a filter.
+    for (const TerminalOutput &chunk : chunks) {
+        const auto msg = frontend_messages::makeTerminalOutput(chunk, off);
+        QVERIFY(msg.has_value());
+        QCOMPARE(msg->toRawBytes(),
+                 frontend_messages::makeTerminalOutput(chunk.source, chunk.text, chunk.goAhead)
+                     .toRawBytes());
+    }
+
+    // The filter on: the name, the object and the prompt, and nothing where the description
+    // was. Its two lines arrived as two chunks; both are gone, and no empty line stands in.
+    const QStringList spared = textsFor(chunks, on);
+    QCOMPARE(spared,
+             (QStringList{QStringLiteral("\x1b[32mRolling Hills\x1b[0m\n"),
+                          QStringLiteral("A lantern lies here.\n"),
+                          QStringLiteral("*. CRW HP:Fine>")}));
+    QVERIFY(!spared.join(QString{}).contains(QStringLiteral("\n\n")));
+    // What stays is sent as it was: the same message as without the filter.
+    QCOMPARE(frontend_messages::makeTerminalOutput(chunks[0], on)->toRawBytes(),
+             frontend_messages::makeTerminalOutput(chunks[0], off)->toRawBytes());
+
+    // Brief mode, or a room MUME gives no description of: nothing is marked, nothing changes.
+    const std::vector<TerminalOutput> brief = chunksOf(QStringLiteral(
+        "<room><name>Rolling Hills\n</name>A lantern lies here.\n</room><prompt>*></prompt>"));
+    QCOMPARE(textsFor(brief, on), textsFor(brief, off));
+    QCOMPARE(textsFor(brief, on).size(), qsizetype{3});
+
+    // The closing tag after the line's end, or before it: either way the line goes whole.
+    const std::vector<TerminalOutput> closed = chunksOf(QStringLiteral(
+        "<room><name>A Cave\n</name><description>Dark and damp.</description>\n"
+        "A bat hangs here.\n</room>"));
+    QCOMPARE(textsFor(closed, on),
+             (QStringList{QStringLiteral("A Cave\n"), QStringLiteral("A bat hangs here.\n")}));
+    // And with MUME's line end as "\r\n", or colour left around the description.
+    TerminalOutput crlf;
+    crlf.text = QStringLiteral("Dark and damp.\r\n");
+    crlf.roomDescription.push_back(TerminalSpan{0, 14});
+    QVERIFY(!frontend_messages::makeTerminalOutput(crlf, on).has_value());
+    TerminalOutput coloured;
+    coloured.text = QStringLiteral("\x1b[34mDark and damp.\x1b[0m\n");
+    coloured.roomDescription.push_back(TerminalSpan{5, 14});
+    QVERIFY(!frontend_messages::makeTerminalOutput(coloured, on).has_value());
+    QVERIFY(frontend_messages::makeTerminalOutput(coloured, off).has_value());
+
+    // A description that shares its line with something else: only its own words go.
+    TerminalOutput shared;
+    shared.text = QStringLiteral("A Cave: Dark and damp. Exits: north.\n");
+    shared.roomDescription.push_back(TerminalSpan{8, 15});
+    QCOMPARE(payloadOf(*frontend_messages::makeTerminalOutput(shared, on))["text"].toString(),
+             QStringLiteral("A Cave: Exits: north.\n"));
+
+    // Parts that do not fit the text are cut to it, not trusted.
+    TerminalOutput odd;
+    odd.text = QStringLiteral("A Cave\n");
+    odd.roomDescription.push_back(TerminalSpan{50, 10});
+    odd.roomDescription.push_back(TerminalSpan{2, -4});
+    QCOMPARE(payloadOf(*frontend_messages::makeTerminalOutput(odd, on))["text"].toString(),
+             QStringLiteral("A Cave\n"));
+}
+
+void TestFrontend::terminalFilterPayloadTest()
+{
+    QCOMPARE(GmcpMessage::fromRawBytes(QByteArray{"MMapper.Terminal.Filter"}).getType(),
+             GmcpMessageTypeEnum::MMAPPER_TERMINAL_FILTER);
+    const auto apply = [](const char *const raw, frontend_messages::TerminalFilter &filter) {
+        return frontend_messages::applyTerminalFilter(GmcpMessage::fromRawBytes(QByteArray{raw}),
+                                                      filter);
+    };
+
+    // Nothing is spared to begin with.
+    frontend_messages::TerminalFilter filter;
+    QVERIFY(!filter.roomDescriptions);
+    QCOMPARE(frontend_messages::makeTerminalFilter(filter).toRawBytes(),
+             QByteArray(R"(MMapper.Terminal.Filter {"roomDescriptions":false})"));
+
+    QVERIFY(apply(R"(MMapper.Terminal.Filter {"roomDescriptions":true})", filter));
+    QVERIFY(filter.roomDescriptions);
+    QCOMPARE(frontend_messages::makeTerminalFilter(filter).toRawBytes(),
+             QByteArray(R"(MMapper.Terminal.Filter {"roomDescriptions":true})"));
+    // A key it does not have is left as it is; one not known is ignored.
+    QVERIFY(apply(R"(MMapper.Terminal.Filter {})", filter));
+    QVERIFY(filter.roomDescriptions);
+    QVERIFY(apply(R"(MMapper.Terminal.Filter {"weather":true})", filter));
+    QVERIFY(filter.roomDescriptions);
+    QVERIFY(apply(R"(MMapper.Terminal.Filter {"roomDescriptions":false})", filter));
+    QVERIFY(!filter.roomDescriptions);
+
+    // Anything else is refused, and changes nothing.
+    filter.roomDescriptions = true;
+    QVERIFY(!apply(R"(MMapper.Terminal.Filter {"roomDescriptions":"yes"})", filter));
+    QVERIFY(!apply(R"(MMapper.Terminal.Filter {"roomDescriptions":1})", filter));
+    QVERIFY(!apply(R"(MMapper.Terminal.Filter [true])", filter));
+    QVERIFY(!apply(R"(MMapper.Terminal.Filter)", filter));
+    QVERIFY(filter.roomDescriptions);
+}
+
+void TestFrontend::terminalHiddenTest()
+{
+    QCOMPARE(GmcpMessage{GmcpMessageTypeEnum::MMAPPER_TERMINAL_HIDDEN}.getName().toQByteArray(),
+             QByteArray("MMapper.Terminal.Hidden"));
+
+    // A room's description, with the text itself and the room it is of.
+    TerminalHidden description;
+    description.kind = TerminalHiddenEnum::ROOM_DESCRIPTION;
+    description.text = QStringLiteral("The land gently rises and falls.\nPleasant hills.");
+    description.roomId = 1234567;
+    QCOMPARE(frontend_messages::makeTerminalHidden(description).toRawBytes(),
+             QByteArray(R"(MMapper.Terminal.Hidden {"kind":"room.description","roomId":1234567,)"
+                        R"("text":"The land gently rises and falls.\nPleasant hills."})"));
+    // Without a room id when MMapper has none.
+    description.roomId.reset();
+    QVERIFY(!payloadOf(frontend_messages::makeTerminalHidden(description)).contains("roomId"));
+
+    // The MMXP line, which no terminal is sent.
+    TerminalHidden level;
+    level.kind = TerminalHiddenEnum::CHAR_LEVEL;
+    level.text = QStringLiteral("MMXP 56 45370716 1029284 271013 0");
+    QCOMPARE(frontend_messages::makeTerminalHidden(level).toRawBytes(),
+             QByteArray(R"(MMapper.Terminal.Hidden {"kind":"char.level",)"
+                        R"("text":"MMXP 56 45370716 1029284 271013 0"})"));
+
+    // A frontend is told of a description only if it was spared it: the others were sent the
+    // text. What nobody was sent, everybody is told of.
+    frontend_messages::TerminalFilter off;
+    frontend_messages::TerminalFilter on;
+    on.roomDescriptions = true;
+    description.kind = TerminalHiddenEnum::ROOM_DESCRIPTION;
+    QVERIFY(!frontend_messages::wantsTerminalHidden(description, off));
+    QVERIFY(frontend_messages::wantsTerminalHidden(description, on));
+    QVERIFY(frontend_messages::wantsTerminalHidden(level, off));
+    QVERIFY(frontend_messages::wantsTerminalHidden(level, on));
+
+    // The package is MMapper.Terminal's: a frontend that reads the terminal gets it.
+    FrontendSubscriptions subs;
+    QVERIFY(subs.applySupports(
+        GmcpMessage::fromRawBytes(QByteArray{R"(Core.Supports.Set ["MMapper.Terminal 1"])"})));
+    QVERIFY(subs.wants(frontend_messages::makeTerminalHidden(level)));
+    QVERIFY(subs.wants(frontend_messages::makeTerminalFilter(on)));
+}
+
+void TestFrontend::terminalSpansTest()
+{
+    // What the parser says of a chunk reaches the chunk's signal beside the output path.
+    GameObserver observer;
+    Signal2Lifetime lifetime;
+    std::vector<TerminalOutput> seen;
+    observer.sig2_sentToUserTerminal.connect(lifetime, [&seen](const TerminalOutput &out) {
+        seen.push_back(out);
+    });
+    const QString line = QStringLiteral("Dark and damp.\n");
+
+    // The newline MMapper adds after a prompt comes between, and takes nothing.
+    observer.observeTerminalSpans(line, {TerminalSpan{0, 15}});
+    observer.observeSentToUserTerminal(SendToUserSourceEnum::FromMMapper,
+                                       QStringLiteral("\n"),
+                                       false);
+    observer.observeSentToUserTerminal(SendToUserSourceEnum::FromMud, line, false);
+    QCOMPARE(seen.size(), size_t{2});
+    QVERIFY(seen[0].roomDescription.empty());
+    QCOMPARE(seen[1].roomDescription.size(), size_t{1});
+    QCOMPARE(seen[1].roomDescription[0].length, qsizetype{15});
+
+    // Once: the same text again is another chunk.
+    observer.observeSentToUserTerminal(SendToUserSourceEnum::FromMud, line, false);
+    QVERIFY(seen[2].roomDescription.empty());
+
+    // A chunk that never reached the terminal (the proxy dropped it): what was said of it is
+    // forgotten at the next chunk of MUME's, and marks nothing later.
+    observer.observeTerminalSpans(line, {TerminalSpan{0, 15}});
+    observer.observeSentToUserTerminal(SendToUserSourceEnum::FromMud,
+                                       QStringLiteral("Other\n"),
+                                       false);
+    observer.observeSentToUserTerminal(SendToUserSourceEnum::FromMud, line, false);
+    QVERIFY(seen[3].roomDescription.empty());
+    QVERIFY(seen[4].roomDescription.empty());
+}
+
 void TestFrontend::sessionStateTest()
 {
     frontend_messages::MapIdentity arda;
@@ -240,6 +503,8 @@ void TestFrontend::sessionStateTest()
     QCOMPARE(payloadOf(connected)["trade"].toInt(), 1);
     // And the quiet command, MMapper.Input.Quiet.
     QCOMPARE(payloadOf(connected)["quiet"].toInt(), 1);
+    // And MMapper.Terminal.Filter with MMapper.Terminal.Hidden.
+    QCOMPARE(payloadOf(connected)["hidden"].toInt(), 1);
     QCOMPARE(payloadOf(connected)["viewer"].toString(), QStringLiteral("unknown"));
     QCOMPARE(payloadOf(frontend_messages::makeSessionState(true,
                                                            arda,

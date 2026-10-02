@@ -6,6 +6,7 @@
 #include "../clock/mumemoment.h"
 #include "../global/macros.h"
 #include "../map/RoomHandle.h"
+#include "../observer/gameobserver.h"
 #include "../parser/AccountLines.h"
 #include "../parser/CharAffects.h"
 #include "../parser/CharFollowers.h"
@@ -24,6 +25,7 @@
 #include "../parser/XmlElement.h"
 #include "../proxy/GmcpMessage.h"
 
+#include <optional>
 #include <string_view>
 
 #include <QString>
@@ -40,6 +42,44 @@ NODISCARD GmcpMessage makeCharCommand(const ItemCommandObservation &command);
 /// Stable protocol-level name for the producer of a chunk of terminal text, so that a
 /// client can distinguish game output from MMapper's own injected messages.
 NODISCARD std::string_view toProtocolString(SendToUserSourceEnum source);
+
+/// What one frontend asked to be spared in its MMapper.Terminal.Output, with
+/// MMapper.Terminal.Filter. Kept per connection, nothing set to begin with, and of no effect on
+/// MMapper's own client or a telnet client: those are sent every chunk whole.
+struct NODISCARD TerminalFilter final
+{
+    /// The description paragraph of a room display. The name, the exits, who and what is there
+    /// and everything else stay.
+    bool roomDescriptions = false;
+};
+
+/// Reads an MMapper.Terminal.Filter payload onto `filter`: an object whose known keys
+/// (`roomDescriptions`) are booleans; keys it does not have are left as they are, and keys not
+/// known are ignored. False, with `filter` untouched, for anything else.
+NODISCARD bool applyTerminalFilter(const GmcpMessage &msg, TerminalFilter &filter);
+
+/// MMapper.Terminal.Filter -- the filter as it stands, sent back to the frontend that set it:
+/// `roomDescriptions`.
+NODISCARD GmcpMessage makeTerminalFilter(const TerminalFilter &filter);
+
+/// "room.description", "char.level".
+NODISCARD std::string_view toProtocolString(TerminalHiddenEnum kind);
+
+/// MMapper.Terminal.Hidden -- something kept out of the terminal: `kind`, `text` (the hidden
+/// text itself, colour removed) and, for a room's description, `roomId` when MMapper knew it. An
+/// event, not replayed. The quiet command's is built by TradeOperations (makeQuietHidden()).
+NODISCARD GmcpMessage makeTerminalHidden(const TerminalHidden &hidden);
+
+/// Whether a frontend with `filter` is told of `hidden`: a room's description only if it was
+/// spared it, since the others were sent the text itself; anything else always.
+NODISCARD bool wantsTerminalHidden(const TerminalHidden &hidden, const TerminalFilter &filter);
+
+/// MMapper.Terminal.Output for a frontend with `filter`: the chunk without the parts the filter
+/// spares it. Nullopt when nothing is left of the chunk but its line end and colour, which
+/// would otherwise stand as an empty line where the description was. Without such parts, or
+/// with the filter off, it is the message makeTerminalOutput() below gives, byte for byte.
+NODISCARD std::optional<GmcpMessage> makeTerminalOutput(const TerminalOutput &out,
+                                                        const TerminalFilter &filter);
 
 /// MMapper.Terminal.Output — one chunk of downstream terminal text.
 ///
@@ -78,7 +118,8 @@ struct NODISCARD MapIdentity final
 ///
 /// `trade` is the version of the trade operations MMapper.Trade.Request runs (TradeOperations),
 /// 1 today, and `quiet` the version of the quiet command, MMapper.Input.Quiet, 1 as well: a
-/// frontend that finds no `quiet` is talking to an MMapper without it. `viewer` is MUME's
+/// frontend that finds no `quiet` is talking to an MMapper without it. `hidden` is the version
+/// of MMapper.Terminal.Filter and MMapper.Terminal.Hidden, 1 too. `viewer` is MUME's
 /// `change viewer` setting as far as MMapper knows it: "external", "simple", "off" or "unknown"
 /// (TradeOperations::viewerState()).
 ///

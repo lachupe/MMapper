@@ -4,6 +4,7 @@
 #include "FrontendMessages.h"
 
 #include "../global/TextUtils.h"
+#include "../global/parserutils.h"
 #include "../map/ExitDirection.h"
 #include "../map/RoomFingerprint.h"
 #include "../map/coordinate.h"
@@ -197,6 +198,86 @@ std::string_view toProtocolString(const SendToUserSourceEnum source)
     return "unknown";
 }
 
+bool applyTerminalFilter(const GmcpMessage &msg, TerminalFilter &filter)
+{
+    const auto &optJson = msg.getJson();
+    const QJsonDocument doc = optJson.has_value() ? QJsonDocument::fromJson(optJson->toQByteArray())
+                                                  : QJsonDocument{};
+    if (!doc.isObject()) {
+        return false;
+    }
+    const QJsonObject obj = doc.object();
+    TerminalFilter result = filter;
+    if (const QJsonValue value = obj.value("roomDescriptions"); !value.isUndefined()) {
+        if (!value.isBool()) {
+            return false;
+        }
+        result.roomDescriptions = value.toBool();
+    }
+    filter = result;
+    return true;
+}
+
+GmcpMessage makeTerminalFilter(const TerminalFilter &filter)
+{
+    QJsonObject obj;
+    obj["roomDescriptions"] = filter.roomDescriptions;
+    return GmcpMessage{GmcpMessageTypeEnum::MMAPPER_TERMINAL_FILTER, toGmcpJson(obj)};
+}
+
+std::string_view toProtocolString(const TerminalHiddenEnum kind)
+{
+    switch (kind) {
+    case TerminalHiddenEnum::ROOM_DESCRIPTION:
+        return "room.description";
+    case TerminalHiddenEnum::CHAR_LEVEL:
+        return "char.level";
+    }
+    return "unknown";
+}
+
+GmcpMessage makeTerminalHidden(const TerminalHidden &hidden)
+{
+    QJsonObject obj;
+    obj["kind"] = mmqt::toQStringUtf8(toProtocolString(hidden.kind));
+    obj["text"] = hidden.text;
+    if (hidden.roomId.has_value()) {
+        obj["roomId"] = static_cast<qint64>(*hidden.roomId);
+    }
+    return GmcpMessage{GmcpMessageTypeEnum::MMAPPER_TERMINAL_HIDDEN, toGmcpJson(obj)};
+}
+
+bool wantsTerminalHidden(const TerminalHidden &hidden, const TerminalFilter &filter)
+{
+    return hidden.kind != TerminalHiddenEnum::ROOM_DESCRIPTION || filter.roomDescriptions;
+}
+
+std::optional<GmcpMessage> makeTerminalOutput(const TerminalOutput &out,
+                                              const TerminalFilter &filter)
+{
+    if (!filter.roomDescriptions || out.roomDescription.empty()) {
+        return makeTerminalOutput(out.source, out.text, out.goAhead);
+    }
+    QString rest;
+    qsizetype at = 0;
+    for (const TerminalSpan &span : out.roomDescription) {
+        // Cut to the text, and to what is left of it: the parts are the parser's, in order.
+        const qsizetype size = out.text.size();
+        const qsizetype start = std::clamp<qsizetype>(span.start, at, size);
+        const qsizetype end = std::clamp<qsizetype>(span.start + span.length, start, size);
+        rest += out.text.mid(at, start - at);
+        at = end;
+    }
+    rest += out.text.mid(at);
+    // The description filled the chunk: what is left is its line end, and perhaps colour.
+    QString plain = rest;
+    ParserUtils::removeAnsiMarksInPlace(plain);
+    if (plain.trimmed().isEmpty()) {
+        return std::nullopt;
+    }
+    return makeTerminalOutput(out.source, rest, out.goAhead);
+}
+
 GmcpMessage makeTerminalOutput(const SendToUserSourceEnum source,
                                const QString &text,
                                const bool goAhead)
@@ -222,6 +303,7 @@ GmcpMessage makeSessionState(const bool upstreamConnected,
     obj["itemCommands"] = 6;
     obj["trade"] = 1;
     obj["quiet"] = 1;
+    obj["hidden"] = 1;
     obj["viewer"] = viewer;
     obj["upstream"] = upstreamConnected ? QStringLiteral("connected")
                                         : QStringLiteral("disconnected");

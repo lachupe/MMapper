@@ -134,7 +134,17 @@ FrontendServer::FrontendServer(GameObserver &observer,
     });
 
     m_observer.sig2_sentToUserTerminal.connect(m_lifetime, [this](const TerminalOutput &out) {
-        publish(frontend_messages::makeTerminalOutput(out.source, out.text, out.goAhead));
+        publishTerminal(out);
+    });
+
+    m_observer.sig2_terminalHidden.connect(m_lifetime, [this](const TerminalHidden &hidden) {
+        // An event. A room's description goes only to the frontends that were spared it.
+        const GmcpMessage msg = frontend_messages::makeTerminalHidden(hidden);
+        for (Client &client : m_clients) {
+            if (frontend_messages::wantsTerminalHidden(hidden, client.filter)) {
+                sendTo(client, msg);
+            }
+        }
     });
 
     // Queued on purpose: the signal is emitted while the old session is still being torn
@@ -502,6 +512,11 @@ void FrontendServer::onTextMessage(QWebSocket *const socket, const QString &fram
         return;
     }
 
+    if (msg.isMMapperTerminalFilter()) {
+        handleFilter(*client, msg);
+        return;
+    }
+
     if (msg.isMMapperTradeRequest() || msg.isMMapperTradeCancel()) {
         handleTrade(*client, msg);
         return;
@@ -678,6 +693,43 @@ void FrontendServer::handleQuiet(Client &client, const GmcpMessage &msg)
     m_trade.requestQuiet(payload, tradeContext());
     if (m_trade.busy() && !m_tradeTimer.isActive()) {
         m_tradeTimer.start();
+    }
+}
+
+void FrontendServer::handleFilter(Client &client, const GmcpMessage &msg)
+{
+    // Its own terminal output only, so an observing frontend may ask as well.
+    if (!frontend_messages::applyTerminalFilter(msg, client.filter)) {
+        sendTo(client,
+               frontend_messages::makeError("invalid-filter",
+                                            "MMapper.Terminal.Filter needs an object payload "
+                                            "whose values are booleans"));
+        return;
+    }
+    // The filter as it stands now, so that the frontend knows it was taken.
+    sendTo(client, frontend_messages::makeTerminalFilter(client.filter));
+}
+
+void FrontendServer::publishTerminal(const TerminalOutput &out)
+{
+    if (out.roomDescription.empty()) {
+        publish(frontend_messages::makeTerminalOutput(out.source, out.text, out.goAhead));
+        return;
+    }
+    // A chunk with a room's description in it: whole for most, and built once more, without
+    // it, for the frontends that asked to be spared it.
+    const GmcpMessage whole = frontend_messages::makeTerminalOutput(out.source,
+                                                                    out.text,
+                                                                    out.goAhead);
+    frontend_messages::TerminalFilter sparing;
+    sparing.roomDescriptions = true;
+    const std::optional<GmcpMessage> spared = frontend_messages::makeTerminalOutput(out, sparing);
+    for (Client &client : m_clients) {
+        if (!client.filter.roomDescriptions) {
+            sendTo(client, whole);
+        } else if (spared.has_value()) {
+            sendTo(client, *spared);
+        }
     }
 }
 

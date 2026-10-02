@@ -69,6 +69,11 @@ struct NODISCARD QuietReplyState final
 /// MMapper.Input.Reply for `state`.
 NODISCARD GmcpMessage makeQuietReply(const QuietReplyState &state);
 
+/// MMapper.Terminal.Hidden for the quiet command of `state`: `kind` "quiet.command", `id`,
+/// `command` and `count`, how many lines were kept from the terminal. The lines themselves are
+/// in the MMapper.Input.Reply that follows, and are not sent twice.
+NODISCARD GmcpMessage makeQuietHidden(const QuietReplyState &state);
+
 /// True if a frontend with these subscriptions claims MUME's viewer: only the driving frontend
 /// does, and only while it subscribes to MMapper.View.
 NODISCARD bool claimsViewer(const FrontendSubscriptions &subscriptions, bool driving);

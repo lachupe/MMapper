@@ -27,6 +27,7 @@ private Q_SLOTS:
     static void innRetireTest();
     static void trophiesPagerTest();
     static void quietReplyMessageTest();
+    static void quietHiddenTest();
     static void quietCommandTest();
     static void quietAllowedTest();
     static void quietIdleTest();
