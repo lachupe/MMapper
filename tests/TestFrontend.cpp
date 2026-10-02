@@ -25,6 +25,7 @@
 #include "../src/parser/CharRefused.h"
 #include "../src/parser/CombatLines.h"
 #include "../src/parser/ContainerLines.h"
+#include "../src/parser/LoginLines.h"
 #include "../src/parser/ExitLooks.h"
 #include "../src/parser/GameStateLines.h"
 #include "../src/parser/ItemLines.h"
@@ -246,6 +247,49 @@ void TestFrontend::sessionStateTest()
                                                            QStringLiteral("external")))["viewer"]
                  .toString(),
              QStringLiteral("external"));
+
+    // MUME's login prompt is a field of the state, only while MUME waits at one: what it asks
+    // for, its own words, a serial, and why it asks again. Never what the player answered.
+    QVERIFY(!payloadOf(connected).contains(QStringLiteral("login")));
+    LoginPrompt asked;
+    asked.kind = LoginPromptKindEnum::PASSWORD;
+    asked.text = QStringLiteral("Account pass phrase:");
+    asked.serial = 3;
+    const QJsonObject first = payloadOf(frontend_messages::makeSessionState(true,
+                                                                            arda,
+                                                                            false,
+                                                                            true,
+                                                                            GameStateEnum::MENU,
+                                                                            QStringLiteral("unknown"),
+                                                                            asked))["login"]
+                                  .toObject();
+    QCOMPARE(first["kind"].toString(), QStringLiteral("password"));
+    QCOMPARE(first["text"].toString(), QStringLiteral("Account pass phrase:"));
+    QCOMPARE(first["serial"].toInt(), 3);
+    QVERIFY(!first.contains(QStringLiteral("refused")));
+    asked.refusedReason = QStringLiteral("wrong-password");
+    asked.refusedText = QStringLiteral("Wrong password.");
+    asked.serial = 4;
+    const QJsonObject again = payloadOf(frontend_messages::makeSessionState(true,
+                                                                            arda,
+                                                                            false,
+                                                                            true,
+                                                                            GameStateEnum::MENU,
+                                                                            QStringLiteral("unknown"),
+                                                                            asked))["login"]
+                                  .toObject();
+    QCOMPARE(again["serial"].toInt(), 4);
+    QCOMPARE(again["refused"].toObject()["reason"].toString(), QStringLiteral("wrong-password"));
+    QCOMPARE(again["refused"].toObject()["text"].toString(), QStringLiteral("Wrong password."));
+    // With MUME gone there is no prompt to answer, whatever was last seen.
+    QVERIFY(!payloadOf(frontend_messages::makeSessionState(false,
+                                                           arda,
+                                                           false,
+                                                           true,
+                                                           GameStateEnum::MENU,
+                                                           QStringLiteral("unknown"),
+                                                           asked))
+                 .contains(QStringLiteral("login")));
 
     // The map is named, so that a frontend reading an export of its own can tell whether that
     // is of this map, and whether this map has changed since.
