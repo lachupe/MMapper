@@ -7,6 +7,7 @@
 #include "../observer/gameobserver.h"
 #include "FrontendSubscriptions.h"
 
+#include <algorithm>
 #include <cassert>
 #include <chrono>
 #include <utility>
@@ -104,6 +105,21 @@ GmcpMessage makeTradeOperation(const TradeOperationState &state)
                        GmcpJson{QString::fromUtf8(json)}};
 }
 
+GmcpMessage makeQuietReply(const QuietReplyState &state)
+{
+    QJsonObject obj;
+    obj["id"] = state.id;
+    obj["text"] = state.text;
+    obj["status"] = tradeStatusName(state.status);
+    obj["reason"] = state.reason;
+    obj["lines"] = QJsonArray::fromStringList(state.lines);
+    obj["paged"] = state.paged;
+    obj["complete"] = state.complete;
+    const QByteArray json = QJsonDocument{obj}.toJson(QJsonDocument::Compact);
+    return GmcpMessage{GmcpMessageTypeEnum::MMAPPER_INPUT_REPLY,
+                       GmcpJson{QString::fromUtf8(json)}};
+}
+
 bool claimsViewer(const FrontendSubscriptions &subscriptions, const bool driving)
 {
     return driving && subscriptions.subscribes("MMapper.View");
@@ -120,8 +136,27 @@ TradeOperations::TradeOperations(GameObserver &observer, SendFn send, PublishFn 
     m_observer.sig2_sentToMudString.connect(m_lifetime,
                                             [this](const QString &line) { onSentToMud(line); });
     m_observer.sig2_sentToUserTerminal.connect(m_lifetime, [this](const TerminalOutput &out) {
-        if (out.source == SendToUserSourceEnum::FromMud && !out.goAhead) {
+        if (out.source != SendToUserSourceEnum::FromMud) {
+            return;
+        }
+        // MUME is saying something; a real prompt is reported after its chunk (onPrompt).
+        m_atPrompt = false;
+        m_lastActivityAt = this->now(); // `now` here is the constructor's argument
+        m_seenActivity = true;
+        // What the terminal was shown is no part of a quiet command's reply.
+        if (!out.goAhead && !quiet()) {
             onLine(out.text);
+        }
+    });
+    // The quiet command's reply, from the parser, which kept it from the terminal.
+    m_observer.sig2_quietLine.connect(m_lifetime, [this](const QString &line) {
+        if (quiet() && m_op->replying) {
+            onQuietLine(line);
+        }
+    });
+    m_observer.sig2_quietEnded.connect(m_lifetime, [this]() {
+        if (quiet() && m_op->replying) {
+            m_op->ended = true;
         }
     });
     m_observer.sig2_pager.connect(m_lifetime, [this](const PagerLine &pager) { onPager(pager); });
@@ -205,7 +240,13 @@ TradeOperations::TradeOperations(GameObserver &observer, SendFn send, PublishFn 
     });
 }
 
-TradeOperations::~TradeOperations() = default;
+TradeOperations::~TradeOperations()
+{
+    if (quiet() && m_op->replying) {
+        // Nobody is left to answer a pager the parser would hide.
+        m_observer.observeQuietCommand(QuietCommandEnum::END);
+    }
+}
 
 int64_t TradeOperations::now() const
 {
@@ -230,6 +271,8 @@ void TradeOperations::resetConnection()
     m_sent.clear();
     m_pagerOpen = false;
     m_pagerOwned = false;
+    m_atPrompt = false;
+    m_owed = 0;
     m_lastSessionsLeft.reset();
     m_viewerSent = false;
     m_viewerSetByPlayer = false;
@@ -364,6 +407,84 @@ void TradeOperations::request(const QJsonObject &payload, const Context &context
     startStep();
 }
 
+void TradeOperations::requestQuiet(const QJsonObject &payload, const Context &context)
+{
+    QuietReplyState refused;
+    refused.id = payload.value("id").toString();
+    refused.status = TradeStatusEnum::REFUSED;
+    const auto refuse = [this, &refused](const char *const reason) {
+        refused.reason = QString::fromLatin1(reason);
+        m_publish(makeQuietReply(refused));
+    };
+
+    // A string no longer than a trade request's argument; and then one of the commands that
+    // only read, alone on its line. A command the player never sees must not act, whatever a
+    // frontend asks: anything else is refused whole, and nothing of it is sent.
+    const QJsonValue textValue = payload.value("text");
+    const QString text = textValue.toString().trimmed();
+    refused.text = text.left(MAX_ARGUMENT_CHARS);
+    if (!textValue.isString() || text.size() > MAX_ARGUMENT_CHARS) {
+        return refuse("invalid arguments");
+    }
+    if (!quietCommandAllowed(text)) {
+        return refuse("not allowed");
+    }
+    if (!context.connected) {
+        return refuse("not connected");
+    }
+    if (context.game != GameStateEnum::PLAYING) {
+        return refuse("not in the game");
+    }
+    if (!context.driving || !m_driving) {
+        return refuse("observing");
+    }
+    if (!context.echo || !m_echo) {
+        return refuse("echo off");
+    }
+    if (m_op.has_value()) {
+        return refuse("busy");
+    }
+    if (m_pagerOpen) {
+        // The player's own reply is at a pager: the command would answer it.
+        return refuse("pager open");
+    }
+
+    Operation op;
+    op.kind = KindEnum::QUIET;
+    op.state.id = refused.id;
+    op.state.action = text;
+    op.commands << text;
+    op.waiting = true;
+    op.deadline = now() + QUIET_WAIT_MS;
+    op.serial = ++m_serial;
+    m_op.emplace(std::move(op));
+    sendQuietWhenIdle();
+}
+
+bool TradeOperations::idle() const
+{
+    if (m_pagerOpen) {
+        return false;
+    }
+    const int64_t at = now();
+    // Nothing sent and nothing said for a while: whatever was owed is not coming.
+    if (!m_seenActivity || at - m_lastActivityAt >= QUIET_IDLE_MS) {
+        return true;
+    }
+    // Every line sent has had its prompt, and the last thing MUME sent was one.
+    return m_atPrompt && m_owed == 0 && at - m_lastSentAt >= QUIET_SETTLE_MS;
+}
+
+void TradeOperations::sendQuietWhenIdle()
+{
+    if (!quiet() || !m_op->waiting || !idle()) {
+        return;
+    }
+    m_op->waiting = false;
+    m_op->deadline = now() + QUIET_TIMEOUT_MS;
+    submit(m_op->commands.front(), SentEnum::STEP);
+}
+
 void TradeOperations::submit(const QString &line, const SentEnum kind)
 {
     m_sent.push_back(Sent{line, kind, m_op.has_value() ? m_op->serial : 0});
@@ -417,6 +538,32 @@ void TradeOperations::finish(const TradeStatusEnum status,
     }
     Operation op = std::move(*m_op);
     m_op.reset();
+    if (op.kind == KindEnum::QUIET) {
+        // Over: the parser hides nothing more. Told before the reply goes out, so that whoever
+        // hears the reply finds the terminal as it will stay.
+        if (op.replying) {
+            m_observer.observeQuietCommand(QuietCommandEnum::END);
+        } else if (!op.waiting) {
+            // Submitted and never seen going to MUME (a mapper command, a line MMapper
+            // rewrote): it must not stand in the way of matching what is sent later.
+            std::erase_if(m_sent, [&op](const Sent &sent) {
+                return sent.kind == SentEnum::STEP && sent.serial == op.serial;
+            });
+        }
+        QuietReplyState reply;
+        reply.id = op.state.id;
+        reply.text = op.commands.front();
+        reply.status = status;
+        reply.reason = reason;
+        reply.lines = op.stepText;
+        while (!reply.lines.isEmpty() && reply.lines.back().trimmed().isEmpty()) {
+            reply.lines.removeLast();
+        }
+        reply.paged = op.pages > 0;
+        reply.complete = status == TradeStatusEnum::DONE && !op.truncated;
+        m_publish(makeQuietReply(reply));
+        return;
+    }
     op.state.status = status;
     op.state.reason = reason;
     op.state.text = withText ? op.stepText : QStringList{};
@@ -430,7 +577,7 @@ void TradeOperations::abort(const QString &reason)
 
 void TradeOperations::cancel(const QString &id)
 {
-    if (!m_op.has_value() || m_op->state.id != id) {
+    if (!m_op.has_value() || m_op->state.id != id || m_op->kind == KindEnum::QUIET) {
         return; // Not running: its last status has already gone out.
     }
     if (m_pagerOpen && m_pagerOwned) {
@@ -448,12 +595,24 @@ void TradeOperations::beforePlayerLine(const QString & /*line*/)
     // answer, so it is quit first.
     if (m_pagerOpen && m_pagerOwned) {
         submit(QStringLiteral("q"), SentEnum::QUIT);
+    } else if (m_op->kind == KindEnum::QUIET) {
+        // MUME answers in order: the player's reply comes after the quiet command's prompt,
+        // or, while the command still waits, before it is sent at all. It goes on.
+        return;
     }
     abort(QStringLiteral("player input"));
 }
 
 void TradeOperations::expire()
 {
+    if (quiet() && m_op->waiting) {
+        if (now() >= m_op->deadline) {
+            finish(TradeStatusEnum::REFUSED, QStringLiteral("not idle"), false);
+        } else {
+            sendQuietWhenIdle();
+        }
+        return;
+    }
     if (!m_op.has_value() || now() < m_op->deadline) {
         return;
     }
@@ -466,9 +625,17 @@ void TradeOperations::expire()
 void TradeOperations::onSentToMud(const QString &raw)
 {
     const QString line = chompLine(raw);
-    // Whoever sent it, the first line after a pager is its answer.
+    // Whoever sent it, the first line after a pager is its answer, and has no prompt of its
+    // own; every other line has one to come.
+    if (!m_pagerOpen) {
+        ++m_owed;
+    }
     m_pagerOpen = false;
     m_pagerOwned = false;
+    m_atPrompt = false;
+    m_lastSentAt = now();
+    m_lastActivityAt = m_lastSentAt;
+    m_seenActivity = true;
 
     if (!m_sent.empty() && m_sent.front().line == line) {
         const Sent sent = m_sent.front();
@@ -477,14 +644,34 @@ void TradeOperations::onSentToMud(const QString &raw)
             // The step's command has reached MUME: what comes back now is its reply.
             m_op->replying = true;
             m_op->deadline = now() + STEP_TIMEOUT_MS;
+            if (m_op->kind == KindEnum::QUIET) {
+                m_op->deadline = now() + QUIET_TIMEOUT_MS;
+                if (m_op->raced) {
+                    // Another reply comes first, and it is not this command's: nothing is
+                    // hidden, and MUME's answer to the command is shown like any other.
+                    m_op->replying = false;
+                    finish(TradeStatusEnum::FAILED, QStringLiteral("overlapping command"), false);
+                    return;
+                }
+                // From here on the parser keeps the reply from the terminal.
+                m_observer.observeQuietCommand(QuietCommandEnum::BEGIN);
+            }
         }
         return;
     }
 
     // Foreign: the player's, an alias's, a frontend's quiet refresh.
     noteViewerLine(line);
-    if (m_op.has_value()) {
+    if (!m_op.has_value()) {
+        return;
+    }
+    if (m_op->kind != KindEnum::QUIET) {
         abort(QStringLiteral("overlapping command"));
+    } else if (m_op->replying) {
+        // Its reply follows the quiet command's prompt: the window must not outlast that.
+        m_observer.observeQuietCommand(QuietCommandEnum::FOREIGN);
+    } else if (!m_op->waiting) {
+        m_op->raced = true;
     }
 }
 
@@ -509,10 +696,32 @@ void TradeOperations::onLine(const QString &chunk)
     }
 }
 
+void TradeOperations::onQuietLine(const QString &raw)
+{
+    Operation &op = *m_op;
+    const QString line = chompLine(raw);
+    ++op.stepLines;
+    ++op.linesSincePager;
+    if (!line.trimmed().isEmpty()) {
+        ++op.replyLines;
+    } else if (op.replyLines == 0) {
+        return; // The spacing before the reply, or before whatever else MUME said.
+    }
+    if (op.stepText.size() < MAX_QUIET_LINES) {
+        op.stepText << line;
+    } else {
+        op.truncated = true;
+    }
+}
+
 void TradeOperations::onPager(const PagerLine &pager)
 {
     m_pagerOpen = true;
-    m_pagerOwned = m_op.has_value() && m_op->replying;
+    m_atPrompt = false;
+    // A quiet command owns the pager the parser hid and no other: one the player sees is in a
+    // reply of the player's.
+    m_pagerOwned = m_op.has_value() && m_op->replying
+                   && (m_op->kind != KindEnum::QUIET || pager.hidden);
     if (!m_pagerOwned) {
         return; // The player's reply: the player's pager.
     }
@@ -535,7 +744,7 @@ void TradeOperations::onPager(const PagerLine &pager)
     ++op.pages;
     op.lastPercent = pager.percent;
     op.linesSincePager = 0;
-    op.deadline = now() + STEP_TIMEOUT_MS;
+    op.deadline = now() + (op.kind == KindEnum::QUIET ? QUIET_TIMEOUT_MS : STEP_TIMEOUT_MS);
     submit(QString{}, SentEnum::PAGER);
 }
 
@@ -627,6 +836,16 @@ TradeOperations::Outcome TradeOperations::judge() const
             return {OutcomeEnum::DONE, {}};
         }
         break;
+    case KindEnum::QUIET:
+        // Judged by the parser's window alone: the prompt that closed it ends the reply, and
+        // every prompt before that is of something else.
+        if (!op.ended) {
+            return {OutcomeEnum::WAIT, {}};
+        }
+        if (op.replyLines > 0) {
+            return {OutcomeEnum::DONE, {}};
+        }
+        return {OutcomeEnum::FAILED, QStringLiteral("no reply")};
     }
 
     // No recognised reply. A prompt before any line of the reply was already on its way when
@@ -641,6 +860,10 @@ void TradeOperations::onPrompt()
 {
     m_pagerOpen = false;
     m_pagerOwned = false;
+    m_atPrompt = true;
+    if (m_owed > 0) {
+        --m_owed;
+    }
 
     if (m_op.has_value() && m_op->replying) {
         const Outcome outcome = judge();
@@ -681,6 +904,7 @@ void TradeOperations::onPrompt()
     }
 
     maybeSetViewer();
+    sendQuietWhenIdle();
 }
 
 void TradeOperations::maybeSetViewer()

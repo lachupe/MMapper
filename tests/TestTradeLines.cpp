@@ -6,6 +6,7 @@
 #include "../src/frontend/TradeMessages.h"
 #include "../src/global/Signal2.h"
 #include "../src/observer/gameobserver.h"
+#include "../src/parser/QuietCapture.h"
 #include "../src/parser/TradeLines.h"
 
 #include <QJsonArray>
@@ -82,6 +83,108 @@ const std::initializer_list<const char *>
             "-----",
             " 728. fourteen pot helms (flawless, new) up to one gold 2 silver.",
             ""};
+
+/// A prompt as MUME sends it, on its GA.
+const char *const MUME_PROMPT = "o W C Mana:Hot>";
+
+NODISCARD XmlElement element(const XmlTagEnum tag, const char *const text)
+{
+    XmlElement e;
+    e.tag = tag;
+    e.text = QString::fromUtf8(text);
+    return e;
+}
+
+/// The terminal, as MumeXmlParser::parse() feeds it and the readers: beginChunk with what the
+/// markup says of the line, the chunk sent to the user unless it is hidden, a captured line
+/// reported, the line readers, the prompt readers, endChunk. A line is given with its newline,
+/// as the parser has it; `shown` is what the user was sent, `captured` what the quiet command's
+/// reply is, `events` what was published, each in order.
+struct NODISCARD Terminal final
+{
+    GameObserver observer;
+    Signal2Lifetime lifetime;
+    TradeReaders readers{observer};
+    QStringList shown;
+    QStringList captured;
+    QStringList events;
+
+    Terminal()
+    {
+        observer.sig2_charSkills.connect(lifetime, [this](const CharSkills &skills) {
+            events.append(
+                QStringLiteral("skills:%1:%2").arg(skills.rows.size()).arg(skills.complete));
+        });
+        observer.sig2_guildTeacher.connect(lifetime, [this](const GuildTeacher &teacher) {
+            events.append(QStringLiteral("teacher:%1").arg(teacher.rows.size()));
+        });
+        observer.sig2_pager.connect(lifetime, [this](const PagerLine &pager) {
+            events.append(QStringLiteral("pager:%1:%2").arg(pager.percent).arg(pager.hidden));
+        });
+        observer.sig2_quietEnded.connect(lifetime,
+                                         [this]() { events.append(QStringLiteral("ended")); });
+        observer.sig2_realPrompt.connect(lifetime,
+                                         [this]() { events.append(QStringLiteral("prompt")); });
+        observer.sig2_quietLine.connect(lifetime,
+                                        [this](const QString &line) { captured.append(line); });
+        // What MumeXmlParser does with the runner's word.
+        observer.sig2_quietCommand.connect(lifetime, [this](const QuietCommandEnum what) {
+            readers.receiveQuietCommand(what);
+        });
+    }
+
+    /// True when the chunk was hidden.
+    bool chunk(const bool goAhead,
+               const QString &text,
+               const QuietTrafficEnum traffic = QuietTrafficEnum::REPLY)
+    {
+        const MudChunk c = readers.beginChunk(goAhead, false, text, traffic);
+        if (c.captured) {
+            observer.observeQuietLine(c.plain);
+        }
+        if (!c.hidden) {
+            shown.append(text);
+        }
+        if (c.kind == MudChunkKindEnum::LINE) {
+            readers.receiveLine(c.plain);
+        }
+        if (c.kind == MudChunkKindEnum::PROMPT) {
+            readers.receivePrompt();
+        }
+        readers.endChunk();
+        return c.hidden;
+    }
+    bool line(const char *const text, const QuietTrafficEnum traffic = QuietTrafficEnum::REPLY)
+    {
+        return chunk(false, QString::fromUtf8(text) + QStringLiteral("\n"), traffic);
+    }
+    bool prompt() { return chunk(true, QString::fromUtf8(MUME_PROMPT)); }
+    bool pager(const char *const text) { return chunk(true, QString::fromUtf8(text)); }
+    void lines(const std::initializer_list<const char *> all)
+    {
+        for (const char *const one : all) {
+            std::ignore = line(one);
+        }
+    }
+    void begin() { observer.observeQuietCommand(QuietCommandEnum::BEGIN); }
+};
+
+// elvenrunes 2021-04-01_Battle-Coach-I_Ryaln.txt:3441-3453, as in charSkillsTest.
+const std::initializer_list<const char *>
+    g_ryaln{"You have 0 practice sessions left.",
+            "Skill / Spell        Knowledge  Difficulty  Class       Mana  Casting time",
+            "Bandage              Average    Easy        None       ",
+            "Wilderness           Very good  Normal      None       ",
+            "Cure light           Average    Easy        Cleric        13  Very short",
+            "Dodge                Poor       Hard        Thief      ",
+            "Two handed weapons   Fair       Normal      Warrior    ",
+            ""};
+
+// powwow/logs/stolb.balrog.txt, as in TestCharLines' statEmptyAffectsTest.
+const std::initializer_list<const char *>
+    g_stat{"OB: 131%, DB: 24%, PB: 0%, Armour: 0%. Wimpy: 111. Mood: wimpy.",
+           "Needed: 1,108,995 xp, 0 tp. Gold: 0. Alert: normal.",
+           ""};
 
 } // namespace
 
@@ -828,6 +931,24 @@ void TestTradeLines::charSkillsPagedTest()
          PROMPT});
     QVERIFY(quit.skills[0].paged);
     QVERIFY(!quit.skills[0].complete);
+
+    // Something else is said while the pager waits (changed: the Aquator table with a tell put
+    // in; the blank line is what MUME sends before a line that follows a prompt). The blank
+    // line right after the pager does not end the table, and the next page goes on with it.
+    const TradeReplies told = feed(
+        {"You have 1 practice session left.",
+         "Skill / Spell          Knowledge  Difficulty  Class       Mana  Casting time",
+         "Climb                  Good       Very easy   None       ",
+         PAGER,
+         "",
+         "Gandalf tells you 'are you there?'",
+         PAGER,
+         "Pick                   Poor       Normal      Thief      ",
+         "",
+         PROMPT});
+    QCOMPARE(told.skills.size(), size_t{1});
+    QCOMPARE(told.skills[0].rows.size(), size_t{2});
+    QVERIFY(told.skills[0].complete);
 }
 
 void TestTradeLines::innOfferTest()
@@ -1056,6 +1177,434 @@ void TestTradeLines::readersOrderTest()
     QCOMPARE(events, list({"pager:50", "prompt"}));
 }
 
+void TestTradeLines::quietCommandAllowedTest()
+{
+    const auto allowed = [](const char *const line) {
+        return quietCommandAllowed(QString::fromUtf8(line));
+    };
+
+    // Every command that only reads, in full and in each shorter form MUME's help gives it
+    // (pr(actice), sc(ore), inf(o), stat, eq(uipment), i(nventory), ti(me), wh(o), tro(phy),
+    // ex(its), exa(mine), l(ook), li(st)).
+    for (const char *const word :
+         {"practice", "practic", "practi", "pract", "prac", "pra", "pr",
+          "score", "scor", "sco", "sc",
+          "info", "inf",
+          "stat",
+          "equipment", "equipmen", "equipme", "equipm", "equip", "equi", "equ", "eq",
+          "inventory", "inventor", "invento", "invent", "inven", "inve", "inv", "in", "i",
+          "time", "tim", "ti",
+          "who", "wh",
+          "trophy", "troph", "trop", "tro",
+          "exits", "exit", "exi", "ex",
+          "examine", "examin", "exami", "exam", "exa",
+          "look", "loo", "lo", "l",
+          "list", "lis", "li"}) {
+        QVERIFY2(allowed(word), word);
+    }
+
+    // With arguments, which belong to the command.
+    for (const char *const line :
+         {"info MMXP %l %x %X %t %T", "look in pack", "look north", "l 2.map", "examine sword",
+          "exa corpse", "list helm", "trophy -line orc", "who number", "eq all", "i  "}) {
+        QVERIFY2(allowed(line), line);
+    }
+
+    // In any case, and with space around it.
+    for (const char *const line :
+         {"PRAC", "Prac", "sCoRe", "INFO mmxp", "  stat", "\tlook  ", "Li"}) {
+        QVERIFY2(allowed(line), line);
+    }
+
+    // Anything that acts, or is not known to only read.
+    for (const char *const line :
+         {"drop all", "say x", "kill orc", "north", "n", "cast 'armour'", "rent", "buy bread",
+          "give sword orc", "flee", "get all", "sell sword", "tell gandalf hi", "change mood wimpy",
+          "offer", "quit", "sleep", "open door", "_help", "weather", "where", "consider orc"}) {
+        QVERIFY2(!allowed(line), line);
+    }
+
+    // `practice` with a skill spends a session: only the bare word lists.
+    QVERIFY(!allowed("prac bash"));
+    QVERIFY(!allowed("practice ride"));
+    QVERIFY(!allowed("pr block door"));
+    // `score report` tells the room; and the commands MUME's help gives no arguments take none.
+    for (const char *const line : {"score report", "sc report", "stat all", "time now",
+                                   "exits north", "inventory all", "i sword", "in pack"}) {
+        QVERIFY2(!allowed(line), line);
+    }
+
+    // Shorter than MUME takes it for that command, or a spelling MUME's help does not have: it
+    // would be another command, or none.
+    for (const char *const word : {"p", "s", "st", "sta", "e", "eq.", "t", "tr", "w", "practise",
+                                   "prax", "looks", "infos", "statx", "exb", "affects", "aff"}) {
+        QVERIFY2(!allowed(word), word);
+    }
+
+    // A second command on the line, however it is joined: refused whole, never cut.
+    QVERIFY(!allowed("prac; drop all"));
+    QVERIFY(!allowed("prac;drop all"));
+    QVERIFY(!allowed("look;;kill orc"));
+    QVERIFY(!allowed("prac\ndrop all"));
+    QVERIFY(!allowed("prac\r\ndrop all"));
+    QVERIFY(!allowed("look\x1b[2J"));
+    QVERIFY(!allowed("info a\tb"));
+    // And no line at all.
+    QVERIFY(!allowed(""));
+    QVERIFY(!allowed("   "));
+    QVERIFY(!allowed("\n"));
+}
+
+void TestTradeLines::quietTrafficTest()
+{
+    // What MUME's markup says of a line, for the quiet command's window.
+    const std::vector<XmlElement> none;
+    const auto of = [&](const char *const line,
+                        const std::vector<XmlElement> &closed,
+                        const std::vector<XmlTagEnum> &open = {},
+                        const bool inRoom = false,
+                        const bool combatProse = false) {
+        return quietTrafficOf(inRoom, combatProse, QString::fromUtf8(line), closed, open);
+    };
+
+    // Plain text outside every element is the reply; so is text with only emphasis in it.
+    QCOMPARE(of("You have 0 practice sessions left.", none), QuietTrafficEnum::REPLY);
+    QCOMPARE(of("", none), QuietTrafficEnum::REPLY);
+    QCOMPARE(of("Needed: 999 xp, 0 tp.", {element(XmlTagEnum::HIGHLIGHT, "999")}),
+             QuietTrafficEnum::REPLY);
+    QCOMPARE(of("Bandage  Average", none, {XmlTagEnum::EM}), QuietTrafficEnum::REPLY);
+
+    // A line an element of other traffic covers is that traffic: speech, a movement, a blow,
+    // magic, the weather, an achievement.
+    const char *const tell = "Gandalf tells you 'are you there?'";
+    QCOMPARE(of(tell, {element(XmlTagEnum::TELL, tell)}), QuietTrafficEnum::OTHER);
+    QCOMPARE(of("A black wolf arrives from the north.",
+                {element(XmlTagEnum::MOVE_IN, "A black wolf arrives from the north.")}),
+             QuietTrafficEnum::OTHER);
+    const char *const blow = "A black wolf hits your arm.";
+    QCOMPARE(of(blow, {element(XmlTagEnum::HIT, blow)}, {}, false, true), QuietTrafficEnum::OTHER);
+    QCOMPARE(of("It starts to rain.", {element(XmlTagEnum::WEATHER, "It starts to rain.")}),
+             QuietTrafficEnum::OTHER);
+    QCOMPARE(of("You feel protected.", {element(XmlTagEnum::MAGIC, "You feel protected.")}),
+             QuietTrafficEnum::OTHER);
+
+    // A tell that wraps: its first line lies in the element still open, and its last line is
+    // the end of the element that closed on it.
+    QCOMPARE(of("Gandalf tells you 'a long tell that goes on and on and wraps at the", none,
+                {XmlTagEnum::TELL}),
+             QuietTrafficEnum::OTHER);
+    QCOMPARE(of("line's end'",
+                {element(XmlTagEnum::TELL,
+                         "Gandalf tells you 'a long tell that goes on and on and wraps at the\n"
+                         "line's end'")}),
+             QuietTrafficEnum::OTHER);
+
+    // A room display is nobody's reply, whatever the line.
+    QCOMPARE(of("A dark cave", none, {}, true), QuietTrafficEnum::OTHER);
+    QCOMPARE(of("", none, {XmlTagEnum::ROOM}), QuietTrafficEnum::OTHER);
+    QCOMPARE(of("Exits: north.", {element(XmlTagEnum::EXITS, "Exits: north.")}),
+             QuietTrafficEnum::OTHER);
+
+    // It cannot be told: the fight reader took a line no element marks; an element of other
+    // traffic that covers only part of the line; an element whose meaning is not known.
+    QCOMPARE(of("You are hit hard.", none, {}, false, true), QuietTrafficEnum::UNSURE);
+    QCOMPARE(of("Somebody said: Gandalf tells you 'x' and more",
+                {element(XmlTagEnum::TELL, "Gandalf tells you 'x'")}),
+             QuietTrafficEnum::UNSURE);
+    QCOMPARE(of("You are thirsty.", {element(XmlTagEnum::STATUS, "You are thirsty.")}),
+             QuietTrafficEnum::UNSURE);
+    QCOMPARE(of("A lantern", {element(XmlTagEnum::OBJECT, "A lantern")}),
+             QuietTrafficEnum::UNSURE);
+    QCOMPARE(of("Something new.", {element(XmlTagEnum::UNKNOWN, "Something new.")}),
+             QuietTrafficEnum::UNSURE);
+    QCOMPARE(of("In a status block", none, {XmlTagEnum::STATUS}), QuietTrafficEnum::UNSURE);
+    // The prompt's own element says nothing of a line.
+    QCOMPARE(of("text", {element(XmlTagEnum::PROMPT, "o W>")}), QuietTrafficEnum::REPLY);
+}
+
+void TestTradeLines::quietCaptureTest()
+{
+    const auto line = [](QuietCapture &q, const char *const text,
+                         const QuietTrafficEnum traffic = QuietTrafficEnum::REPLY) {
+        return q.receiveLine(QString::fromUtf8(text), traffic);
+    };
+
+    // Closed, it has no say.
+    QuietCapture q;
+    QVERIFY(!q.isOpen());
+    QVERIFY(!line(q, "You have 0 practice sessions left.").hidden);
+    QVERIFY(!q.receivePager().hidden);
+    QVERIFY(!q.receivePrompt().ended);
+
+    // Open: a prompt before any line of the reply is somebody else's; then the reply, hidden
+    // and captured; its prompt hidden, and the window closed.
+    q.receiveCommand(QuietCommandEnum::BEGIN);
+    QVERIFY(q.isOpen());
+    QuietCapture::Verdict v = q.receivePrompt();
+    QVERIFY(!v.hidden && !v.ended);
+    v = line(q, "");
+    QVERIFY(v.hidden && v.captured);
+    v = q.receivePrompt();
+    QVERIFY(!v.hidden && !v.ended); // A blank line is no reply.
+    v = line(q, "OB: 131%, DB: 24%.");
+    QVERIFY(v.hidden && v.captured);
+    v = q.receivePrompt();
+    QVERIFY(v.hidden && v.ended);
+    QVERIFY(!q.isOpen());
+
+    // Other traffic is shown and not captured, and after it the reply's prompt is shown too.
+    q.receiveCommand(QuietCommandEnum::BEGIN);
+    v = line(q, "Gandalf tells you 'hi'", QuietTrafficEnum::OTHER);
+    QVERIFY(!v.hidden && !v.captured);
+    v = q.receivePrompt();
+    QVERIFY(!v.hidden && !v.ended); // That traffic's own prompt: the window stays open.
+    v = line(q, "OB: 131%, DB: 24%.");
+    QVERIFY(v.hidden && v.captured);
+    v = line(q, "A black wolf arrives from the north.", QuietTrafficEnum::OTHER);
+    QVERIFY(!v.hidden && !v.captured);
+    v = q.receivePrompt();
+    QVERIFY(!v.hidden && v.ended);
+
+    // What cannot be told is shown and captured, and counts as the reply.
+    q.receiveCommand(QuietCommandEnum::BEGIN);
+    v = line(q, "You are thirsty.", QuietTrafficEnum::UNSURE);
+    QVERIFY(!v.hidden && v.captured);
+    v = q.receivePrompt();
+    QVERIFY(!v.hidden && v.ended);
+
+    // The pager is hidden once the reply has begun, and not before.
+    q.receiveCommand(QuietCommandEnum::BEGIN);
+    QVERIFY(!q.receivePager().hidden);
+    QVERIFY(!q.receivePrompt().ended);
+    std::ignore = line(q, "Bandage  Average  Easy  None");
+    QVERIFY(q.receivePager().hidden);
+    QVERIFY(q.receivePrompt().hidden);
+
+    // Another line has gone to MUME: the next real prompt closes the window even with no
+    // line of the reply, and is shown.
+    q.receiveCommand(QuietCommandEnum::BEGIN);
+    q.receiveCommand(QuietCommandEnum::FOREIGN);
+    v = q.receivePrompt();
+    QVERIFY(!v.hidden && v.ended);
+    QVERIFY(!q.isOpen());
+    // FOREIGN with no window open opens none.
+    q.receiveCommand(QuietCommandEnum::FOREIGN);
+    QVERIFY(!q.isOpen());
+
+    // The request over: nothing more is hidden, at once.
+    q.receiveCommand(QuietCommandEnum::BEGIN);
+    std::ignore = line(q, "Bandage  Average  Easy  None");
+    q.receiveCommand(QuietCommandEnum::END);
+    QVERIFY(!q.isOpen());
+    QVERIFY(!line(q, "Wilderness  Very good  Normal  None").hidden);
+    QVERIFY(!q.receivePager().hidden);
+    QVERIFY(!q.receivePrompt().hidden);
+}
+
+void TestTradeLines::quietReadersTest()
+{
+    // A `prac` the player typed: everything is shown, as ever.
+    {
+        Terminal typed;
+        QVERIFY(typed.readers.receiveCommand(QStringLiteral("prac")));
+        typed.lines(g_ryaln);
+        QVERIFY(!typed.prompt());
+        QCOMPARE(typed.shown.size(), qsizetype{9});
+        QVERIFY(typed.captured.isEmpty());
+        QCOMPARE(typed.events, list({"skills:5:1", "prompt"}));
+    }
+
+    // The quiet command: every line of the reply and the prompt that ends it stay out of the
+    // terminal, the lines are handed over, and the readers publish as for a typed one. The
+    // end is told after their packages and before the prompt's own signal.
+    {
+        Terminal quiet;
+        quiet.begin();
+        QVERIFY(quiet.readers.quietOpen());
+        quiet.lines(g_ryaln);
+        QVERIFY(quiet.prompt());
+        QVERIFY(quiet.shown.isEmpty());
+        QCOMPARE(quiet.captured.size(), qsizetype{8});
+        QCOMPARE(quiet.captured.front(), QStringLiteral("You have 0 practice sessions left.\n"));
+        QCOMPARE(quiet.events, list({"skills:5:1", "ended", "prompt"}));
+        QVERIFY(!quiet.readers.quietOpen());
+
+        // The player's own `prac` right after it is the player's.
+        QVERIFY(quiet.readers.receiveCommand(QStringLiteral("prac")));
+        quiet.lines(g_ryaln);
+        QVERIFY(!quiet.prompt());
+        QCOMPARE(quiet.shown.size(), qsizetype{9});
+        QCOMPARE(quiet.captured.size(), qsizetype{8});
+    }
+
+    // Any command: `stat`, which the trade readers make nothing of.
+    {
+        Terminal stat;
+        stat.begin();
+        stat.lines(g_stat);
+        QVERIFY(stat.prompt());
+        QVERIFY(stat.shown.isEmpty());
+        QCOMPARE(stat.captured.size(), qsizetype{3});
+        QCOMPARE(stat.events, list({"ended", "prompt"}));
+    }
+
+    // Cut by the pager (elvenrunes 2020-12-30_..._Aquator.txt:1716-1747): the pager is hidden
+    // and published as hidden, which is what tells the runner it is its own to answer.
+    {
+        Terminal paged;
+        paged.begin();
+        paged.lines({"You have 1 practice session left.",
+                     "Skill / Spell          Knowledge  Difficulty  Class       Mana  Casting time",
+                     "Climb                  Good       Very easy   None       ",
+                     "Cure blindness         Fair       Normal      Cleric         4  Very short"});
+        QVERIFY(paged.pager(PAGER_ONE_PAGE));
+        QVERIFY(paged.readers.pagerOpen());
+        QVERIFY(!paged.readers.receiveCommand(QStringLiteral("")));
+        paged.lines({"Dispel evil            Superb     Hard        Cleric        17  Very short",
+                     "Pick                   Poor       Normal      Thief      ",
+                     ""});
+        QVERIFY(paged.prompt());
+        QVERIFY(paged.shown.isEmpty());
+        QCOMPARE(paged.captured.size(), qsizetype{7});
+        QCOMPARE(paged.events, list({"pager:73:1", "skills:4:1", "ended", "prompt"}));
+    }
+
+    // Without a GA the pager comes glued to the next line: hidden with it.
+    {
+        Terminal glued;
+        glued.begin();
+        glued.lines({"You have 1 practice session left.",
+                     "Skill / Spell          Knowledge  Difficulty  Class       Mana  Casting time",
+                     "Climb                  Good       Very easy   None       "});
+        QVERIFY(glued.chunk(false,
+                            QString::fromUtf8(PAGER_ONE_PAGE)
+                                + QStringLiteral("Pick                   Poor       Normal      "
+                                                 "Thief      \n")));
+        glued.lines({""});
+        QVERIFY(glued.prompt());
+        QVERIFY(glued.shown.isEmpty());
+        QCOMPARE(glued.events, list({"pager:73:1", "skills:2:1", "ended", "prompt"}));
+    }
+
+    // The request is over before the reply is (a timeout): from then on everything is shown,
+    // the pager too, since nobody would answer one that is hidden.
+    {
+        Terminal over;
+        over.begin();
+        over.lines({"You have 1 practice session left."});
+        over.observer.observeQuietCommand(QuietCommandEnum::END);
+        QVERIFY(!over.readers.quietOpen());
+        QVERIFY(!over.line("Skill / Spell          Knowledge  Difficulty  Class"));
+        QVERIFY(!over.pager(PAGER));
+        QVERIFY(!over.prompt());
+        QCOMPARE(over.shown.size(), qsizetype{3});
+        QCOMPARE(over.events, list({"pager:50:0", "prompt"}));
+    }
+
+    // A line no terminal is ever sent and that never becomes a chunk (the MMXP line, when the
+    // quiet command was `info MMXP ...`): the reply all the same, so its prompt ends it.
+    {
+        Terminal level;
+        const QString line = QStringLiteral("MMXP 56 45370716 1029284 271013 0\n");
+        QVERIFY(!level.readers.captureQuietLine(line));
+        level.begin();
+        QVERIFY(level.readers.captureQuietLine(line));
+        QVERIFY(level.prompt());
+        QVERIFY(level.shown.isEmpty());
+        QCOMPARE(level.events, list({"ended", "prompt"}));
+    }
+
+    // A reset (a new connection, echo off, XML mode gone) ends it.
+    {
+        Terminal gone;
+        gone.begin();
+        gone.readers.reset();
+        QVERIFY(!gone.readers.quietOpen());
+        QVERIFY(!gone.line("You have 1 practice session left."));
+    }
+}
+
+void TestTradeLines::quietReadersForeignTest()
+{
+    const char *const tell = "Gandalf tells you 'are you there?'";
+
+    // Other traffic before the reply, with its own prompt: shown, and the window waits on.
+    {
+        Terminal before;
+        before.begin();
+        QVERIFY(before.line(""));
+        QVERIFY(!before.line(tell, QuietTrafficEnum::OTHER));
+        QVERIFY(!before.prompt());
+        QVERIFY(before.readers.quietOpen());
+        before.lines(g_ryaln);
+        QVERIFY(before.prompt());
+        QCOMPARE(before.shown, list({"Gandalf tells you 'are you there?'\n", MUME_PROMPT}));
+        QCOMPARE(before.captured.size(), qsizetype{9});
+        QCOMPARE(before.events, list({"prompt", "skills:5:1", "ended", "prompt"}));
+    }
+
+    // A tell and an arrival while the reply waits at the pager: shown, and then the prompt
+    // that ends the reply is shown as well, so that the terminal is not left without one. The
+    // blank line MUME puts before them is plain, and hidden; the pager MUME repeats is the
+    // reply's own; and the table still comes whole.
+    {
+        Terminal mid;
+        mid.begin();
+        mid.lines({"You have 1 practice session left.",
+                   "Skill / Spell          Knowledge  Difficulty  Class       Mana  Casting time",
+                   "Climb                  Good       Very easy   None       "});
+        QVERIFY(mid.pager(PAGER_ONE_PAGE));
+        QVERIFY(mid.line(""));
+        QVERIFY(!mid.line(tell, QuietTrafficEnum::OTHER));
+        QVERIFY(!mid.line("A black wolf arrives from the north.", QuietTrafficEnum::OTHER));
+        QVERIFY(mid.pager(PAGER_ONE_PAGE));
+        QVERIFY(mid.line("Pick                   Poor       Normal      Thief      "));
+        QVERIFY(mid.line(""));
+        QVERIFY(!mid.prompt());
+        QCOMPARE(mid.shown,
+                 list({"Gandalf tells you 'are you there?'\n",
+                       "A black wolf arrives from the north.\n",
+                       MUME_PROMPT}));
+        QCOMPARE(mid.captured.size(), qsizetype{6});
+        QCOMPARE(mid.events,
+                 list({"pager:73:1", "pager:73:1", "skills:2:1", "ended", "prompt"}));
+        QVERIFY(!mid.readers.quietOpen());
+    }
+
+    // A line that cannot be told: shown and captured, and its prompt shown.
+    {
+        Terminal unsure;
+        unsure.begin();
+        unsure.lines(g_stat);
+        QVERIFY(!unsure.line("You are thirsty.", QuietTrafficEnum::UNSURE));
+        QVERIFY(!unsure.prompt());
+        QCOMPARE(unsure.shown, list({"You are thirsty.\n", MUME_PROMPT}));
+        QCOMPARE(unsure.captured.size(), qsizetype{4});
+    }
+
+    // A pager while the window still waits for its reply cuts somebody else's reply: shown,
+    // not marked, and the prompt after it shown.
+    {
+        Terminal other;
+        other.begin();
+        QVERIFY(!other.line("*** TROPHY *** (Kills, Knowledge, Name)", QuietTrafficEnum::OTHER));
+        QVERIFY(!other.pager(PAGER));
+        QCOMPARE(other.events, list({"pager:50:0"}));
+    }
+
+    // Another line went to MUME after the command: the next real prompt closes the window,
+    // reply or not, so that line's reply is never in it.
+    {
+        Terminal foreign;
+        foreign.begin();
+        foreign.observer.observeQuietCommand(QuietCommandEnum::FOREIGN);
+        QVERIFY(!foreign.prompt());
+        QVERIFY(!foreign.readers.quietOpen());
+        QVERIFY(!foreign.line("You are carrying:"));
+        QCOMPARE(foreign.events, list({"ended", "prompt"}));
+    }
+}
+
 void TestTradeLines::messagesTest()
 {
     TradeReplies r = feed(g_helms);
@@ -1157,6 +1706,13 @@ void TestTradeLines::messagesTest()
              GmcpMessageTypeEnum::MMAPPER_TRADE_CANCEL);
     QCOMPARE(GmcpMessage{GmcpMessageTypeEnum::MMAPPER_TRADE_OPERATION}.getName().getStdStringUtf8(),
              std::string{"MMapper.Trade.Operation"});
+    // And the quiet command's.
+    QCOMPARE(GmcpMessage{GmcpMessageName{"MMapper.Input.Quiet"}}.getType(),
+             GmcpMessageTypeEnum::MMAPPER_INPUT_QUIET);
+    QVERIFY(GmcpMessage::fromRawBytes(QByteArray{R"(MMapper.Input.Quiet {"id":"k","text":"prac"})"})
+                .isMMapperInputQuiet());
+    QCOMPARE(GmcpMessage{GmcpMessageTypeEnum::MMAPPER_INPUT_REPLY}.getName().getStdStringUtf8(),
+             std::string{"MMapper.Input.Reply"});
 }
 
 void TestTradeLines::resetTest()

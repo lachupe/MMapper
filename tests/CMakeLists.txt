@@ -324,15 +324,20 @@ set_target_properties(
 )
 add_test(NAME TestExitLooks COMMAND TestExitLooks)
 
-# Shops, guilds, inns and trophies, the money in them, and MUME's pager
+# Shops, guilds, inns and trophies, the money in them, MUME's pager, and the quiet command's
+# window
 set(TestTradeLines_SRCS
     TestTradeLines.cpp
     ../src/frontend/TradeMessages.cpp
     ../src/frontend/TradeMessages.h
     ../src/parser/CharLines.cpp
     ../src/parser/CharLines.h
+    ../src/parser/QuietCapture.cpp
+    ../src/parser/QuietCapture.h
     ../src/parser/TradeLines.cpp
     ../src/parser/TradeLines.h
+    ../src/parser/XmlElement.cpp
+    ../src/parser/XmlElement.h
     )
 add_executable(TestTradeLines ${TestTradeLines_SRCS})
 add_dependencies(TestTradeLines mm_test mm_global)
@@ -527,13 +532,22 @@ if(WITH_FRONTEND)
     )
     add_test(NAME TestFrontend COMMAND TestFrontend)
 
-    # Trade operations: the steps, the pager answers and the viewer, against a scripted MUME
+    # Trade operations: the steps, the pager answers and the viewer, against a scripted MUME;
+    # and the quiet command, with the parser's readers beside the runner
     set(TestTradeOperations_SRCS
         TestTradeOperations.cpp
         ../src/frontend/FrontendSubscriptions.cpp
         ../src/frontend/FrontendSubscriptions.h
         ../src/frontend/TradeOperations.cpp
         ../src/frontend/TradeOperations.h
+        ../src/parser/CharLines.cpp
+        ../src/parser/CharLines.h
+        ../src/parser/QuietCapture.cpp
+        ../src/parser/QuietCapture.h
+        ../src/parser/TradeLines.cpp
+        ../src/parser/TradeLines.h
+        ../src/parser/XmlElement.cpp
+        ../src/parser/XmlElement.h
         ../src/proxy/GmcpModule.cpp
         ../src/proxy/GmcpModule.h
         ../src/proxy/GmcpUtils.cpp

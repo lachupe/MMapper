@@ -61,7 +61,7 @@ FrontendServer::FrontendServer(GameObserver &observer,
 {
     // The viewer setting is in MMapper.Session.State.
     m_trade.setViewerChanged([this]() { publishSessionState(); });
-    m_tradeTimer.setInterval(1000);
+    m_tradeTimer.setInterval(250);
     connect(&m_tradeTimer, &QTimer::timeout, this, [this]() {
         m_trade.expire();
         if (!m_trade.busy()) {
@@ -497,6 +497,11 @@ void FrontendServer::onTextMessage(QWebSocket *const socket, const QString &fram
         return;
     }
 
+    if (msg.isMMapperInputQuiet()) {
+        handleQuiet(*client, msg);
+        return;
+    }
+
     if (msg.isMMapperTradeRequest() || msg.isMMapperTradeCancel()) {
         handleTrade(*client, msg);
         return;
@@ -624,12 +629,53 @@ void FrontendServer::handleTrade(Client &client, const GmcpMessage &msg)
         return;
     }
 
+    m_trade.request(payload, tradeContext());
+    if (m_trade.busy() && !m_tradeTimer.isActive()) {
+        m_tradeTimer.start();
+    }
+}
+
+TradeOperations::Context FrontendServer::tradeContext() const
+{
     TradeOperations::Context context;
     context.driving = true;
     context.connected = m_upstreamConnected;
     context.echo = m_echo;
     context.game = m_observer.getGameState();
-    m_trade.request(payload, context);
+    return context;
+}
+
+void FrontendServer::handleQuiet(Client &client, const GmcpMessage &msg)
+{
+    const auto &optJson = msg.getJson();
+    const QJsonDocument doc = optJson.has_value() ? QJsonDocument::fromJson(optJson->toQByteArray())
+                                                  : QJsonDocument{};
+    const QJsonObject payload = doc.object();
+    const QJsonValue idValue = payload.value("id");
+    const QString id = idValue.toString();
+    if (!doc.isObject() || !idValue.isString() || id.isEmpty()
+        || id.size() > TradeOperations::MAX_ID_CHARS) {
+        sendTo(client,
+               frontend_messages::makeError("invalid-quiet",
+                                            "MMapper.Input.Quiet needs an object payload with "
+                                            "an 'id' string"));
+        return;
+    }
+
+    const bool driving = m_driver != nullptr && m_driver == client.socket;
+    if (!driving) {
+        // Told to the observer alone, like a trade request of its.
+        QuietReplyState refused;
+        refused.id = id;
+        refused.text = payload.value("text").toString().left(TradeOperations::MAX_ARGUMENT_CHARS);
+        refused.status = TradeStatusEnum::REFUSED;
+        refused.reason = QStringLiteral("observing");
+        sendTo(client, makeQuietReply(refused));
+        return;
+    }
+
+    // The text itself is not logged here, as no input is.
+    m_trade.requestQuiet(payload, tradeContext());
     if (m_trade.busy() && !m_tradeTimer.isActive()) {
         m_tradeTimer.start();
     }

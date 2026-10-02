@@ -34,6 +34,11 @@ private Q_SLOTS:
     static void trophiesTest();
     static void trophiesPagedTest();
     static void readersOrderTest();
+    static void quietCommandAllowedTest();
+    static void quietTrafficTest();
+    static void quietCaptureTest();
+    static void quietReadersTest();
+    static void quietReadersForeignTest();
     static void messagesTest();
     static void resetTest();
 };

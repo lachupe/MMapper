@@ -111,6 +111,8 @@ class ParseEvent;
     X(MMAPPER_GUILD_TEACHER, MMapperGuildTeacher, "mmapper.guild.teacher", "MMapper.Guild.Teacher") \
     X(MMAPPER_INN_OFFER, MMapperInnOffer, "mmapper.inn.offer", "MMapper.Inn.Offer") \
     X(MMAPPER_INPUT_COMMAND, MMapperInputCommand, "mmapper.input.command", "MMapper.Input.Command") \
+    X(MMAPPER_INPUT_QUIET, MMapperInputQuiet, "mmapper.input.quiet", "MMapper.Input.Quiet") \
+    X(MMAPPER_INPUT_REPLY, MMapperInputReply, "mmapper.input.reply", "MMapper.Input.Reply") \
     X(MMAPPER_MAP_POSITION, MMapperMapPosition, "mmapper.map.position", "MMapper.Map.Position") \
     X(MMAPPER_ROOM_CONTAINER, \
       MMapperRoomContainer, \
@@ -153,7 +155,7 @@ enum class NODISCARD GmcpMessageTypeEnum {
 #define X_COUNT(...) +1
 static constexpr const size_t NUM_GMCP_MESSAGES = XFOREACH_GMCP_MESSAGE_TYPE(X_COUNT);
 #undef X_COUNT
-static_assert(NUM_GMCP_MESSAGES == 82);
+static_assert(NUM_GMCP_MESSAGES == 84);
 DEFINE_ENUM_COUNT(GmcpMessageTypeEnum, NUM_GMCP_MESSAGES)
 
 namespace tags {

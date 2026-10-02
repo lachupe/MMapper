@@ -221,6 +221,7 @@ GmcpMessage makeSessionState(const bool upstreamConnected,
     QJsonObject obj;
     obj["itemCommands"] = 6;
     obj["trade"] = 1;
+    obj["quiet"] = 1;
     obj["viewer"] = viewer;
     obj["upstream"] = upstreamConnected ? QStringLiteral("connected")
                                         : QStringLiteral("disconnected");

@@ -136,6 +136,16 @@ public:
     /// A real prompt (a GA chunk that is not the pager), emitted after every reader of that
     /// prompt has published what it completed.
     Signal2<> sig2_realPrompt;
+    /// The quiet command (MMapper.Input.Quiet), from the runner to the parser: its command has
+    /// reached MUME, another line has gone out since, or the request is over. See QuietCapture.
+    Signal2<QuietCommandEnum> sig2_quietCommand;
+    /// And from the parser to the runner: a line of that command's reply, colour removed, which
+    /// was kept out of the terminal (or shown as well, where it could not be told whose it
+    /// is); and the real prompt that ended the reply, emitted after every reader of that prompt
+    /// has published and before sig2_realPrompt. A hidden line is in no sig2_sentToUser*
+    /// signal.
+    Signal2<QString> sig2_quietLine;
+    Signal2<> sig2_quietEnded;
     /// A text MUME showed through its viewer, published instead of MMapper's own window while a
     /// frontend has claimed the viewer. See setViewerClaimed().
     Signal2<ViewText> sig2_viewText;
@@ -208,6 +218,9 @@ public:
     void observeCharTrophies(const CharTrophies &trophies) { sig2_charTrophies.invoke(trophies); }
     void observePager(const PagerLine &pager) { sig2_pager.invoke(pager); }
     void observeRealPrompt() { sig2_realPrompt.invoke(); }
+    void observeQuietCommand(const QuietCommandEnum what) { sig2_quietCommand.invoke(what); }
+    void observeQuietLine(const QString &plain) { sig2_quietLine.invoke(plain); }
+    void observeQuietEnded() { sig2_quietEnded.invoke(); }
     void observeViewText(const ViewText &view) { sig2_viewText.invoke(view); }
     /// Whether a frontend has claimed MUME's viewer: viewed texts then go out as sig2_viewText
     /// and MMapper opens no window of its own for them.

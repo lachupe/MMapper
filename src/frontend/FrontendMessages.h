@@ -77,8 +77,10 @@ struct NODISCARD MapIdentity final
 /// or a quit with the connection open, so `upstream` alone cannot say the character has gone.
 ///
 /// `trade` is the version of the trade operations MMapper.Trade.Request runs (TradeOperations),
-/// 1 today. `viewer` is MUME's `change viewer` setting as far as MMapper knows it: "external",
-/// "simple", "off" or "unknown" (TradeOperations::viewerState()).
+/// 1 today, and `quiet` the version of the quiet command, MMapper.Input.Quiet, 1 as well: a
+/// frontend that finds no `quiet` is talking to an MMapper without it. `viewer` is MUME's
+/// `change viewer` setting as far as MMapper knows it: "external", "simple", "off" or "unknown"
+/// (TradeOperations::viewerState()).
 ///
 /// `login` is there only while MUME waits at a login prompt (LoginLinesTracker): `kind` "name"
 /// or "password", `text` (the prompt as MUME printed it), `serial` (one more for every prompt

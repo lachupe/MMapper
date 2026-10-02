@@ -26,6 +26,14 @@ private Q_SLOTS:
     static void innOfferAndRentTest();
     static void innRetireTest();
     static void trophiesPagerTest();
+    static void quietReplyMessageTest();
+    static void quietCommandTest();
+    static void quietAllowedTest();
+    static void quietIdleTest();
+    static void quietPagerTest();
+    static void quietOverlapTest();
+    static void quietFailuresTest();
+    static void quietWholeTest();
     static void tooManyPagesTest();
     static void playerPreemptionTest();
     static void foreignLineTest();

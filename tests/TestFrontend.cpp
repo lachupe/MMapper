@@ -238,6 +238,8 @@ void TestFrontend::sessionStateTest()
     // Trade operations are offered, and MUME's viewer setting is not known until MMapper or
     // the player sets it.
     QCOMPARE(payloadOf(connected)["trade"].toInt(), 1);
+    // And the quiet command, MMapper.Input.Quiet.
+    QCOMPARE(payloadOf(connected)["quiet"].toInt(), 1);
     QCOMPARE(payloadOf(connected)["viewer"].toString(), QStringLiteral("unknown"));
     QCOMPARE(payloadOf(frontend_messages::makeSessionState(true,
                                                            arda,

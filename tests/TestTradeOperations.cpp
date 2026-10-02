@@ -6,7 +6,9 @@
 #include "../src/frontend/FrontendSubscriptions.h"
 #include "../src/frontend/TradeOperations.h"
 #include "../src/observer/gameobserver.h"
+#include "../src/parser/CharLines.h"
 #include "../src/parser/GameStateLines.h"
+#include "../src/parser/QuietCapture.h"
 #include "../src/parser/TradeLines.h"
 #include "../src/proxy/GmcpMessage.h"
 
@@ -46,10 +48,27 @@ struct NODISCARD Mume final
     std::vector<QString> names;
     int64_t clock = 1000;
     int viewerChanges = 0;
+    /// What the runner told the parser about its quiet command (sig2_quietCommand), in order:
+    /// "begin", "foreign", "end".
+    QStringList quiet;
+    Signal2Lifetime lifetime;
     std::unique_ptr<TradeOperations> trade;
 
     Mume()
     {
+        observer.sig2_quietCommand.connect(lifetime, [this](const QuietCommandEnum what) {
+            switch (what) {
+            case QuietCommandEnum::BEGIN:
+                quiet << QStringLiteral("begin");
+                break;
+            case QuietCommandEnum::FOREIGN:
+                quiet << QStringLiteral("foreign");
+                break;
+            case QuietCommandEnum::END:
+                quiet << QStringLiteral("end");
+                break;
+            }
+        });
         trade = std::make_unique<TradeOperations>(
             observer,
             [this](const QString &line) {
@@ -78,6 +97,8 @@ struct NODISCARD Mume final
     }
 
     void request(const char *const payload) { trade->request(json(payload), context()); }
+    void requestQuiet(const char *const payload) { trade->requestQuiet(json(payload), context()); }
+    void requestQuiet(const std::string &payload) { requestQuiet(payload.c_str()); }
 
     /// Everything waiting reaches MUME, in order.
     void flush()
@@ -114,6 +135,25 @@ struct NODISCARD Mume final
                                            true);
         observer.observeRealPrompt();
     }
+    /// A line of a quiet command's reply, as the parser reports what it kept from the terminal.
+    void quietLine(const QString &text) { observer.observeQuietLine(text + QStringLiteral("\n")); }
+    /// The pager of that reply: published, marked hidden, and never sent to the terminal.
+    void quietPager(const int percent)
+    {
+        PagerLine pager;
+        pager.percent = percent;
+        pager.text
+            = QStringLiteral("*** Return: continue, b: back, r: redisplay, q: quit (%1%) ***")
+                  .arg(percent);
+        pager.hidden = true;
+        observer.observePager(pager);
+    }
+    /// The prompt that ends it, which the parser hid as well: the end, then the prompt.
+    void quietPrompt()
+    {
+        observer.observeQuietEnded();
+        observer.observeRealPrompt();
+    }
 
     NODISCARD const QJsonObject &last() const { return ops.back(); }
     NODISCARD QString status() const { return last()["status"].toString(); }
@@ -135,6 +175,138 @@ NODISCARD GuildPractised practised(const int64_t used, const int64_t most)
     p.knowledgePct = 50;
     return p;
 }
+
+/// MUME, the parser's readers and the runner together: what MumeXmlParser::parse() does with
+/// each chunk (see TestTradeLines' Terminal), with the runner's lines reaching MUME at flush().
+/// `shown` is the terminal.
+struct NODISCARD Whole final
+{
+    GameObserver observer;
+    Signal2Lifetime lifetime;
+    TradeReaders readers{observer};
+    CharLinesTracker chars;
+    QStringList pending;
+    QStringList sent;
+    QStringList shown;
+    QStringList packages;
+    std::vector<QJsonObject> replies;
+    int64_t clock = 1000;
+    std::unique_ptr<TradeOperations> trade;
+
+    Whole()
+    {
+        observer.sig2_quietCommand.connect(lifetime, [this](const QuietCommandEnum what) {
+            readers.receiveQuietCommand(what);
+        });
+        observer.sig2_sentToMudString.connect(lifetime, [this](const QString &line) {
+            std::ignore = readers.receiveCommand(line);
+        });
+        observer.sig2_charSkills.connect(lifetime, [this](const CharSkills &skills) {
+            packages << QStringLiteral("skills:%1:%2").arg(skills.rows.size()).arg(skills.complete);
+        });
+        trade = std::make_unique<TradeOperations>(
+            observer,
+            [this](const QString &line) {
+                pending << line;
+                sent << line;
+            },
+            [this](const GmcpMessage &msg) {
+                // The readers' packages have gone out by the time the reply does.
+                packages << msg.getName().toQString();
+                replies.push_back(payloadOf(msg));
+            },
+            [this]() { return clock; });
+        observer.observeConnected();
+        observer.observeGameState(GameStateEnum::PLAYING);
+        trade->setDriving(true);
+    }
+
+    void requestQuiet(const char *const payload)
+    {
+        trade->requestQuiet(json(payload), Mume::context());
+    }
+    void flush()
+    {
+        while (!pending.isEmpty()) {
+            observer.observeSentToMud(pending.takeFirst() + QStringLiteral("\n"));
+        }
+    }
+    void player(const QString &line)
+    {
+        trade->beforePlayerLine(line);
+        pending << line;
+        sent << line;
+    }
+    void stats(const CharReplies &r)
+    {
+        for (const CharStat &stat : r.stats) {
+            packages << QStringLiteral("stat:%1").arg(stat.ob.value_or(-1));
+        }
+    }
+    void chunk(const bool goAhead,
+               const QString &text,
+               const QuietTrafficEnum traffic = QuietTrafficEnum::REPLY)
+    {
+        const MudChunk c = readers.beginChunk(goAhead, false, text, traffic);
+        if (c.captured) {
+            observer.observeQuietLine(c.plain);
+        }
+        if (!c.hidden) {
+            shown << text;
+            observer.observeSentToUserTerminal(SendToUserSourceEnum::FromMud, text, goAhead);
+        }
+        if (c.kind == MudChunkKindEnum::LINE) {
+            stats(chars.receiveLine(c.plain));
+            readers.receiveLine(c.plain);
+        }
+        if (c.kind == MudChunkKindEnum::PROMPT) {
+            stats(chars.receivePrompt());
+            readers.receivePrompt();
+        }
+        readers.endChunk();
+    }
+    void lines(const std::initializer_list<const char *> all)
+    {
+        for (const char *const one : all) {
+            chunk(false, QString::fromUtf8(one) + QStringLiteral("\n"));
+        }
+    }
+    /// A line MUME wrapped in an element of other traffic.
+    void other(const char *const text)
+    {
+        chunk(false, QString::fromUtf8(text) + QStringLiteral("\n"), QuietTrafficEnum::OTHER);
+    }
+    void prompt() { chunk(true, QStringLiteral("o W C Mana:Hot>")); }
+    void pager(const int percent)
+    {
+        chunk(true,
+              QStringLiteral("*** Return: continue, b: back, r: redisplay, q: quit (%1%) *** ")
+                  .arg(percent));
+    }
+
+    NODISCARD const QJsonObject &last() const { return replies.back(); }
+    NODISCARD QString status() const { return last()["status"].toString(); }
+    NODISCARD QString reason() const { return last()["reason"].toString(); }
+    NODISCARD QStringList replyLines() const
+    {
+        QStringList result;
+        for (const QJsonValue &value : last()["lines"].toArray()) {
+            result << value.toString();
+        }
+        return result;
+    }
+};
+
+// elvenrunes 2020-12-30_..._Aquator.txt:1716-1747, as in TestTradeLines: the table's two pages.
+const std::initializer_list<const char *> g_pageOne{
+    "You have 1 practice session left.",
+    "Skill / Spell          Knowledge  Difficulty  Class       Mana  Casting time",
+    "Climb                  Good       Very easy   None       ",
+    "Cure blindness         Fair       Normal      Cleric         4  Very short"};
+const std::initializer_list<const char *>
+    g_pageTwo{"Dispel evil            Superb     Hard        Cleric        17  Very short",
+              "Pick                   Poor       Normal      Thief      ",
+              ""};
 
 } // namespace
 
@@ -547,6 +719,625 @@ void TestTradeOperations::trophiesPagerTest()
     mume.flush();
     mume.pager(20);
     QCOMPARE(mume.sent.size(), 4);
+}
+
+void TestTradeOperations::quietReplyMessageTest()
+{
+    QuietReplyState state;
+    state.id = QStringLiteral("k1");
+    state.text = QStringLiteral("prac");
+    state.status = TradeStatusEnum::DONE;
+    state.lines << QStringLiteral("You have 0 practice sessions left.") << QStringLiteral("Skill");
+    state.paged = true;
+    state.complete = true;
+    const GmcpMessage msg = makeQuietReply(state);
+    QCOMPARE(msg.getName().toQString(), QStringLiteral("MMapper.Input.Reply"));
+    QVERIFY(msg.isMMapperInputReply());
+    QCOMPARE(msg.toRawBytes(),
+             QByteArray(R"(MMapper.Input.Reply {"complete":true,"id":"k1","lines":)"
+                        R"(["You have 0 practice sessions left.","Skill"],"paged":true,)"
+                        R"("reason":"","status":"done","text":"prac"})"));
+}
+
+void TestTradeOperations::quietCommandTest()
+{
+    // The quiet command: MMapper sends the frontend's line itself and tells the parser once
+    // it has reached MUME; the reply is what the parser reports of it.
+    Mume mume;
+    mume.requestQuiet(R"({"id":"k","text":"prac"})");
+    QCOMPARE(mume.sent, QStringList{"prac"});
+    // Nothing is published until it is over.
+    QVERIFY(mume.ops.empty());
+    QVERIFY(mume.trade->busy());
+    QVERIFY(mume.quiet.isEmpty());
+    mume.flush();
+    QCOMPARE(mume.quiet, QStringList{"begin"});
+
+    // A prompt, and lines the terminal was shown, are other traffic to it: it waits.
+    mume.line(QStringLiteral("Gandalf tells you 'hi'"));
+    mume.prompt();
+    QVERIFY(mume.ops.empty());
+
+    mume.quietLine(QStringLiteral(""));
+    mume.quietLine(QStringLiteral("You have 0 practice sessions left."));
+    mume.quietLine(QStringLiteral("Skill / Spell        Knowledge  Difficulty  Class"));
+    mume.quietLine(QStringLiteral("Bandage              Average    Easy        None"));
+    mume.quietLine(QStringLiteral(""));
+    mume.quietPrompt();
+    QCOMPARE(mume.ops.size(), size_t{1});
+    QCOMPARE(mume.names.back(), QStringLiteral("MMapper.Input.Reply"));
+    QCOMPARE(mume.last()["id"].toString(), QStringLiteral("k"));
+    QCOMPARE(mume.last()["text"].toString(), QStringLiteral("prac"));
+    QCOMPARE(mume.status(), QStringLiteral("done"));
+    QCOMPARE(mume.reason(), QString{});
+    QVERIFY(!mume.last()["paged"].toBool());
+    QVERIFY(mume.last()["complete"].toBool());
+    // The blank lines around the reply are spacing, and left out; those inside it are kept.
+    const QJsonArray lines = mume.last()["lines"].toArray();
+    QCOMPARE(lines.size(), 3);
+    QCOMPARE(lines.at(0).toString(), QStringLiteral("You have 0 practice sessions left."));
+    QCOMPARE(lines.at(2).toString(),
+             QStringLiteral("Bandage              Average    Easy        None"));
+    QCOMPARE(mume.quiet, (QStringList{"begin", "end"}));
+    QVERIFY(!mume.trade->busy());
+    QCOMPARE(mume.sent, QStringList{"prac"});
+
+    // Any line: the runner knows nothing of the command. Here `stat`, right after.
+    mume.clock += TradeOperations::QUIET_IDLE_MS;
+    mume.requestQuiet(R"({"id":"l","text":"stat"})");
+    QCOMPARE(mume.sent.back(), QStringLiteral("stat"));
+    mume.flush();
+    mume.quietLine(
+        QStringLiteral("OB: 131%, DB: 24%, PB: 0%, Armour: 0%. Wimpy: 111. Mood: wimpy."));
+    mume.quietLine(QStringLiteral("Needed: 1,108,995 xp, 0 tp. Gold: 0. Alert: normal."));
+    mume.quietPrompt();
+    QCOMPARE(mume.status(), QStringLiteral("done"));
+    QCOMPARE(mume.last()["text"].toString(), QStringLiteral("stat"));
+    QCOMPARE(mume.last()["lines"].toArray().size(), 2);
+
+    // A trade operation's id is its own: Trade.Cancel does not reach a quiet command.
+    mume.clock += TradeOperations::QUIET_IDLE_MS;
+    mume.requestQuiet(R"({"id":"m","text":"info"})");
+    mume.trade->cancel(QStringLiteral("m"));
+    QVERIFY(mume.trade->busy());
+}
+
+void TestTradeOperations::quietAllowedTest()
+{
+    // A command the player never sees may only read. Each of these is sent.
+    for (const char *const line :
+         {"prac", "practice", "sc", "score", "inf", "info", "info MMXP %l %x %X %t %T", "stat",
+          "eq", "equipment", "i", "inv", "inventory", "time", "who", "trop", "trophy", "exits",
+          "exa sword", "examine sword", "l", "look", "look in pack", "list", "list helm", "PRAC",
+          "  Look north  "}) {
+        Mume mume;
+        mume.trade->requestQuiet(QJsonObject{{"id", "k"}, {"text", QString::fromUtf8(line)}},
+                                 Mume::context());
+        QVERIFY2(mume.ops.empty(), line);
+        // As it was asked, without the space around it.
+        QCOMPARE(mume.sent, QStringList{QString::fromUtf8(line).trimmed()});
+        QVERIFY2(mume.trade->busy(), line);
+    }
+
+    // Anything else is refused whole, as `not allowed`, and nothing of it goes to MUME: not
+    // an action, not a second command joined to an allowed one, not an empty line.
+    for (const char *const line :
+         {"drop all", "say x", "kill orc", "north", "cast 'armour'", "rent", "buy bread",
+          "prac bash", "prac; drop all", "prac\ndrop all", "look\r\nflee", "", "   ", " drop all",
+          "_help", "practise"}) {
+        Mume mume;
+        mume.trade->requestQuiet(QJsonObject{{"id", "k"}, {"text", QString::fromUtf8(line)}},
+                                 Mume::context());
+        QCOMPARE(mume.ops.size(), size_t{1});
+        QCOMPARE(mume.names.back(), QStringLiteral("MMapper.Input.Reply"));
+        QCOMPARE(mume.status(), QStringLiteral("refused"));
+        QCOMPARE(mume.reason(), QStringLiteral("not allowed"));
+        QCOMPARE(mume.last()["text"].toString(), QString::fromUtf8(line).trimmed());
+        QVERIFY2(mume.sent.isEmpty(), line);
+        QVERIFY2(mume.pending.isEmpty(), line);
+        QVERIFY2(!mume.trade->busy(), line);
+        QVERIFY2(mume.quiet.isEmpty(), line);
+        // Nor later: there is nothing waiting to be sent when MUME is idle.
+        mume.clock += TradeOperations::QUIET_IDLE_MS;
+        mume.trade->expire();
+        mume.prompt();
+        QVERIFY2(mume.sent.isEmpty(), line);
+    }
+}
+
+void TestTradeOperations::quietIdleTest()
+{
+    // It is sent only when no reply of the player's is still to come. Here the player's `look`
+    // has gone out and its prompt has not come: the command waits.
+    Mume mume;
+    mume.player(QStringLiteral("look"));
+    mume.flush();
+    mume.requestQuiet(R"({"id":"k","text":"prac"})");
+    QCOMPARE(mume.sent, QStringList{"look"});
+    QVERIFY(mume.trade->busy());
+    mume.line(QStringLiteral("A dark cave"));
+    mume.trade->expire();
+    QCOMPARE(mume.sent, QStringList{"look"});
+    // Its prompt: every line has had one. Half a second later the command goes.
+    mume.prompt();
+    QCOMPARE(mume.sent, QStringList{"look"});
+    mume.clock += TradeOperations::QUIET_SETTLE_MS;
+    mume.trade->expire();
+    QCOMPARE(mume.sent, (QStringList{"look", "prac"}));
+    QVERIFY(mume.ops.empty());
+
+    // Two lines out and one prompt back: still one to come.
+    Mume two;
+    two.player(QStringLiteral("north"));
+    two.player(QStringLiteral("look"));
+    two.flush();
+    two.requestQuiet(R"({"id":"l","text":"prac"})");
+    two.line(QStringLiteral("A dark cave"));
+    two.prompt();
+    two.clock += TradeOperations::QUIET_SETTLE_MS;
+    two.trade->expire();
+    QCOMPARE(two.sent.size(), 2);
+    two.line(QStringLiteral("A dark cave"));
+    two.prompt();
+    two.clock += TradeOperations::QUIET_SETTLE_MS;
+    two.trade->expire();
+    QCOMPARE(two.sent.back(), QStringLiteral("prac"));
+
+    // MUME is in the middle of saying something (no prompt since): it waits; and a player who
+    // never stops gets it refused, with nothing sent.
+    Mume never;
+    never.player(QStringLiteral("look"));
+    never.flush();
+    never.requestQuiet(R"({"id":"m","text":"prac"})");
+    for (int i = 0; i < 9; ++i) {
+        never.clock += 1000;
+        never.line(QStringLiteral("You hit a wolf."));
+        never.trade->expire();
+    }
+    QCOMPARE(never.sent, QStringList{"look"});
+    QCOMPARE(never.status(), QStringLiteral("refused"));
+    QCOMPARE(never.reason(), QStringLiteral("not idle"));
+    QCOMPARE(never.last()["text"].toString(), QStringLiteral("prac"));
+    QVERIFY(never.quiet.isEmpty());
+    QVERIFY(!never.trade->busy());
+
+    // A line that never gets its prompt does not block for ever: after three seconds with
+    // nothing sent and nothing said, MUME is idle.
+    Mume silent;
+    silent.player(QStringLiteral("look"));
+    silent.flush();
+    silent.requestQuiet(R"({"id":"n","text":"prac"})");
+    silent.clock += TradeOperations::QUIET_IDLE_MS - 1;
+    silent.trade->expire();
+    QCOMPARE(silent.sent, QStringList{"look"});
+    silent.clock += 1;
+    silent.trade->expire();
+    QCOMPARE(silent.sent, (QStringList{"look", "prac"}));
+
+    // The player types while it waits: the line goes, and the wait starts again.
+    Mume typing;
+    typing.player(QStringLiteral("look"));
+    typing.flush();
+    typing.requestQuiet(R"({"id":"o","text":"prac"})");
+    typing.prompt();
+    typing.player(QStringLiteral("north"));
+    QCOMPARE(typing.pending, QStringList{"north"});
+    typing.flush();
+    typing.clock += TradeOperations::QUIET_SETTLE_MS;
+    typing.trade->expire();
+    QCOMPARE(typing.sent, (QStringList{"look", "north"}));
+    QVERIFY(typing.trade->busy());
+}
+
+void TestTradeOperations::quietPagerTest()
+{
+    // The pager the parser hid is the runner's: answered with Return, page by page.
+    Mume mume;
+    mume.requestQuiet(R"({"id":"k","text":"prac"})");
+    mume.flush();
+    for (int i = 0; i < 10; ++i) {
+        mume.quietLine(QStringLiteral("Skill %1   Good   Easy   None").arg(i));
+    }
+    mume.quietPager(40);
+    QCOMPARE(mume.sent, (QStringList{"prac", ""}));
+    QVERIFY(mume.trade->pagerOpen());
+    mume.flush();
+    // The same pager again after other output is not a new page.
+    mume.line(QStringLiteral("Gandalf arrives from the north."));
+    mume.quietPager(40);
+    QCOMPARE(mume.sent.size(), 2);
+    for (int i = 0; i < 10; ++i) {
+        mume.quietLine(QStringLiteral("Spell %1   Good   Easy   Cleric").arg(i));
+    }
+    mume.quietPager(80);
+    QCOMPARE(mume.sent, (QStringList{"prac", "", ""}));
+    mume.flush();
+    mume.quietLine(QStringLiteral("Wilderness   Good   Easy   None"));
+    mume.quietPrompt();
+    QCOMPARE(mume.status(), QStringLiteral("done"));
+    QVERIFY(mume.last()["paged"].toBool());
+    QVERIFY(mume.last()["complete"].toBool());
+    QCOMPARE(mume.last()["lines"].toArray().size(), 21);
+    QCOMPARE(mume.sent.size(), 3);
+
+    // Each page has its own four seconds.
+    Mume slow;
+    slow.requestQuiet(R"({"id":"l","text":"prac"})");
+    slow.flush();
+    slow.clock += TradeOperations::QUIET_TIMEOUT_MS - 1;
+    slow.quietLine(QStringLiteral("Skill   Good   Easy   None"));
+    slow.quietPager(40);
+    slow.flush();
+    slow.clock += TradeOperations::QUIET_TIMEOUT_MS - 1;
+    slow.trade->expire();
+    QVERIFY(slow.trade->busy());
+
+    // A pager the terminal was shown is in a reply of the player's, whatever the runner waits
+    // for: not answered.
+    Mume other;
+    other.requestQuiet(R"({"id":"m","text":"prac"})");
+    other.flush();
+    other.line(QStringLiteral("   1,  1%,  goblin  |"));
+    other.pager(30);
+    QCOMPARE(other.sent, QStringList{"prac"});
+
+    // More pages than a reply may have: quit, and what came is handed over.
+    Mume many;
+    many.requestQuiet(R"({"id":"n","text":"prac"})");
+    many.flush();
+    for (int i = 0; i <= TradeOperations::MAX_PAGES; ++i) {
+        many.quietLine(QStringLiteral("row %1").arg(i));
+        many.quietPager(i + 1);
+        many.flush();
+    }
+    QCOMPARE(many.status(), QStringLiteral("stopped"));
+    QCOMPARE(many.reason(), QStringLiteral("too many pages"));
+    QCOMPARE(many.sent.back(), QStringLiteral("q"));
+    QVERIFY(many.last()["paged"].toBool());
+    QVERIFY(!many.last()["complete"].toBool());
+    QCOMPARE(many.quiet, (QStringList{"begin", "end"}));
+}
+
+void TestTradeOperations::quietOverlapTest()
+{
+    // The player's own lines, and anything else going to MUME, do not stop a quiet command:
+    // MUME answers in order. The parser is told, so that its window ends at the next prompt.
+    Mume mume;
+    mume.requestQuiet(R"({"id":"k","text":"prac"})");
+    mume.flush();
+    mume.player(QStringLiteral("kill wolf"));
+    QCOMPARE(mume.pending, QStringList{"kill wolf"});
+    mume.flush();
+    QCOMPARE(mume.quiet, (QStringList{"begin", "foreign"}));
+    QVERIFY(mume.trade->busy());
+    mume.quietLine(QStringLiteral("You have 0 practice sessions left."));
+    mume.quietPrompt();
+    QCOMPARE(mume.status(), QStringLiteral("done"));
+    // The player's reply follows; nothing more is said about it.
+    const size_t published = mume.ops.size();
+    mume.line(QStringLiteral("You hit a wolf."));
+    mume.prompt();
+    QCOMPARE(mume.ops.size(), published);
+
+    // The window closed with no line of the reply (the prompt after another line went out):
+    // no reply.
+    Mume none;
+    none.requestQuiet(R"({"id":"l","text":"prac"})");
+    none.flush();
+    none.observer.observeSentToMud(QStringLiteral("inventory\n"));
+    none.quietPrompt();
+    QCOMPARE(none.status(), QStringLiteral("failed"));
+    QCOMPARE(none.reason(), QStringLiteral("no reply"));
+    QVERIFY(!none.last()["complete"].toBool());
+
+    // While the runner holds the hidden pager, the player's line would answer it: `q` first,
+    // and the command stops with what had come.
+    Mume held;
+    held.requestQuiet(R"({"id":"m","text":"prac"})");
+    held.flush();
+    held.quietLine(QStringLiteral("You have 0 practice sessions left."));
+    held.quietPager(40);
+    held.flush();
+    held.line(QStringLiteral("A black wolf arrives from the north."));
+    held.quietPager(40);
+    held.player(QStringLiteral("flee"));
+    QCOMPARE(held.pending, (QStringList{"q", "flee"}));
+    QCOMPARE(held.status(), QStringLiteral("stopped"));
+    QCOMPARE(held.reason(), QStringLiteral("player input"));
+    QVERIFY(held.last()["paged"].toBool());
+    QVERIFY(!held.last()["complete"].toBool());
+    QCOMPARE(held.last()["lines"].toArray().size(), 1);
+    QCOMPARE(held.quiet, (QStringList{"begin", "end"}));
+
+    // Another line reached MUME between the command being submitted and its reaching MUME:
+    // that reply comes first, so the window is never opened, and MUME's answer is shown.
+    Mume raced;
+    raced.requestQuiet(R"({"id":"n","text":"prac"})");
+    raced.observer.observeSentToMud(QStringLiteral("look\n"));
+    raced.flush();
+    QCOMPARE(raced.status(), QStringLiteral("failed"));
+    QCOMPARE(raced.reason(), QStringLiteral("overlapping command"));
+    QVERIFY(raced.quiet.isEmpty());
+
+    // One thing at a time, either way round.
+    Mume busy;
+    busy.requestQuiet(R"({"id":"o","text":"prac"})");
+    busy.request(R"({"id":"p","action":"shop.list"})");
+    QCOMPARE(busy.names.back(), QStringLiteral("MMapper.Trade.Operation"));
+    QCOMPARE(busy.status(), QStringLiteral("refused"));
+    QCOMPARE(busy.reason(), QStringLiteral("busy"));
+    busy.requestQuiet(R"({"id":"q","text":"stat"})");
+    QCOMPARE(busy.names.back(), QStringLiteral("MMapper.Input.Reply"));
+    QCOMPARE(busy.reason(), QStringLiteral("busy"));
+    QCOMPARE(busy.last()["id"].toString(), QStringLiteral("q"));
+    QCOMPARE(busy.sent, QStringList{"prac"});
+    Mume shop;
+    shop.request(R"({"id":"r","action":"shop.list"})");
+    shop.requestQuiet(R"({"id":"s","text":"prac"})");
+    QCOMPARE(shop.reason(), QStringLiteral("busy"));
+    QCOMPARE(shop.last()["id"].toString(), QStringLiteral("s"));
+    QCOMPARE(shop.sent, QStringList{"list"});
+
+    // The player's reply is at the pager: the command would answer it.
+    Mume paging;
+    paging.player(QStringLiteral("trop"));
+    paging.flush();
+    paging.pager(20);
+    paging.requestQuiet(R"({"id":"t","text":"prac"})");
+    QCOMPARE(paging.status(), QStringLiteral("refused"));
+    QCOMPARE(paging.reason(), QStringLiteral("pager open"));
+    QCOMPARE(paging.sent, QStringList{"trop"});
+}
+
+void TestTradeOperations::quietFailuresTest()
+{
+    // No reply in time: failed, and the parser is told at once that it is over.
+    Mume mume;
+    mume.requestQuiet(R"({"id":"k","text":"prac"})");
+    mume.flush();
+    mume.clock += TradeOperations::QUIET_TIMEOUT_MS - 1;
+    mume.trade->expire();
+    QVERIFY(mume.ops.empty());
+    mume.clock += 1;
+    mume.trade->expire();
+    QCOMPARE(mume.status(), QStringLiteral("failed"));
+    QCOMPARE(mume.reason(), QStringLiteral("timeout"));
+    QVERIFY(mume.last()["lines"].toArray().isEmpty());
+    QVERIFY(!mume.last()["complete"].toBool());
+    QCOMPARE(mume.quiet, (QStringList{"begin", "end"}));
+    QVERIFY(!mume.trade->busy());
+
+    // Timing out at the hidden pager quits it, and hands over what came.
+    Mume paged;
+    paged.requestQuiet(R"({"id":"l","text":"prac"})");
+    paged.flush();
+    paged.quietLine(QStringLiteral("You have 0 practice sessions left."));
+    paged.quietPager(40);
+    paged.flush();
+    paged.quietPager(40);
+    paged.clock += TradeOperations::QUIET_TIMEOUT_MS;
+    paged.trade->expire();
+    QCOMPARE(paged.status(), QStringLiteral("failed"));
+    QCOMPARE(paged.sent.back(), QStringLiteral("q"));
+    QCOMPARE(paged.last()["lines"].toArray().at(0).toString(),
+             QStringLiteral("You have 0 practice sessions left."));
+
+    // A line that never reaches MUME (MMapper kept or rewrote it on the way): the window is
+    // never opened, it times out, and what is sent afterwards is still matched.
+    Mume lost;
+    lost.requestQuiet(R"({"id":"m","text":"look"})");
+    lost.pending.clear();
+    lost.clock += TradeOperations::QUIET_TIMEOUT_MS;
+    lost.trade->expire();
+    QCOMPARE(lost.reason(), QStringLiteral("timeout"));
+    QVERIFY(lost.quiet.isEmpty());
+    lost.requestQuiet(R"({"id":"n","text":"prac"})");
+    lost.flush();
+    QCOMPARE(lost.quiet, QStringList{"begin"});
+
+    // What is no line at all, or cannot go now.
+    Mume bad;
+    bad.requestQuiet(R"({"id":"a","text":"info )" + std::string(100, 'x') + R"("})");
+    QCOMPARE(bad.status(), QStringLiteral("refused"));
+    QCOMPARE(bad.reason(), QStringLiteral("invalid arguments"));
+    bad.requestQuiet(R"({"id":"c"})");
+    QCOMPARE(bad.reason(), QStringLiteral("invalid arguments"));
+    bad.requestQuiet(R"({"id":"d","text":7})");
+    QCOMPARE(bad.reason(), QStringLiteral("invalid arguments"));
+    QVERIFY(bad.sent.isEmpty());
+    TradeOperations::Context ctx = Mume::context();
+    ctx.game = GameStateEnum::MENU;
+    bad.trade->requestQuiet(json(R"({"id":"e","text":"prac"})"), ctx);
+    QCOMPARE(bad.reason(), QStringLiteral("not in the game"));
+    ctx = Mume::context();
+    ctx.echo = false;
+    bad.trade->requestQuiet(json(R"({"id":"f","text":"prac"})"), ctx);
+    QCOMPARE(bad.reason(), QStringLiteral("echo off"));
+    ctx = Mume::context();
+    ctx.connected = false;
+    bad.trade->requestQuiet(json(R"({"id":"g","text":"prac"})"), ctx);
+    QCOMPARE(bad.reason(), QStringLiteral("not connected"));
+    ctx = Mume::context();
+    ctx.driving = false;
+    bad.trade->requestQuiet(json(R"({"id":"h","text":"prac"})"), ctx);
+    QCOMPARE(bad.reason(), QStringLiteral("observing"));
+    QVERIFY(bad.sent.isEmpty());
+
+    // The link lost, and the session released.
+    Mume gone;
+    gone.requestQuiet(R"({"id":"o","text":"prac"})");
+    gone.flush();
+    gone.observer.observeDisconnected();
+    QCOMPARE(gone.status(), QStringLiteral("stopped"));
+    QCOMPARE(gone.quiet, (QStringList{"begin", "end"}));
+    Mume released;
+    released.requestQuiet(R"({"id":"p","text":"prac"})");
+    released.flush();
+    released.trade->setDriving(false);
+    QCOMPARE(released.reason(), QStringLiteral("session released"));
+    QCOMPARE(released.quiet, (QStringList{"begin", "end"}));
+}
+
+void TestTradeOperations::quietWholeTest()
+{
+    // The readers and the runner together, as in MMapper: a short `prac`. Nothing of it
+    // reaches the terminal; MMapper.Char.Skills is published as for a typed one, before the
+    // reply.
+    {
+        Whole mume;
+        mume.prompt();
+        mume.requestQuiet(R"({"id":"k","text":"prac"})");
+        mume.flush();
+        mume.lines({"You have 0 practice sessions left.",
+                    "Skill / Spell        Knowledge  Difficulty  Class       Mana  Casting time",
+                    "Bandage              Average    Easy        None       ",
+                    "Cure light           Average    Easy        Cleric        13  Very short",
+                    ""});
+        mume.prompt();
+        QCOMPARE(mume.shown, QStringList{"o W C Mana:Hot>"});
+        QCOMPARE(mume.packages, (QStringList{"skills:2:1", "MMapper.Input.Reply"}));
+        QCOMPARE(mume.status(), QStringLiteral("done"));
+        QCOMPARE(mume.replyLines().size(), qsizetype{4});
+        QCOMPARE(mume.replyLines().front(), QStringLiteral("You have 0 practice sessions left."));
+        QVERIFY(mume.last()["complete"].toBool());
+        QCOMPARE(mume.sent, QStringList{"prac"});
+        QVERIFY(!mume.readers.quietOpen());
+    }
+
+    // A table longer than the player's page: the pager is answered and never seen, and the
+    // table comes whole.
+    {
+        Whole mume;
+        mume.requestQuiet(R"({"id":"k","text":"prac"})");
+        mume.flush();
+        mume.lines(g_pageOne);
+        mume.pager(73);
+        QCOMPARE(mume.sent, (QStringList{"prac", ""}));
+        mume.flush();
+        mume.lines(g_pageTwo);
+        mume.prompt();
+        QVERIFY(mume.shown.isEmpty());
+        QCOMPARE(mume.packages, (QStringList{"skills:4:1", "MMapper.Input.Reply"}));
+        QCOMPARE(mume.status(), QStringLiteral("done"));
+        QVERIFY(mume.last()["paged"].toBool());
+        QVERIFY(mume.last()["complete"].toBool());
+        QCOMPARE(mume.replyLines().size(), qsizetype{6});
+        // The next line the player sends is a command again, not a pager's answer.
+        QVERIFY(mume.readers.receiveCommand(QStringLiteral("look")));
+    }
+
+    // A second command, `stat` (powwow/logs/stolb.balrog.txt, as in TestCharLines): hidden,
+    // handed over, and MMapper.Char.Stat's reader still reads it.
+    {
+        Whole mume;
+        mume.requestQuiet(R"({"id":"s","text":"stat"})");
+        mume.flush();
+        mume.lines({"OB: 131%, DB: 24%, PB: 0%, Armour: 0%. Wimpy: 111. Mood: wimpy.",
+                    "Needed: 1,108,995 xp, 0 tp. Gold: 0. Alert: normal.",
+                    ""});
+        mume.prompt();
+        QVERIFY(mume.shown.isEmpty());
+        QCOMPARE(mume.packages, (QStringList{"stat:131", "MMapper.Input.Reply"}));
+        QCOMPARE(mume.replyLines(),
+                 (QStringList{"OB: 131%, DB: 24%, PB: 0%, Armour: 0%. Wimpy: 111. Mood: wimpy.",
+                              "Needed: 1,108,995 xp, 0 tp. Gold: 0. Alert: normal."}));
+        QCOMPARE(mume.last()["text"].toString(), QStringLiteral("stat"));
+    }
+
+    // A tell while the reply waits at the pager is shown and is no part of the reply; the
+    // table still comes whole.
+    {
+        Whole mume;
+        mume.requestQuiet(R"({"id":"k","text":"prac"})");
+        mume.flush();
+        mume.lines(g_pageOne);
+        mume.pager(73);
+        mume.lines({""});
+        mume.other("Gandalf tells you 'are you there?'");
+        mume.pager(73);
+        mume.flush();
+        mume.lines(g_pageTwo);
+        mume.prompt();
+        QCOMPARE(mume.shown,
+                 (QStringList{"Gandalf tells you 'are you there?'\n", "o W C Mana:Hot>"}));
+        QCOMPARE(mume.sent, (QStringList{"prac", ""}));
+        QCOMPARE(mume.packages, (QStringList{"skills:4:1", "MMapper.Input.Reply"}));
+        QCOMPARE(mume.status(), QStringLiteral("done"));
+        QVERIFY(!mume.replyLines().contains(QStringLiteral("Gandalf tells you 'are you there?'")));
+    }
+
+    // The player types right after the command went: the player's reply comes after the
+    // command's prompt, and is shown whole.
+    {
+        Whole mume;
+        mume.requestQuiet(R"({"id":"k","text":"stat"})");
+        mume.flush();
+        mume.player(QStringLiteral("inventory"));
+        mume.flush();
+        mume.lines({"OB: 131%, DB: 24%, PB: 0%, Armour: 0%. Wimpy: 111. Mood: wimpy.", ""});
+        mume.prompt();
+        QCOMPARE(mume.status(), QStringLiteral("done"));
+        mume.lines({"You are carrying:", "a lantern", ""});
+        mume.prompt();
+        QCOMPARE(mume.shown,
+                 (QStringList{"You are carrying:\n", "a lantern\n", "\n", "o W C Mana:Hot>"}));
+    }
+
+    // The player types while the runner holds the pager: `q`, then the player's line. The
+    // window is closed at once, and the player's reply is shown.
+    {
+        Whole mume;
+        mume.requestQuiet(R"({"id":"k","text":"prac"})");
+        mume.flush();
+        mume.lines(g_pageOne);
+        mume.pager(73);
+        mume.flush();
+        mume.pager(73);
+        mume.player(QStringLiteral("look"));
+        QCOMPARE(mume.pending, (QStringList{"q", "look"}));
+        QCOMPARE(mume.status(), QStringLiteral("stopped"));
+        QVERIFY(!mume.readers.quietOpen());
+        mume.flush();
+        mume.prompt();
+        mume.lines({"A dark cave"});
+        mume.prompt();
+        QCOMPARE(mume.shown,
+                 (QStringList{"o W C Mana:Hot>", "A dark cave\n", "o W C Mana:Hot>"}));
+    }
+
+    // The player's own `prac` is the player's: shown, its pager shown and left alone.
+    {
+        Whole mume;
+        mume.player(QStringLiteral("prac"));
+        mume.flush();
+        mume.lines(g_pageOne);
+        mume.pager(73);
+        QCOMPARE(mume.shown.size(), qsizetype{5});
+        QCOMPARE(mume.sent, QStringList{"prac"});
+        QVERIFY(mume.readers.pagerOpen());
+        mume.player(QStringLiteral(""));
+        mume.flush();
+        mume.lines(g_pageTwo);
+        mume.prompt();
+        QCOMPARE(mume.shown.size(), qsizetype{9});
+        QCOMPARE(mume.packages, QStringList{"skills:4:1"});
+        QVERIFY(mume.replies.empty());
+    }
+
+    // The reply never comes: after four seconds the window is closed, and whatever MUME says
+    // from then on is shown, the late reply included.
+    {
+        Whole mume;
+        mume.requestQuiet(R"({"id":"k","text":"prac"})");
+        mume.flush();
+        mume.clock += TradeOperations::QUIET_TIMEOUT_MS;
+        mume.trade->expire();
+        QCOMPARE(mume.status(), QStringLiteral("failed"));
+        QCOMPARE(mume.reason(), QStringLiteral("timeout"));
+        QVERIFY(!mume.readers.quietOpen());
+        mume.lines(g_pageOne);
+        QCOMPARE(mume.shown.size(), qsizetype{4});
+    }
 }
 
 void TestTradeOperations::tooManyPagesTest()

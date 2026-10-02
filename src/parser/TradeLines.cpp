@@ -740,7 +740,7 @@ bool TradeLinesTracker::readTableLine(const QString &raw, const QString &text)
     case TableEnum::LIST: {
         if (text.isEmpty()) {
             m_lines.append(raw);
-            if (m_tableHasRow) {
+            if (blankClosesTable()) {
                 closeTable();
             }
             return true;
@@ -773,7 +773,7 @@ bool TradeLinesTracker::readTableLine(const QString &raw, const QString &text)
     case TableEnum::TEACHER: {
         if (text.isEmpty()) {
             m_lines.append(raw);
-            if (m_tableHasRow) {
+            if (blankClosesTable()) {
                 closeTable();
             }
             return true;
@@ -804,7 +804,7 @@ bool TradeLinesTracker::readTableLine(const QString &raw, const QString &text)
     case TableEnum::SKILLS: {
         if (text.isEmpty()) {
             m_lines.append(raw);
-            if (m_tableHasRow) {
+            if (blankClosesTable()) {
                 closeTable();
             }
             return true;
@@ -1297,10 +1297,18 @@ bool TradeReaders::receiveCommand(const QString &line)
     return true;
 }
 
-MudChunk TradeReaders::beginChunk(const bool goAhead, const bool backspace, const QString &plain)
+MudChunk TradeReaders::beginChunk(const bool goAhead,
+                                  const bool backspace,
+                                  const QString &plain,
+                                  const QuietTrafficEnum traffic)
 {
     MudChunk chunk = classifyMudChunk(goAhead, backspace, plain);
     m_chunk = chunk.kind;
+    m_quietEnded = false;
+    // Before the pager is published, which says whether it was hidden.
+    if (m_quiet.isOpen()) {
+        hideQuietChunk(chunk, traffic);
+    }
     if (chunk.pager.has_value()) {
         m_tracker.receivePager(*chunk.pager);
         // A pager glued to a line was answered before the line came.
@@ -1310,6 +1318,46 @@ MudChunk TradeReaders::beginChunk(const bool goAhead, const bool backspace, cons
         m_pagerOpen = false;
     }
     return chunk;
+}
+
+void TradeReaders::hideQuietChunk(MudChunk &chunk, const QuietTrafficEnum traffic)
+{
+    switch (chunk.kind) {
+    case MudChunkKindEnum::LINE: {
+        // A chunk with nothing in it for the user (tags alone) is no line for any reader.
+        if (chunk.plain.isEmpty()) {
+            break;
+        }
+        // A pager glued to the front of the line came before it, and goes with it.
+        const bool pagerHidden = chunk.pager.has_value() && m_quiet.receivePager().hidden;
+        const QuietCapture::Verdict verdict = m_quiet.receiveLine(chunk.plain, traffic);
+        chunk.hidden = verdict.hidden;
+        chunk.captured = verdict.captured;
+        if (chunk.pager.has_value()) {
+            chunk.pager->hidden = pagerHidden && verdict.hidden;
+        }
+        break;
+    }
+    case MudChunkKindEnum::PAGER: {
+        const QuietCapture::Verdict verdict = m_quiet.receivePager();
+        chunk.hidden = verdict.hidden;
+        chunk.pager->hidden = verdict.hidden;
+        break;
+    }
+    case MudChunkKindEnum::PROMPT: {
+        const QuietCapture::Verdict verdict = m_quiet.receivePrompt();
+        chunk.hidden = verdict.hidden;
+        m_quietEnded = verdict.ended;
+        break;
+    }
+    case MudChunkKindEnum::TWIDDLER:
+        break;
+    }
+}
+
+bool TradeReaders::captureQuietLine(const QString &plain)
+{
+    return m_quiet.isOpen() && m_quiet.receiveLine(plain, QuietTrafficEnum::REPLY).captured;
 }
 
 void TradeReaders::receiveLine(const QString &plain)
@@ -1326,7 +1374,13 @@ void TradeReaders::receivePrompt()
 
 void TradeReaders::endChunk()
 {
-    if (std::exchange(m_chunk, MudChunkKindEnum::LINE) == MudChunkKindEnum::PROMPT) {
+    const bool prompt = std::exchange(m_chunk, MudChunkKindEnum::LINE) == MudChunkKindEnum::PROMPT;
+    // After every reader's package of this prompt, so that whoever asked finds them published;
+    // and before sig2_realPrompt, at which the runner judges.
+    if (std::exchange(m_quietEnded, false)) {
+        m_observer.observeQuietEnded();
+    }
+    if (prompt) {
         m_observer.observeRealPrompt();
     }
 }
@@ -1336,6 +1390,8 @@ void TradeReaders::reset()
     m_tracker.reset();
     m_chunk = MudChunkKindEnum::LINE;
     m_pagerOpen = false;
+    m_quiet.reset();
+    m_quietEnded = false;
 }
 
 void TradeReaders::publish(const TradeReplies &replies)

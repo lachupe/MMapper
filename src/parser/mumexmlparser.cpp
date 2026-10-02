@@ -160,6 +160,11 @@ MumeXmlParser::MumeXmlParser(MapData &md,
             m_loginTracker.reset();
         }
     });
+    // A frontend's quiet command: the runner says when its command has reached MUME and when
+    // the request is over; parse() keeps the reply between the two from the user.
+    m_observer.sig2_quietCommand.connect(m_lifetime, [this](const QuietCommandEnum what) {
+        m_tradeReaders.receiveQuietCommand(what);
+    });
     // "X opens the chest." is told in a door's words: a word that names a container is no door.
     m_doorTracker.setNotDoor([](const QString &word) { return namesContainer(word); });
 }
@@ -233,6 +238,11 @@ void MumeXmlParser::parse(const TelnetData &data, const bool isGoAhead)
         ParserUtils::removeAnsiMarksInPlace(plain);
         if (const auto level = parseCharLevelLine(plain)) {
             m_observer.observeCharLevel(*level);
+            // Asked by a quiet command, it is a line of that reply like any other, though no
+            // reader below is given it: without it the reply would seem never to have come.
+            if (m_tradeReaders.captureQuietLine(plain)) {
+                m_observer.observeQuietLine(plain);
+            }
             m_lineToUser.clear();
         }
     }
@@ -241,13 +251,37 @@ void MumeXmlParser::parse(const TelnetData &data, const bool isGoAhead)
     // A pager glued to the front of a line when no GA came is taken off the line here.
     QString chunkText = m_lineToUser;
     ParserUtils::removeAnsiMarksInPlace(chunkText);
+    // The elements that closed on this chunk, taken here because a quiet command's window asks
+    // what they say of the line before the line is sent anywhere; published further down.
+    const std::vector<XmlElement> elements = m_xmlTracker.take();
+    // A room display is being read: its lines are nobody's reply.
+    const bool inRoom = m_lineFlags.isRoom()
+                        || (m_xmlMode != XmlModeEnum::NONE && m_xmlMode != XmlModeEnum::PROMPT);
+    QuietTrafficEnum traffic = QuietTrafficEnum::REPLY;
+    if (m_tradeReaders.quietOpen() && !isGoAhead) {
+        traffic = quietTrafficOf(inRoom,
+                                 parseCombatLine(chunkText).has_value(),
+                                 chunkText.trimmed(),
+                                 elements,
+                                 m_xmlTracker.openTags());
+    }
     const MudChunk chunk = m_tradeReaders.beginChunk(data.type == TelnetDataEnum::Prompt,
                                                      data.type == TelnetDataEnum::Backspace,
-                                                     chunkText);
+                                                     chunkText,
+                                                     traffic);
     const bool isRealPrompt = chunk.kind == MudChunkKindEnum::PROMPT;
     m_chunkIsPager = chunk.kind == MudChunkKindEnum::PAGER;
     if (!m_lineToUser.isEmpty()) {
-        sendToUser(SendToUserSourceEnum::FromMud, m_lineToUser, isGoAhead);
+        // The reply to a quiet command is not the player's: its lines, its pager and the prompt
+        // that ends it stay out of the terminal and out of MMapper.Terminal.Output, and the
+        // lines go to whoever asked. Unlike the MMXP line above, every reader below still reads
+        // them, so the packages made of such a reply come out as for a typed command.
+        if (chunk.captured) {
+            m_observer.observeQuietLine(chunk.plain);
+        }
+        if (!chunk.hidden) {
+            sendToUser(SendToUserSourceEnum::FromMud, m_lineToUser, isGoAhead);
+        }
 
         // Simplify the output and run actions
         QString tempStr = m_lineToUser;
@@ -371,13 +405,12 @@ void MumeXmlParser::parse(const TelnetData &data, const bool isGoAhead)
     // a room display, a fight's, MUME's own speech, movement, magic or weather, or text.
     const QString lookLine = chunk.plain.trimmed();
     LineKindEnum lookKind = LineKindEnum::TEXT;
-    if (m_lineFlags.isRoom()
-        || (m_xmlMode != XmlModeEnum::NONE && m_xmlMode != XmlModeEnum::PROMPT)) {
+    if (inRoom) {
         lookKind = LineKindEnum::ROOM;
     } else if (!isGoAhead && !lookLine.isEmpty() && parseCombatLine(chunk.plain).has_value()) {
         lookKind = LineKindEnum::COMBAT;
     }
-    for (const XmlElement &xml : m_xmlTracker.take()) {
+    for (const XmlElement &xml : elements) {
         m_observer.observeSentToUserXml(xml);
         if (lookKind == LineKindEnum::TEXT && !lookLine.isEmpty()) {
             const QString elementText = xml.text.trimmed();

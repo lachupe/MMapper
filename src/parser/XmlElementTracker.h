@@ -64,6 +64,16 @@ public:
     void reset();
 
     NODISCARD size_t depth() const { return m_open.size(); }
+    /// The tags of the elements still open, outermost first: what the text fed last lies in.
+    NODISCARD std::vector<XmlTagEnum> openTags() const
+    {
+        std::vector<XmlTagEnum> tags;
+        tags.reserve(m_open.size());
+        for (const XmlElement &element : m_open) {
+            tags.push_back(element.tag);
+        }
+        return tags;
+    }
     NODISCARD bool hasOpenElements() const { return !m_open.empty(); }
 
 private:
