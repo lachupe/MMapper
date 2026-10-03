@@ -115,6 +115,9 @@ void TestRoomContents::keywordTest()
     QCOMPARE(containerKeyword(QStringLiteral("A sturdy leather backpack has been left here.")),
              QStringLiteral("backpack"));
     QVERIFY(containerKeyword(QStringLiteral("A large torch lies here among the dust.")).isEmpty());
+    // mume3d's live test of 2026-10-03: a container's contents on a line of their own.
+    QVERIFY(containerKeyword(QStringLiteral("In the rack is a cudgel.")).isEmpty());
+    QCOMPARE(containerKeyword(QStringLiteral("A weapons rack stands against the wall.")), QStringLiteral("rack"));
     QVERIFY(
         containerKeyword(
             QStringLiteral(

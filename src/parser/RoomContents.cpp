@@ -115,6 +115,15 @@ NODISCARD QString withoutFinalStop(const QString &line)
 QString containerKeyword(const QString &line)
 {
     const QString text = cleaned(line);
+    // What lies in or on a container, on a line of its own, is not the container: "In the rack is
+    // a cudgel." (Fornost's Guild of Warriors, mume3d's live test of 2026-10-03, where the line was
+    // taken for a second rack and `examine 2.rack` found none).
+    static const QRegularExpression contentsLine{QStringLiteral(
+        R"(^(?:In|On|Inside|Upon) (?:the|a|an|some) .+? (?:is|are|lies|lie|rests|rest|hangs|hang|stands|stand)\b)"),
+                                                 QRegularExpression::CaseInsensitiveOption};
+    if (contentsLine.match(text).hasMatch()) {
+        return QString{};
+    }
     auto it = nounPattern().globalMatch(text);
     while (it.hasNext()) {
         const auto match = it.next();
