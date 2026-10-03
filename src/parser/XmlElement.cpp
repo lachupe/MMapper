@@ -246,6 +246,33 @@ QString readMoverName(const XmlElement &element)
     return name;
 }
 
+std::optional<XmlElement> plainMovementElement(const QString &line)
+{
+    static const QRegularExpression leaves{QStringLiteral(
+        R"(^\S.*? leaves (?:north|south|east|west|up|down)(?:[ ,].*)?\.$)")};
+    static const QRegularExpression arrives{QStringLiteral(
+        R"(^\S.*? (?:has arrived|arrives) from (?:the (?:north|south|east|west)|above|below)(?:[ ,].*)?\.$)")};
+    const QString text = line.trimmed();
+    if (text.isEmpty() || text.size() > 120) {
+        return std::nullopt;
+    }
+    XmlElement element;
+    if (leaves.match(text).hasMatch()) {
+        element.tag = XmlTagEnum::MOVE_OUT;
+    } else if (arrives.match(text).hasMatch()) {
+        element.tag = XmlTagEnum::MOVE_IN;
+    } else {
+        return std::nullopt;
+    }
+    element.name = std::string{to_string_view(element.tag)};
+    element.text = text;
+    completeMovementElement(element);
+    if (element.children.empty() || element.direction.empty()) {
+        return std::nullopt; // no name or no way could be read: not a line this knows
+    }
+    return element;
+}
+
 void completeMovementElement(XmlElement &element)
 {
     if (element.tag == XmlTagEnum::MOVE_IN || element.tag == XmlTagEnum::MOVE_OUT) {

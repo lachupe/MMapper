@@ -4,6 +4,7 @@
 
 #include "../global/macros.h"
 
+#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -158,6 +159,14 @@ NODISCARD QString readMoverName(const XmlElement &element);
 /// MUME did tag is left exactly as MUME sent it. Then fills `direction` (deriveMovementDirection()).
 /// Every other tag only has `direction` set, which is empty for them.
 void completeMovementElement(XmlElement &element);
+
+/// A MOVE_IN or MOVE_OUT element made from a plain line, for a MUME that sent the line with no
+/// movement markup round it (mume3d's live tests of 2026-10-03: 51 such lines, not one
+/// <move_in>): "A townsman leaves east.", "An old man has arrived from the north.", "A rat arrives
+/// from below." Completed as MUME's own would be (completeMovementElement()). Only the two plain
+/// shapes, "<who> leaves <way>[ ...]." and "<who> has arrived|arrives from <the way|above|below>[ ...].",
+/// and only a line of 120 characters or less; anything else is std::nullopt.
+NODISCARD std::optional<XmlElement> plainMovementElement(const QString &line);
 
 /// Parses the attributes out of a tag body, i.e. what stood between < and > with the tag
 /// name still on the front. MUME's XML is, in its own words, "not very strict": values may
