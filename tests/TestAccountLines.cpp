@@ -142,6 +142,49 @@ void TestAccountLines::menuMergeVariantTest()
                             "account <acc>."));
 }
 
+void TestAccountLines::menu2026Test()
+{
+    // mume3d docs/tasks/live-test-2026-10-03/all-2026-10-03-110500.log:36-83, the menu after the
+    // pass phrase today: "Available commands:", lowercase commands, the sorts on a line after them.
+    const AccountReplies out = feed({
+        "",
+        "Available commands:",
+        "",
+        "  create                         - Create a new character",
+        "  play <name>                    - Play the character <name>",
+        "  time                           - Display the game time",
+        "  list [<sort>] [-- <format>]    - List all your characters",
+        "  move <name> [up|down] [-]<n>   - Move a character around in the custom list",
+        "  password                       - Change your account password",
+        "  add <name>                     - Add the character <name> to your account",
+        "  info <name> [-- <format>]      - Show information about character <name>",
+        "  practice <name>                - Show skills practiced for character <name>",
+        "  link                           - Show information about your connection",
+        "  lag                            - Show game lag",
+        "  help                           - Display help about these commands",
+        "  menu                           - Display this menu",
+        "  quit                           - Leave the account menu; logs you out",
+        "",
+        "Where <sort> can be one of: side, race, level, alphabetic, and custom.",
+        "",
+        PROMPT,
+    });
+    QCOMPARE(out.menus.size(), size_t{1});
+    const AccountMenu &menu = out.menus.front();
+    QStringList names;
+    for (const AccountMenuCommand &command : menu.commands) {
+        names.append(command.name);
+    }
+    QCOMPARE(names,
+             (QStringList{"create", "play", "time", "list", "move", "password", "add", "info",
+                          "practice", "link", "lag", "help", "menu", "quit"}));
+    QCOMPARE(menu.commands.at(1).usage, QStringLiteral("play <name>"));
+    QCOMPARE(menu.commands.at(1).help, QStringLiteral("Play the character <name>"));
+    QCOMPARE(menu.commands.at(3).usage, QStringLiteral("list [<sort>] [-- <format>]"));
+    QCOMPARE(menu.commands.at(4).usage, QStringLiteral("move <name> [up|down] [-]<n>"));
+    QCOMPARE(menu.sorts, (QStringList{"side", "race", "level", "alphabetic", "custom"}));
+}
+
 void TestAccountLines::menuStrippedTagsTest()
 {
     // powwow/logs/archives/log-2006.04.19-13.48.14.mov:35: a client that took "<name>" for an

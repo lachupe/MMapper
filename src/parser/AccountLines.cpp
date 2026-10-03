@@ -81,7 +81,11 @@ NODISCARD QStringList sortsIn(const QString &help)
         words.chop(1);
     }
     for (const QString &word : words.split(QLatin1Char(','), Qt::SkipEmptyParts)) {
-        const QString sort = word.trimmed();
+        QString sort = word.trimmed();
+        // Today's menu ends its list in words: "alphabetic, and custom".
+        if (sort.startsWith(QLatin1String("and "))) {
+            sort = sort.mid(4).trimmed();
+        }
         if (!sort.isEmpty() && !sort.contains(QLatin1Char(' '))) {
             result.append(sort);
         }
@@ -236,7 +240,8 @@ AccountReplies AccountLinesTracker::receiveLine(const QString &line)
     }
 
     const QString text = line.trimmed();
-    if (text == QStringLiteral("Account menu")) {
+    // "Account menu" in the logs of 2005-2006, "Available commands:" today (2026-10-03).
+    if (text == QStringLiteral("Account menu") || text == QStringLiteral("Available commands:")) {
         out = closeAll();
         m_page.reset();
         m_menu = AccountMenu{};
@@ -380,6 +385,12 @@ void AccountLinesTracker::readMenuLine(const QString &line)
             last.help += (last.help.isEmpty() ? QString{} : QStringLiteral(" ")) + text;
         }
     }
+    // Today's menu names the sorts after its commands, on a line of their own: "Where <sort>
+    // can be one of: side, race, level, alphabetic, and custom."
+    if (!line.startsWith(QLatin1Char(' ')) && text.startsWith(QLatin1String("Where <sort>"))) {
+        m_menu->sorts = sortsIn(text);
+        return;
+    }
     // Anything else (a line a packet split) is not the menu's.
 }
 
@@ -419,7 +430,7 @@ AccountReplies AccountLinesTracker::closeAll()
     AccountReplies out;
     if (m_menu.has_value() && !m_menu->commands.empty()) {
         for (const AccountMenuCommand &command : m_menu->commands) {
-            if (command.name == QStringLiteral("list")) {
+            if (command.name == QStringLiteral("list") && m_menu->sorts.isEmpty()) {
                 m_menu->sorts = sortsIn(command.help);
             }
         }

@@ -25,6 +25,12 @@ class ConnectionListener;
 /// deliberately discards what the proxy sends back rather than publishing it a second time.
 class NODISCARD FrontendSession final : private AbstractTelnet
 {
+public:
+    /// The window this session reports to MUME by NAWS: a terminal's width, and a height no
+    /// reply of MUME's reaches, so that MUME's pager never waits on a frontend.
+    static constexpr int WINDOW_WIDTH = 80;
+    static constexpr int WINDOW_HEIGHT = 500;
+
 private:
     VirtualSocket m_socket;
     QObject m_dummy;

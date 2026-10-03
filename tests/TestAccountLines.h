@@ -17,6 +17,7 @@ public:
 private Q_SLOTS:
     static void menuTest();
     static void menuMergeVariantTest();
+    static void menu2026Test();
     static void menuStrippedTagsTest();
     static void listNarrowTest();
     static void listWideTest();

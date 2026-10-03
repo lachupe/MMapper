@@ -23,7 +23,10 @@
 /// - the menu, "Account menu", a blank line, then one "  Play <name>   - Log the character
 ///   <name> into MUME" per command (a command whose usage is too long for the column has its
 ///   "- help" on the next line; a help that runs on continues, indented, on the lines after),
-///   up to the `Account> ` prompt;
+///   up to the `Account> ` prompt. Today (seen 2026-10-03) it opens on "Available commands:"
+///   instead, its commands are lowercase ("  play <name>   - Play the character <name>"), and
+///   the sorts follow them on a line of their own: "Where <sort> can be one of: side, race,
+///   level, alphabetic, and custom.";
 /// - `list [<sort>]`'s reply, `Characters in account "dmitry"`, the header "Name  Rce Lvl
 ///   Logon Area     Rent    Delete Host", then one row per character in fixed columns, up to
 ///   the blank line:
@@ -166,8 +169,9 @@ struct NODISCARD AccountReplies final
 
 /// Gathers the menu and `list`'s reply line by line; the one-line answers come out at once.
 ///
-/// The menu opens on "Account menu" and closes at the `Account> ` prompt, as a line (MUME
-/// sends it without a GO-AHEAD, so it may come glued to what follows) or as a prompt. The list
+/// The menu opens on "Account menu" (or "Available commands:") and closes at the `Account> `
+/// prompt, as a line (MUME sends it without a GO-AHEAD, so it may come glued to what follows)
+/// or as a prompt. The list
 /// opens on `Characters in account "..."` or on its header, and closes at the blank line after
 /// its rows, or the prompt. Each is published only when complete: a menu with commands, a
 /// list whose header came (an account with no characters gives an empty list). A list MUME's
