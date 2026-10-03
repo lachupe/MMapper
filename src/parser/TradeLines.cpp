@@ -339,8 +339,11 @@ NODISCARD QString teacherKind(const QRegularExpressionMatch &header)
 }
 const QRegularExpression g_teacherRow{
     QStringLiteral(R"(^(\S.*?)\s+(-?\d+)/\s*(-?\d+)\s+(-?\d+)%\s+(.*)$)")};
+// "Skill / Spell  Knowledge  Difficulty  Class  Mana  Casting time" for a character with spells,
+// and "Skill  Knowledge  Difficulty  Class" for one with none (mume3d's live test of 2026-10-03:
+// a level 2 warrior's quiet `prac` was answered whole and no table was read from it).
 const QRegularExpression g_skillsHeader{
-    QStringLiteral(R"(^Skill / Spell\s+Knowledge\s+Difficulty\b)")};
+    QStringLiteral(R"(^Skill(?:\s*/\s*Spell)?\s+Knowledge\s+Difficulty\b)")};
 const QRegularExpression g_rule{QStringLiteral(R"(^-{5,}$)")};
 const QRegularExpression g_columns{QStringLiteral(R"(\s{2,})")};
 const QRegularExpression g_practised{QStringLiteral(

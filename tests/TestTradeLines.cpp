@@ -903,6 +903,42 @@ void TestTradeLines::charSkillsOwnLogTest()
     }
 }
 
+void TestTradeLines::charSkillsNoSpellsTest()
+{
+    // mume3d's live test of 2026-10-03 (docs/tasks/live-test-2026-10-03/all-2026-10-03-110500.log:
+    // 209-218), a level 2 warrior with no spells: the heading is "Skill" alone, a rule of dashes
+    // follows it, and the table ends at the prompt.
+    const char *const lines[] = {
+        "You have 11 practice sessions left.",
+        "Skill             Knowledge  Difficulty  Class",
+        "------------------------------------------------",
+        "Bandage           Bad        Easy        None",
+        "Climb             Bad        Very easy   None",
+        "Swim              Average    Very easy   None",
+        "Wilderness        Bad        Normal      None",
+        "Endurance         Bad        Very hard   Warrior",
+        "Parry             Average    Normal      Warrior",
+        "Slashing weapons  Average    Normal      Warrior",
+    };
+    TradeLinesTracker tracker;
+    tracker.receiveCommand(QStringLiteral("prac"));
+    TradeReplies r;
+    for (const char *const line : lines) {
+        r.append(tracker.receiveLine(QString::fromUtf8(line)));
+    }
+    r.append(tracker.receivePrompt());
+    QCOMPARE(r.skills.size(), size_t{1});
+    const CharSkills &s = r.skills.front();
+    QCOMPARE(s.sessionsLeft, std::optional<int64_t>{11});
+    QVERIFY(s.complete);
+    QCOMPARE(s.rows.size(), size_t{7});
+    QCOMPARE(s.rows[0].name, QStringLiteral("Bandage"));
+    QCOMPARE(s.rows[6].name, QStringLiteral("Slashing weapons"));
+    QCOMPARE(s.rows[6].knowledge, QStringLiteral("Average"));
+    QCOMPARE(s.rows[6].skillClass, QStringLiteral("Warrior"));
+    QVERIFY(!s.rows[6].mana.has_value());
+}
+
 void TestTradeLines::charSkillsPagedTest()
 {
     // elvenrunes 2020-12-30_..._Aquator.txt:1716-1747, cut at 73% and continued.
@@ -1273,6 +1309,12 @@ void TestTradeLines::quietTrafficTest()
     QCOMPARE(of("Needed: 999 xp, 0 tp.", {element(XmlTagEnum::HIGHLIGHT, "999")}),
              QuietTrafficEnum::REPLY);
     QCOMPARE(of("Bandage  Average", none, {XmlTagEnum::EM}), QuietTrafficEnum::REPLY);
+    // `prac`'s heading, which MUME marks <header> outside any room (mume3d's live test of
+    // 2026-10-03), is the reply's; a header inside a room display is not.
+    const char *const heading = "Skill             Knowledge  Difficulty  Class";
+    QCOMPARE(of(heading, {element(XmlTagEnum::HEADER, heading)}), QuietTrafficEnum::REPLY);
+    QCOMPARE(of("Obvious exits:", {element(XmlTagEnum::HEADER, "Obvious exits:")}, {XmlTagEnum::ROOM}),
+             QuietTrafficEnum::OTHER);
 
     // A line an element of other traffic covers is that traffic: speech, a movement, a blow,
     // magic, the weather, an achievement.

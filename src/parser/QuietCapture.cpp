@@ -62,6 +62,13 @@ enum class NODISCARD TagMeaningEnum : uint8_t {
 
 NODISCARD TagMeaningEnum meaningOf(const XmlTagEnum tag)
 {
+    // A table's heading: MUME marks `prac`'s "Skill  Knowledge  Difficulty  Class" with
+    // <header>, outside any room (mume3d's live test of 2026-10-03: the quiet `prac` printed it in
+    // the terminal and left it out of its reply). A room's own header lies inside <room>, which
+    // quietTrafficOf() takes as other traffic before asking here.
+    if (tag == XmlTagEnum::HEADER) {
+        return TagMeaningEnum::NEUTRAL;
+    }
     switch (toXmlCategory(tag)) {
     case XmlCategoryEnum::ROOM:
     case XmlCategoryEnum::COMBAT:
