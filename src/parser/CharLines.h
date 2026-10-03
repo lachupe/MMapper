@@ -198,6 +198,22 @@ NODISCARD std::optional<CharLevel> parseCharLevelLine(const QString &line);
 /// ("Wimpy: 120.") or in `info` ("You will flee if your hit points go below 315.", 0 for "You
 /// will fight to the death."). One package for all three, so that a frontend has one figure
 /// and need not work out which of several replayed replies was the last.
+/// One row of the reply to a bare `change language`: "   60   Westron", "  100 * Orkish" (the
+/// star marks the language being spoken).
+struct NODISCARD CharLanguage final
+{
+    QString name;
+    int64_t knowledge = 0;
+    bool speaking = false;
+};
+
+/// The reply to a bare `change language` (also printed after `change language <name>`): "You have
+/// the following knowledge in these languages:" and a row per language, to the blank line.
+struct NODISCARD CharLanguages final
+{
+    std::vector<CharLanguage> rows;
+};
+
 struct NODISCARD CharWimpy final
 {
     int64_t wimpy = 0;
@@ -223,10 +239,12 @@ struct NODISCARD CharReplies final
     std::vector<CharBurden> burdens;
     /// After the `stat` or sheet that stated it, when one did.
     std::vector<CharWimpy> wimpies;
+    std::vector<CharLanguages> languages;
 
     NODISCARD bool empty() const
     {
-        return stats.empty() && scores.empty() && burdens.empty() && wimpies.empty();
+        return stats.empty() && scores.empty() && burdens.empty() && wimpies.empty()
+               && languages.empty();
     }
     void append(CharReplies &&other);
 };
@@ -248,6 +266,8 @@ private:
     StatSectionEnum m_statSection = StatSectionEnum::HEAD;
     bool m_statHasSecondLine = false;
 
+    /// The languages table being read, between its heading and its blank line.
+    std::optional<CharLanguages> m_languages;
     std::optional<CharScore> m_sheet;
     QStringList m_sheetLines;
     bool m_sheetInEffects = false;

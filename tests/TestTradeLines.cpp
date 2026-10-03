@@ -1298,6 +1298,11 @@ void TestTradeLines::quietCommandAllowedTest()
     // And no line at all.
     QVERIFY(!allowed(""));
     QVERIFY(!allowed("   "));
+    // `change language` alone lists the languages; with one named it changes the one spoken.
+    QVERIFY(allowed("change language"));
+    QVERIFY(allowed("cha lang"));
+    QVERIFY(!allowed("change language westron"));
+    QVERIFY(!allowed("change wimpy 10"));
     QVERIFY(!allowed("\n"));
 }
 

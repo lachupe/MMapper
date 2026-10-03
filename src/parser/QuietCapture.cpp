@@ -5,6 +5,8 @@
 
 #include <array>
 
+#include <QRegularExpression>
+
 namespace {
 
 /// One command a quiet command may be: MUME's word for it, how short MUME's help says it may
@@ -104,6 +106,14 @@ bool quietCommandAllowed(const QString &line)
         if (c.category() == QChar::Other_Control || c == QLatin1Char(';')) {
             return false;
         }
+    }
+    // `change language` alone only lists the languages and how well they are known (mume-help
+    // languages.txt); with a language after it, it changes the one spoken, which is not a read.
+    static const QRegularExpression listLanguages{
+        QStringLiteral(R"(^cha(?:n(?:ge?)?)?\s+lang(?:u(?:a(?:ge?)?)?)?$)"),
+        QRegularExpression::CaseInsensitiveOption};
+    if (listLanguages.match(text).hasMatch()) {
+        return true;
     }
     qsizetype end = 0;
     while (end < text.size() && !text.at(end).isSpace()) {

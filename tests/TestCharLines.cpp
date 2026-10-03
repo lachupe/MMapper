@@ -716,6 +716,33 @@ void TestCharLines::infoLiveTest()
     QCOMPARE(s.text.split(QLatin1Char('\n')).size(), qsizetype{19});
 }
 
+void TestCharLines::languagesTest()
+{
+    // powwow/logs (a bare `cha lang`): the heading, a row per language, the star on the one
+    // spoken, a blank line.
+    const CharReplies r = feed({"You have the following knowledge in these languages:",
+                                "   60   Westron             ",
+                                "   49   Khuzdul             ",
+                                "  100 * Orkish              ",
+                                "   31   Animal              ",
+                                "",
+                                PROMPT});
+    QCOMPARE(r.languages.size(), size_t{1});
+    const CharLanguages &l = r.languages.front();
+    QCOMPARE(l.rows.size(), size_t{4});
+    QCOMPARE(l.rows[0].name, QString("Westron"));
+    QCOMPARE(l.rows[0].knowledge, int64_t{60});
+    QVERIFY(!l.rows[0].speaking);
+    QCOMPARE(l.rows[2].name, QString("Orkish"));
+    QVERIFY(l.rows[2].speaking);
+    QVERIFY(r.scores.empty() && r.stats.empty());
+    // Closed by the prompt as well, with no blank line.
+    const CharReplies cut = feed({"You have the following knowledge in these languages:",
+                                  "   60   Westron", PROMPT});
+    QCOMPARE(cut.languages.size(), size_t{1});
+    QCOMPARE(cut.languages.front().rows.size(), size_t{1});
+}
+
 void TestCharLines::infoHeadLinesTest()
 {
     // The head's lines state no figure, so each is fed with one that does.

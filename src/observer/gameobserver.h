@@ -133,6 +133,7 @@ public:
     Signal2<CharBurden> sig2_charBurden;
     /// The wimpy as MUME last stated it: "Wimpy set to: 120", or a `stat` or `info` saying it.
     Signal2<CharWimpy> sig2_charWimpy;
+    Signal2<CharLanguages> sig2_charLanguages;
     /// The followers of the player's character after a change -- a bond made or ended, one left
     /// behind or back, an order answered. See CharFollowersTracker.
     Signal2<CharFollowers> sig2_charFollowers;
@@ -243,6 +244,10 @@ public:
     void observeCharScore(const CharScore &score) { sig2_charScore.invoke(score); }
     void observeCharBurden(const CharBurden &burden) { sig2_charBurden.invoke(burden); }
     void observeCharWimpy(const CharWimpy &wimpy) { sig2_charWimpy.invoke(wimpy); }
+    void observeCharLanguages(const CharLanguages &languages)
+    {
+        sig2_charLanguages.invoke(languages);
+    }
     void observeCharFollowers(const CharFollowers &followers)
     {
         sig2_charFollowers.invoke(followers);

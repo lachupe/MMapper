@@ -487,6 +487,9 @@ std::optional<CharWimpy> parseWimpyLine(const QString &line)
 
 void CharReplies::append(CharReplies &&other)
 {
+    for (auto &table : other.languages) {
+        languages.push_back(std::move(table));
+    }
     for (const CharWimpy &wimpy : other.wimpies) {
         wimpies.push_back(wimpy);
     }
@@ -511,6 +514,28 @@ CharReplies CharLinesTracker::receiveLine(const QString &line)
     // MumeXmlParser takes the level line out before it gets here; should one arrive anyway it
     // belongs to no reply, and does not count against an open sheet.
     if (text.startsWith(QStringLiteral("MMXP ")) && parseCharLevelLine(text).has_value()) {
+        return out;
+    }
+
+    // The languages table (a bare `change language`): its own lines, read apart from the rest.
+    static const QRegularExpression languagesHead{
+        QStringLiteral(R"(^You have the following knowledge in these languages:$)")};
+    static const QRegularExpression languageRow{
+        QStringLiteral(R"(^\s*(-?\d+)\s+(\*\s*)?(\S+)\s*$)")};
+    if (m_languages.has_value()) {
+        if (const auto row = languageRow.match(text); row.hasMatch()) {
+            m_languages->rows.push_back(
+                CharLanguage{row.captured(3), row.captured(1).toLongLong(), row.capturedLength(2) > 0});
+            return out;
+        }
+        out.languages.push_back(std::move(*m_languages));
+        m_languages.reset();
+        if (text.trimmed().isEmpty()) {
+            return out;
+        }
+    }
+    if (languagesHead.match(text.trimmed()).hasMatch()) {
+        m_languages.emplace();
         return out;
     }
 
@@ -854,6 +879,10 @@ CharReplies CharLinesTracker::closeSheet()
 CharReplies CharLinesTracker::receivePrompt()
 {
     CharReplies out = closeStat();
+    if (m_languages.has_value()) {
+        out.languages.push_back(std::move(*m_languages));
+        m_languages.reset();
+    }
     // At the prompt the sheet is complete: without an effects list it had none. Only a real
     // sheet says so, not a lone "You will swim if necessary." answering `swim`.
     if (m_sheet.has_value()) {
@@ -869,6 +898,7 @@ CharReplies CharLinesTracker::receivePrompt()
 
 void CharLinesTracker::reset()
 {
+    m_languages.reset();
     m_stat.reset();
     m_statLines.clear();
     m_statSection = StatSectionEnum::HEAD;
