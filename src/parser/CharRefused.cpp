@@ -96,6 +96,10 @@ const RefusedRow g_rows[] = {
     // character not in the room; M row 56). Today's wordings, "Nobody here by that name." and
     // "You don't see any X here.", are MMapper.Combat.Event refused no-target.
     row(R"(^They aren't here\.$)", "", "no-target"),
+    // A numbered keyword with fewer of them here: "You don't see a second rack." (mume3d's live test of
+    // 2026-10-03, all-2026-10-03-134913.log:1329, after `examine 2.rack`); any command that took the number.
+    row(R"(^You don't see an? (?:first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|\d+(?:st|nd|rd|th)) (?<t>.+?)\.$)",
+        "", "no-target"),
     // 192; log-2005.09.05-19.23.16.txt:58262 (after `ride my` 15 times).
     row(R"(^No one here by that name\.$)", "", "no-target"),
     // 14; log-2005.09.21-01.39.48.txt:19820.

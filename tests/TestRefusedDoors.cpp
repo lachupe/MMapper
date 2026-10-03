@@ -83,6 +83,8 @@ const RefusedCase g_refused[] = {
     {"Hit whom?", "kill", "no-target", "", false, "log-2006.08.28-17.47.08.txt:42817"},
     {"Lead what?", "lead", "no-target", "", false, "log-2005.09.15-21.01.17.txt:42856"},
     {"They aren't here.", "", "no-target", "", false, "log-2005.08.31-14.00.43.txt:4582"},
+    {"You don't see a second rack.", "", "no-target", "rack", false,
+     "mume3d all-2026-10-03-134913.log:1329"},
     {"No one here by that name.", "", "no-target", "", false,
      "log-2005.09.05-19.23.16.txt:58262"},
     {"No one responds to your commanding voice.", "order", "no-target", "", false,

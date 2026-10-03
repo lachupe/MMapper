@@ -263,10 +263,29 @@ void MumeXmlParser::parse(const TelnetData &data, const bool isGoAhead)
     ParserUtils::removeAnsiMarksInPlace(chunkText);
     // The elements that closed on this chunk, taken here because a quiet command's window asks
     // what they say of the line before the line is sent anywhere; published further down.
-    const std::vector<XmlElement> elements = m_xmlTracker.take();
+    std::vector<XmlElement> elements = m_xmlTracker.take();
     // A room display is being read: its lines are nobody's reply.
     const bool inRoom = m_lineFlags.isRoom()
                         || (m_xmlMode != XmlModeEnum::NONE && m_xmlMode != XmlModeEnum::PROMPT);
+    // Someone coming or going on a plain line, where MUME sent no <move_in>/<move_out> round it
+    // (it sent none in mume3d's live tests of 2026-10-03): the element is made here, so that a
+    // frontend reads arrivals and departures one way (MMapper.Xml.Element, with the direction).
+    // Not inside a room display, a prompt, or a line other markup already says is speech or a blow.
+    if (!isGoAhead && !inRoom) {
+        bool claimed = false;
+        for (const XmlElement &xml : elements) {
+            const XmlCategoryEnum category = toXmlCategory(xml.tag);
+            claimed = claimed || category == XmlCategoryEnum::MOVEMENT
+                      || category == XmlCategoryEnum::COMMUNICATION
+                      || category == XmlCategoryEnum::COMBAT;
+        }
+        if (!claimed) {
+            QString plainLine = chunkText;
+            if (auto made = plainMovementElement(plainLine)) {
+                elements.push_back(std::move(*made));
+            }
+        }
+    }
     QuietTrafficEnum traffic = QuietTrafficEnum::REPLY;
     if (m_tradeReaders.quietOpen() && !isGoAhead) {
         traffic = quietTrafficOf(inRoom,

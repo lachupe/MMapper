@@ -432,4 +432,29 @@ void TestXmlElements::moverNameTest()
     QVERIFY(readMoverName(hit).isEmpty());
 }
 
+void TestXmlElements::plainMovementTest()
+{
+    // mume3d's live test of 2026-10-03: MUME sent these with no movement markup.
+    const auto out = plainMovementElement(QStringLiteral("A townsman leaves east."));
+    QVERIFY(out.has_value());
+    QCOMPARE(out->tag, XmlTagEnum::MOVE_OUT);
+    QCOMPARE(out->direction, std::string{"east"});
+    QCOMPARE(out->children.front().text, QStringLiteral("A townsman"));
+    const auto in = plainMovementElement(QStringLiteral("An old man has arrived from the north."));
+    QVERIFY(in.has_value());
+    QCOMPARE(in->tag, XmlTagEnum::MOVE_IN);
+    QCOMPARE(in->direction, std::string{"north"});
+    QCOMPARE(in->children.front().text, QStringLiteral("An old man"));
+    const auto below = plainMovementElement(QStringLiteral("A rat arrives from below."));
+    QVERIFY(below.has_value());
+    QCOMPARE(below->direction, std::string{"down"});
+    const auto riding = plainMovementElement(QStringLiteral("*Stolb* leaves west riding a hungry warg."));
+    QVERIFY(riding.has_value());
+    QCOMPARE(riding->direction, std::string{"west"});
+    // No way named, or another shape: nothing.
+    QVERIFY(!plainMovementElement(QStringLiteral("An old man leaves with a sigh.")).has_value());
+    QVERIFY(!plainMovementElement(QStringLiteral("You are hungry.")).has_value());
+    QVERIFY(!plainMovementElement(QStringLiteral("The coach from Tharbad has arrived.")).has_value());
+}
+
 QTEST_MAIN(TestXmlElements)

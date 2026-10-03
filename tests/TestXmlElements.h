@@ -30,4 +30,5 @@ private Q_SLOTS:
     static void textLimitTest();
     static void movementDirectionTest();
     static void moverNameTest();
+    static void plainMovementTest();
 };
