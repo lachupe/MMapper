@@ -348,8 +348,11 @@ const QRegularExpression g_rule{QStringLiteral(R"(^-{5,}$)")};
 const QRegularExpression g_columns{QStringLiteral(R"(\s{2,})")};
 const QRegularExpression g_practised{QStringLiteral(
     R"(^You took (\S+) out of (\S+) sessions? in this (?:skill|spell)\. Your knowledge is now (-?\d+)%\.$)")};
-const QRegularExpression g_practiseRefused{
-    QStringLiteral(R"(^You have to stand in order to practi[cs]e anything\.$)")};
+// "You have to stand ..." (elvenrunes), and the level's limit: "You need to be more experienced
+// before practicing this skill further." (mume3d's live test of 2026-10-03, 13:58: read as no reply
+// before, so the client said the practice failed although MUME had answered).
+const QRegularExpression g_practiseRefused{QStringLiteral(
+    R"(^(?:You have to stand in order to practi[cs]e anything|You need to be more experienced before practi[cs]ing this (?:skill|spell) further)\.$)")};
 
 // -- trophies ------------------------------------------------------------------------------
 

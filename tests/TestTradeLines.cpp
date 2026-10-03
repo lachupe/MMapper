@@ -755,6 +755,16 @@ void TestTradeLines::practisedTest()
     QCOMPARE(refused.practised[0].name, QStringLiteral("block door"));
     QVERIFY(!refused.practised[0].used.has_value());
 
+    // mume3d's live test of 2026-10-03 (all-2026-10-03-134913.log:1479): the level's limit.
+    TradeLinesTracker limited;
+    limited.receiveCommand(QStringLiteral("prac slashing weapons"));
+    const TradeReplies limit = limited.receiveLine(QStringLiteral(
+        "You need to be more experienced before practicing this skill further."));
+    QCOMPARE(limit.practised.size(), size_t{1});
+    QCOMPARE(limit.practised[0].refused,
+             QStringLiteral("You need to be more experienced before practicing this skill further."));
+    QCOMPARE(limit.practised[0].name, QStringLiteral("slashing weapons"));
+
     // `prac` alone and `list` are no practice commands.
     TradeLinesTracker bare;
     bare.receiveCommand(QStringLiteral("prac"));
