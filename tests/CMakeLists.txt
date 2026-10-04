@@ -299,6 +299,36 @@ set_target_properties(
 )
 add_test(NAME TestRefusedDoors COMMAND TestRefusedDoors)
 
+# The user's logs as parser tests: door, follower and refused-move lines (mume3d TODO G.15)
+set(TestLogLines_SRCS
+    TestLogLines.cpp
+    TestLogLines.h
+    LogLinesData.h
+    ../src/parser/CharFollowers.cpp
+    ../src/parser/CharFollowers.h
+    ../src/parser/CharRefused.cpp
+    ../src/parser/CharRefused.h
+    ../src/parser/CombatLines.cpp
+    ../src/parser/CombatLines.h
+    ../src/parser/RoomDoors.cpp
+    ../src/parser/RoomDoors.h
+    )
+add_executable(TestLogLines ${TestLogLines_SRCS})
+add_dependencies(TestLogLines mm_test mm_global)
+target_link_libraries(TestLogLines
+        mm_test
+        mm_global
+        Qt6::Test
+        coverage_config)
+set_target_properties(
+  TestLogLines PROPERTIES
+  CXX_STANDARD 20
+  CXX_STANDARD_REQUIRED ON
+  CXX_EXTENSIONS OFF
+  COMPILE_FLAGS "${WARNING_FLAGS}"
+)
+add_test(NAME TestLogLines COMMAND TestLogLines)
+
 # MUME's answers to looks at a side, paired with the looks (MMapper.Room.Look)
 set(TestExitLooks_SRCS
     TestExitLooks.cpp
