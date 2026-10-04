@@ -9,6 +9,7 @@
 #include "../parser/CharAffects.h"
 #include "../parser/LoginLines.h"
 #include "../proxy/GmcpMessage.h"
+#include "FrontendLoginMemory.h"
 #include "FrontendMapIdentity.h"
 #include "FrontendMessages.h"
 #include "FrontendReplayCache.h"
@@ -33,6 +34,7 @@ class MapData;
 struct GroundState;
 struct ItemBlock;
 class MumeClock;
+class PasswordConfig;
 struct RoomContentsSnapshot;
 class QWebSocket;
 class QWebSocketServer;
@@ -54,8 +56,10 @@ class QWebSocketServer;
 /// MUME.Client, which are never relayed (FrontendSubscriptions::isRelayable). MMapper's own
 /// additions live under MMapper.Combat, MMapper.Char, MMapper.Map, MMapper.Room, MMapper.Session,
 /// MMapper.Terminal, MMapper.Time, MMapper.Weather and MMapper.Xml. The one package a frontend
-/// sends besides Core.Hello and Core.Supports are MMapper.Input.Command, MMapper.Input.Quiet and
-/// MMapper.Trade.Request and .Cancel, and only the driving frontend may send them. A trade
+/// sends besides Core.Hello and Core.Supports are MMapper.Input.Command, MMapper.Input.Quiet,
+/// MMapper.Session.RememberLogin and MMapper.Trade.Request and .Cancel, and only the driving
+/// frontend may send them. RememberLogin {"remember": bool} asks MMapper to keep the login it
+/// relays as its own auto-login (LoginMemory; the pass phrase goes only to the keychain). A trade
 /// request is run by TradeOperations, which holds the conversation with MUME and publishes
 /// MMapper.Trade.Operation; so is a quiet command, one line whose reply goes to the frontend as
 /// MMapper.Input.Reply and not to the terminal. MUME's viewer is claimed while the driving
@@ -80,7 +84,9 @@ class QWebSocketServer;
 /// "read-only" (input from a frontend that is observing), "invalid-command" (an
 /// MMapper.Input.Command without a `text` string), "invalid-trade" (an MMapper.Trade.Request
 /// or .Cancel without an `id` string), "invalid-quiet" (an MMapper.Input.Quiet without one) and
-/// "invalid-filter" (an MMapper.Terminal.Filter that is no object of booleans).
+/// "invalid-filter" (an MMapper.Terminal.Filter that is no object of booleans), "invalid-remember"
+/// (an MMapper.Session.RememberLogin without a boolean `remember`) and "remember-unavailable"
+/// (remembering asked for in a build without a keychain).
 /// Like every package it only reaches a
 /// frontend subscribed to its module, MMapper.Session. Only an oversized frame closes the
 /// connection.
@@ -128,6 +134,13 @@ private:
     bool m_echo = true;
     /// The login prompt MUME waits at, MMapper.Session.State's `login`; NONE for none.
     LoginPrompt m_loginPrompt;
+    /// MMapper.Session.RememberLogin: the login relayed while it was asked for, held until MUME
+    /// accepts it and then handed to the keychain.
+    LoginMemory m_loginMemory;
+    /// The keychain MMapper's auto-login reads (Proxy's own reads the same entry).
+    std::unique_ptr<PasswordConfig> m_passwordConfig;
+    /// The account being stored in the keychain, until it says it was.
+    QString m_storingAccount;
 
     /// The loaded map as MMapper.Session.State names it, and when it may next announce a change.
     FrontendMapIdentity m_mapIdentity;
@@ -247,6 +260,10 @@ private:
     void handleQuiet(Client &client, const GmcpMessage &msg);
     /// MMapper.Terminal.Filter.
     void handleFilter(Client &client, const GmcpMessage &msg);
+    /// MMapper.Session.RememberLogin.
+    void handleRememberLogin(Client &client, const GmcpMessage &msg);
+    /// MUME accepted the login: what LoginMemory held goes to the keychain, if it was asked for.
+    void rememberAccepted();
     /// MMapper.Terminal.Output, to each frontend as its filter has it.
     void publishTerminal(const TerminalOutput &out);
     /// What TradeOperations is told of the session with a request.

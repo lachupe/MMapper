@@ -693,6 +693,8 @@ endif()
 
 if(WITH_FRONTEND)
     list(APPEND mmapper_SRCS
+        frontend/FrontendLoginMemory.cpp
+        frontend/FrontendLoginMemory.h
         frontend/FrontendMapIdentity.cpp
         frontend/FrontendMapIdentity.h
         frontend/FrontendMessages.cpp

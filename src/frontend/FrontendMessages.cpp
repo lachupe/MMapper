@@ -297,7 +297,9 @@ GmcpMessage makeSessionState(const bool upstreamConnected,
                              const bool driving,
                              const GameStateEnum game,
                              const QString &viewer,
-                             const LoginPrompt &login)
+                             const LoginPrompt &login,
+                             const QString &rememberedAccount,
+                             const QString &rememberUnavailable)
 {
     QJsonObject obj;
     obj["itemCommands"] = 6;
@@ -329,6 +331,12 @@ GmcpMessage makeSessionState(const bool upstreamConnected,
             prompt["refused"] = refused;
         }
         obj["login"] = prompt;
+    }
+    // The account MMapper logs in to by itself, never its pass phrase; null for none.
+    obj["rememberedAccount"] = rememberedAccount.isEmpty() ? QJsonValue{QJsonValue::Null}
+                                                           : QJsonValue{rememberedAccount};
+    if (!rememberUnavailable.isEmpty()) {
+        obj["rememberUnavailable"] = rememberUnavailable;
     }
     return GmcpMessage{GmcpMessageTypeEnum::MMAPPER_SESSION_STATE, toGmcpJson(obj)};
 }

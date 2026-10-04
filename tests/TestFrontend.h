@@ -56,6 +56,7 @@ private Q_SLOTS:
     static void mapPositionRidableTest();
     static void charSkillsReplayTest();
     static void accountTest();
+    static void rememberLoginTest();
     static void itemObservationMetadataTest();
     static void replayChangedFieldsTest();
     static void replaySetChangesTest();

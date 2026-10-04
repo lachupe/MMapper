@@ -4,6 +4,9 @@
 #include "FrontendServer.h"
 
 #include "../clock/mumeclock.h"
+#include "../configuration/PasswordConfig.h"
+#include "../configuration/configuration.h"
+#include "../global/ConfigConsts.h"
 #include "../global/TextUtils.h"
 #include "../global/utils.h"
 #include "../map/RoomHandle.h"
@@ -58,7 +61,35 @@ FrontendServer::FrontendServer(GameObserver &observer,
     , m_trade{observer,
               [this](const QString &line) { m_session.sendLine(line); },
               [this](const GmcpMessage &msg) { publish(msg); }}
+    , m_loginMemory{!NO_QTKEYCHAIN}
+    , m_passwordConfig{std::make_unique<PasswordConfig>()}
 {
+    // The keychain's answers to a login stored for MMapper.Session.RememberLogin. Its errors are
+    // its own words, never the pass phrase; neither is the pass phrase logged anywhere here.
+    connect(m_passwordConfig.get(), &PasswordConfig::sig_passwordSaved, this, [this]() {
+        if (m_storingAccount.isEmpty()) {
+            return;
+        }
+        auto &account = setConfig().account;
+        account.accountName = m_storingAccount;
+        account.accountPassword = true;
+        account.rememberLogin = true;
+        getConfig().write();
+        log(QString("Remembered the login of account '%1' in the keychain").arg(m_storingAccount));
+        m_storingAccount.clear();
+        m_loginMemory.clearUnavailable();
+        publishSessionState();
+    });
+    connect(m_passwordConfig.get(), &PasswordConfig::sig_error, this, [this](const QString &error) {
+        if (m_storingAccount.isEmpty()) {
+            return;
+        }
+        m_storingAccount.clear();
+        log(QString("Could not remember the login: %1").arg(error));
+        m_loginMemory.setUnavailable(error);
+        publishSessionState();
+    });
+
     // The viewer setting is in MMapper.Session.State.
     m_trade.setViewerChanged([this]() { publishSessionState(); });
     m_tradeTimer.setInterval(250);
@@ -78,6 +109,8 @@ FrontendServer::FrontendServer(GameObserver &observer,
     m_observer.sig2_connected.connect(m_lifetime, [this]() {
         m_upstreamConnected = true;
         m_loginPrompt = LoginPrompt{};
+        // A login held for remembering was the last connection's.
+        m_loginMemory.reset();
         // A new game session invalidates everything we cached from the previous one.
         m_replayCache.clear();
         m_charAffects.reset();
@@ -92,6 +125,7 @@ FrontendServer::FrontendServer(GameObserver &observer,
     m_observer.sig2_disconnected.connect(m_lifetime, [this]() {
         m_upstreamConnected = false;
         m_loginPrompt = LoginPrompt{};
+        m_loginMemory.reset();
         m_charEquipment.reset();
         m_charInventory.reset();
         m_charContainers.clear();
@@ -114,8 +148,9 @@ FrontendServer::FrontendServer(GameObserver &observer,
             m_charInventory.reset();
             m_charContainers.clear();
         } else {
-            // A character is in the game: no login prompt stands.
+            // A character is in the game: no login prompt stands, and the login was accepted.
             m_loginPrompt = LoginPrompt{};
+            rememberAccepted();
         }
         publishSessionState();
     });
@@ -209,11 +244,14 @@ FrontendServer::FrontendServer(GameObserver &observer,
     // State: MUME's account menu and the account's characters, as last printed; kept while no
     // character plays, which is when a frontend wants them. The one-line answers are events.
     m_observer.sig2_accountMenu.connect(m_lifetime, [this](const AccountMenu &menu) {
+        // MUME's account menu: the login was accepted.
+        rememberAccepted();
         const GmcpMessage msg = frontend_messages::makeAccountMenu(menu);
         m_replayCache.remember(msg);
         publish(msg);
     });
     m_observer.sig2_accountChars.connect(m_lifetime, [this](const AccountChars &chars) {
+        rememberAccepted();
         const GmcpMessage msg = frontend_messages::makeAccountChars(chars);
         m_replayCache.remember(msg);
         publish(msg);
@@ -529,6 +567,11 @@ void FrontendServer::onTextMessage(QWebSocket *const socket, const QString &fram
         return;
     }
 
+    if (msg.isMMapperSessionRememberLogin()) {
+        handleRememberLogin(*client, msg);
+        return;
+    }
+
     if (msg.isMMapperTradeRequest() || msg.isMMapperTradeCancel()) {
         handleTrade(*client, msg);
         return;
@@ -561,6 +604,8 @@ void FrontendServer::releaseSession()
         return;
     }
     m_driver = nullptr;
+    // Whatever login was held for remembering was this frontend's.
+    m_loginMemory.reset();
     // Nothing more can be sent for an operation; it stops where it is.
     m_trade.setDriving(false);
     updateViewerClaim();
@@ -577,7 +622,12 @@ GmcpMessage FrontendServer::sessionStateFor(const Client &client) const
                                                m_driver != nullptr && m_driver == client.socket,
                                                m_observer.getGameState(),
                                                m_trade.viewerState(),
-                                               m_loginPrompt);
+                                               m_loginPrompt,
+                                               rememberedAccountName(getConfig().account.accountName,
+                                                                     getConfig().account.accountPassword,
+                                                                     getConfig().account.rememberLogin,
+                                                                     m_loginMemory.keychainAvailable()),
+                                               m_loginMemory.unavailableReason());
 }
 
 void FrontendServer::handleInput(Client &client, const GmcpMessage &msg)
@@ -611,7 +661,60 @@ void FrontendServer::handleInput(Client &client, const GmcpMessage &msg)
     // The player's line always goes at once; a trade operation holding MUME's pager answers it
     // with `q` first, and stops.
     m_trade.beforePlayerLine(optText.value());
+    // At MUME's own login prompts, and only while the frontend asked for it, the answer is held
+    // for remembering (LoginMemory); never logged, never published.
+    m_loginMemory.noteSent(m_loginPrompt.kind, optText.value());
     m_session.sendLine(optText.value());
+}
+
+void FrontendServer::handleRememberLogin(Client &client, const GmcpMessage &msg)
+{
+    if (m_driver != client.socket) {
+        sendTo(client,
+               frontend_messages::makeError("read-only",
+                                            "Another client owns the session; this "
+                                            "connection may only observe it"));
+        return;
+    }
+    const std::optional<bool> remember = parseRememberLogin(msg);
+    if (!remember.has_value()) {
+        sendTo(client,
+               frontend_messages::makeError("invalid-remember",
+                                            "MMapper.Session.RememberLogin needs an object payload "
+                                            "with a boolean 'remember'"));
+        return;
+    }
+    if (!m_loginMemory.setRequested(*remember)) {
+        sendTo(client,
+               frontend_messages::makeError("remember-unavailable",
+                                            QString("MMapper cannot remember the login: %1")
+                                                .arg(m_loginMemory.unavailableReason())));
+        sendTo(client, sessionStateFor(client));
+        return;
+    }
+    if (!*remember) {
+        // No more auto-login; the keychain entry Preferences > General manages stays as it is.
+        if (getConfig().account.rememberLogin) {
+            setConfig().account.rememberLogin = false;
+            getConfig().write();
+            log("The frontend turned MMapper's auto-login off");
+        }
+        publishSessionState();
+    }
+}
+
+void FrontendServer::rememberAccepted()
+{
+    std::optional<LoginMemory::Credentials> accepted = m_loginMemory.takeAccepted();
+    if (!accepted.has_value()) {
+        return;
+    }
+    m_storingAccount = accepted->account;
+    // The keychain's key is the account's name in a web build (PasswordConfig): set it first.
+    setConfig().account.accountName = accepted->account;
+    m_passwordConfig->setPassword(accepted->passPhrase);
+    accepted->passPhrase.fill(QLatin1Char(' '));
+    accepted->passPhrase.clear();
 }
 
 void FrontendServer::handleTrade(Client &client, const GmcpMessage &msg)

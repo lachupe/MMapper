@@ -128,13 +128,21 @@ struct NODISCARD MapIdentity final
 /// MUME prints, to tell a prompt printed again from the state sent again) and, when MUME asks
 /// again, `refused` {`reason` "wrong-password", "no-such-name" or "illegal-name", `text` MUME's
 /// words}. It never holds what the player answered.
+///
+/// `rememberedAccount` is the account MMapper logs in to by itself (its auto-login: the account
+/// name in its configuration, the pass phrase in the system keychain), or null when it remembers
+/// none; never the pass phrase (MMapper.Session.RememberLogin, LoginMemory). `rememberUnavailable`
+/// is there only when remembering cannot be done or failed: "no keychain" in a build without
+/// QtKeychain, or the keychain's own error.
 NODISCARD GmcpMessage makeSessionState(bool upstreamConnected,
                                        const MapIdentity &map,
                                        bool echo,
                                        bool driving,
                                        GameStateEnum game = GameStateEnum::UNKNOWN,
                                        const QString &viewer = QStringLiteral("unknown"),
-                                       const LoginPrompt &login = LoginPrompt{});
+                                       const LoginPrompt &login = LoginPrompt{},
+                                       const QString &rememberedAccount = QString{},
+                                       const QString &rememberUnavailable = QString{});
 
 /// MMapper.Session.Error — a protocol error reported to one frontend.
 ///

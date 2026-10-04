@@ -124,6 +124,10 @@ class ParseEvent;
     X(MMAPPER_ROOM_DOOR, MMapperRoomDoor, "mmapper.room.door", "MMapper.Room.Door") \
     X(MMAPPER_ROOM_LOOK, MMapperRoomLook, "mmapper.room.look", "MMapper.Room.Look") \
     X(MMAPPER_SESSION_ERROR, MMapperSessionError, "mmapper.session.error", "MMapper.Session.Error") \
+    X(MMAPPER_SESSION_REMEMBER_LOGIN, \
+      MMapperSessionRememberLogin, \
+      "mmapper.session.rememberlogin", \
+      "MMapper.Session.RememberLogin") \
     X(MMAPPER_SESSION_STATE, MMapperSessionState, "mmapper.session.state", "MMapper.Session.State") \
     X(MMAPPER_SHOP_DEAL, MMapperShopDeal, "mmapper.shop.deal", "MMapper.Shop.Deal") \
     X(MMAPPER_SHOP_LIST, MMapperShopList, "mmapper.shop.list", "MMapper.Shop.List") \
@@ -165,7 +169,7 @@ enum class NODISCARD GmcpMessageTypeEnum {
 #define X_COUNT(...) +1
 static constexpr const size_t NUM_GMCP_MESSAGES = XFOREACH_GMCP_MESSAGE_TYPE(X_COUNT);
 #undef X_COUNT
-static_assert(NUM_GMCP_MESSAGES == 88);
+static_assert(NUM_GMCP_MESSAGES == 89);
 DEFINE_ENUM_COUNT(GmcpMessageTypeEnum, NUM_GMCP_MESSAGES)
 
 namespace tags {

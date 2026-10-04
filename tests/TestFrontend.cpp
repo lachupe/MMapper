@@ -3,6 +3,7 @@
 
 #include "TestFrontend.h"
 
+#include "../src/frontend/FrontendLoginMemory.h"
 #include "../src/frontend/FrontendMapIdentity.h"
 #include "../src/frontend/FrontendMessages.h"
 #include "../src/frontend/FrontendRenderPause.h"
@@ -1969,6 +1970,171 @@ void TestFrontend::charFollowersTest()
     QVERIFY(!replay().isEmpty());
     cache.clear();
     QVERIFY(replay().isEmpty());
+}
+
+void TestFrontend::rememberLoginTest()
+{
+    // MMapper.Session.RememberLogin: a login driven through what FrontendServer does with it --
+    // MUME's lines through the login tracker (the `login` of the state), the frontend's answers
+    // noted at the prompt MUME waits at (handleInput), the account menu accepting it -- with every
+    // package the server would publish for it kept, and its replay cache filled as the server
+    // fills it. The pass phrase reaches the keychain's hand-over (takeAccepted) and nothing else.
+    const QString phrase = QStringLiteral("s3cret phrase");
+    const QString wrong = QStringLiteral("wr0ng-phrase");
+    frontend_messages::MapIdentity arda;
+    arda.name = QStringLiteral("arda.mm2");
+    arda.rooms = 31000;
+
+    LoginLinesTracker tracker;
+    LoginPrompt prompt;
+    LoginMemory memory{true};
+    FrontendReplayCache cache;
+    std::vector<GmcpMessage> published;
+    QString remembered; // what the configuration says once the keychain has stored it
+    std::optional<LoginMemory::Credentials> stored;
+
+    const auto state = [&]() {
+        const GmcpMessage msg
+            = frontend_messages::makeSessionState(true,
+                                                  arda,
+                                                  prompt.kind != LoginPromptKindEnum::PASSWORD,
+                                                  true,
+                                                  GameStateEnum::MENU,
+                                                  QStringLiteral("unknown"),
+                                                  prompt,
+                                                  remembered,
+                                                  memory.unavailableReason());
+        published.push_back(msg);
+        return msg;
+    };
+    const auto mud = [&](const QString &line, const bool goAhead) {
+        published.push_back(
+            frontend_messages::makeTerminalOutput(SendToUserSourceEnum::FromMud, line, goAhead));
+        if (const auto seen = tracker.receiveLine(line)) {
+            prompt = *seen;
+            std::ignore = state();
+        }
+    };
+    const auto accepted = [&]() {
+        // FrontendServer::rememberAccepted(): the credentials go to the keychain, and once it
+        // has stored them the configuration names the account.
+        stored = memory.takeAccepted();
+        if (stored.has_value()) {
+            remembered = rememberedAccountName(stored->account, true, true, true);
+        }
+    };
+
+    // The request carries only the flag.
+    QCOMPARE(parseRememberLogin(parse(R"(MMapper.Session.RememberLogin {"remember":true})")),
+             std::optional<bool>{true});
+    QCOMPARE(parseRememberLogin(parse(R"(MMapper.Session.RememberLogin {"remember":false})")),
+             std::optional<bool>{false});
+    QVERIFY(!parseRememberLogin(parse(R"(MMapper.Session.RememberLogin {"remember":"yes"})")));
+    QVERIFY(!parseRememberLogin(parse("MMapper.Session.RememberLogin")));
+    QCOMPARE(parse(R"(MMapper.Session.RememberLogin {"remember":true})").getType(),
+             GmcpMessageTypeEnum::MMAPPER_SESSION_REMEMBER_LOGIN);
+
+    // Before anything is remembered the state says so: null, not absent.
+    const QJsonObject before = payloadOf(state());
+    QVERIFY(before.contains(QStringLiteral("rememberedAccount")));
+    QVERIFY(before["rememberedAccount"].isNull());
+    QVERIFY(!before.contains(QStringLiteral("rememberUnavailable")));
+
+    // A login without the request: nothing is held.
+    mud(QStringLiteral("By what name do you wish to be known? "), true);
+    memory.noteSent(prompt.kind, QStringLiteral("dmitry"));
+    mud(QStringLiteral("Account pass phrase: "), true);
+    memory.noteSent(prompt.kind, phrase);
+    accepted();
+    QVERIFY(!stored.has_value());
+
+    // With it: the name at the name prompt, a refused pass phrase, then the right one.
+    tracker.reset();
+    QVERIFY(memory.setRequested(true));
+    mud(QStringLiteral("By what name do you wish to be known? "), true);
+    QCOMPARE(prompt.kind, LoginPromptKindEnum::NAME);
+    memory.noteSent(prompt.kind, QStringLiteral("dmitry"));
+    mud(QStringLiteral("Account pass phrase: "), true);
+    QCOMPARE(prompt.kind, LoginPromptKindEnum::PASSWORD);
+    memory.noteSent(prompt.kind, wrong + QStringLiteral("\r\n"));
+    mud(QStringLiteral("Wrong password."), false);
+    mud(QStringLiteral("Account pass phrase: "), true);
+    QCOMPARE(prompt.refusedReason, QStringLiteral("wrong-password"));
+    memory.noteSent(prompt.kind, phrase);
+    // MUME's account menu: accepted.
+    mud(QStringLiteral("Welcome to the land of Middle-earth."), false);
+    AccountMenu menu;
+    menu.commands.push_back(AccountMenuCommand{QStringLiteral("play"),
+                                               QStringLiteral("Play <name>"),
+                                               QStringLiteral("Enter the game.")});
+    const GmcpMessage menuMsg = frontend_messages::makeAccountMenu(menu);
+    published.push_back(menuMsg);
+    accepted();
+    QVERIFY(stored.has_value());
+    QCOMPARE(stored->account, QStringLiteral("dmitry"));
+    QCOMPARE(stored->passPhrase, phrase);
+    // Taken once: a second menu stores nothing more.
+    accepted();
+    QVERIFY(!stored.has_value());
+    const QJsonObject after = payloadOf(state());
+    QCOMPARE(after["rememberedAccount"].toString(), QStringLiteral("dmitry"));
+
+    // Nothing published, and nothing the replay cache keeps, carries either pass phrase.
+    for (const GmcpMessage &msg : published) {
+        cache.remember(msg);
+    }
+    QVERIFY(published.size() > 6);
+    for (const GmcpMessage &msg : published) {
+        QVERIFY2(!msg.toRawBytes().contains(phrase.toUtf8()), msg.toRawBytes().constData());
+        QVERIFY2(!msg.toRawBytes().contains(wrong.toUtf8()), msg.toRawBytes().constData());
+    }
+    QVERIFY(!cache.messages().empty());
+    for (const auto &[type, msg] : cache.messages()) {
+        QVERIFY(!msg.toRawBytes().contains(phrase.toUtf8()));
+        QVERIFY(!msg.toRawBytes().contains(wrong.toUtf8()));
+    }
+
+    // Lines sent outside a login prompt, or after the request was withdrawn, are not held.
+    QVERIFY(memory.setRequested(true));
+    memory.noteSent(LoginPromptKindEnum::NONE, QStringLiteral("say hello"));
+    memory.noteSent(LoginPromptKindEnum::NAME, QStringLiteral("other"));
+    QVERIFY(memory.setRequested(false));
+    memory.noteSent(LoginPromptKindEnum::PASSWORD, phrase);
+    QVERIFY(!memory.takeAccepted().has_value());
+    // MUME going drops what was held.
+    QVERIFY(memory.setRequested(true));
+    memory.noteSent(LoginPromptKindEnum::NAME, QStringLiteral("other"));
+    memory.noteSent(LoginPromptKindEnum::PASSWORD, phrase);
+    memory.reset();
+    QVERIFY(!memory.takeAccepted().has_value());
+
+    // Without a keychain the request is refused, and the state says why; a configuration that
+    // says auto-login is on remembers nothing there either.
+    LoginMemory bare{false};
+    QVERIFY(!bare.setRequested(true));
+    QVERIFY(!bare.requested());
+    bare.noteSent(LoginPromptKindEnum::NAME, QStringLiteral("dmitry"));
+    bare.noteSent(LoginPromptKindEnum::PASSWORD, phrase);
+    QVERIFY(!bare.takeAccepted().has_value());
+    QCOMPARE(bare.unavailableReason(), QString::fromLatin1(LoginMemory::NO_KEYCHAIN));
+    QVERIFY(rememberedAccountName(QStringLiteral("dmitry"), true, true, false).isEmpty());
+    QVERIFY(rememberedAccountName(QStringLiteral("dmitry"), false, true, true).isEmpty());
+    QVERIFY(rememberedAccountName(QStringLiteral("dmitry"), true, false, true).isEmpty());
+    const QJsonObject refused = payloadOf(
+        frontend_messages::makeSessionState(true,
+                                            arda,
+                                            true,
+                                            true,
+                                            GameStateEnum::MENU,
+                                            QStringLiteral("unknown"),
+                                            LoginPrompt{},
+                                            rememberedAccountName(QStringLiteral("dmitry"),
+                                                                  true,
+                                                                  true,
+                                                                  bare.keychainAvailable()),
+                                            bare.unavailableReason()));
+    QVERIFY(refused["rememberedAccount"].isNull());
+    QCOMPARE(refused["rememberUnavailable"].toString(), QStringLiteral("no keychain"));
 }
 
 void TestFrontend::accountTest()
