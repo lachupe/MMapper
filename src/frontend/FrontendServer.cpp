@@ -266,6 +266,11 @@ FrontendServer::FrontendServer(GameObserver &observer,
         publish(msg);
     });
 
+    // An event: a skill improved by use.
+    m_observer.sig2_charImproved.connect(m_lifetime, [this](const CharImproved &improved) {
+        publish(frontend_messages::makeCharImproved(improved));
+    });
+
     // An event: one sentence that refused one command.
     m_observer.sig2_charRefused.connect(m_lifetime, [this](const CharRefused &refused) {
         publish(frontend_messages::makeCharRefused(refused));

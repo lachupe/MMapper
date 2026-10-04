@@ -487,6 +487,9 @@ std::optional<CharWimpy> parseWimpyLine(const QString &line)
 
 void CharReplies::append(CharReplies &&other)
 {
+    for (auto &one : other.improved) {
+        improved.push_back(std::move(one));
+    }
     for (auto &table : other.languages) {
         languages.push_back(std::move(table));
     }
@@ -544,6 +547,21 @@ CharReplies CharLinesTracker::receiveLine(const QString &line)
             return out;
         }
         out.append(closeStat());
+    }
+
+    // A skill improved by use (the powwow logs: 3,716 "beginning to get the idea", 609 "awareness"): a line of its
+    // own, which is no part of an open sheet and does not count against it.
+    static const QRegularExpression improvedBlind{
+        QStringLiteral(R"(^Yes! You're beginning to get the idea\.$)")};
+    static const QRegularExpression improvedNamed{
+        QStringLiteral(R"(^You feel your (?<s>[a-z' ]+?) improve\.$)")};
+    if (improvedBlind.match(text).hasMatch()) {
+        out.improved.push_back(CharImproved{QString{}, text});
+        return out;
+    }
+    if (const auto named = improvedNamed.match(text); named.hasMatch()) {
+        out.improved.push_back(CharImproved{named.captured(u"s"), text});
+        return out;
     }
 
     // The reply to `change wimpy`: a line of its own, which is no part of an open sheet and

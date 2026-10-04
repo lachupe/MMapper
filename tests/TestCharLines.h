@@ -28,6 +28,7 @@ private Q_SLOTS:
     static void infoOldWordingTest();
     static void infoHighestLevelTest();
     static void infoLiveTest();
+    static void improvedTest();
     static void languagesTest();
     static void infoHeadLinesTest();
     static void burdenTest();

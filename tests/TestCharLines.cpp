@@ -743,6 +743,18 @@ void TestCharLines::languagesTest()
     QCOMPARE(cut.languages.front().rows.size(), size_t{1});
 }
 
+void TestCharLines::improvedTest()
+{
+    // The powwow logs: a skill improved by use, unnamed and named.
+    const CharReplies blind = feed({"Yes! You're beginning to get the idea.", PROMPT});
+    QCOMPARE(blind.improved.size(), size_t{1});
+    QVERIFY(blind.improved.front().skill.isEmpty());
+    const CharReplies named = feed({"You feel your awareness improve.", PROMPT});
+    QCOMPARE(named.improved.size(), size_t{1});
+    QCOMPARE(named.improved.front().skill, QString("awareness"));
+    QVERIFY(feed({"You feel your legs weaken.", PROMPT}).improved.empty());
+}
+
 void TestCharLines::infoHeadLinesTest()
 {
     // The head's lines state no figure, so each is fed with one that does.

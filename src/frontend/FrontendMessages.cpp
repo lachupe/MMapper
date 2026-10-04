@@ -927,6 +927,14 @@ GmcpMessage makeCharLanguages(const CharLanguages &languages)
     return GmcpMessage{GmcpMessageTypeEnum::MMAPPER_CHAR_LANGUAGES, toGmcpJson(obj)};
 }
 
+GmcpMessage makeCharImproved(const CharImproved &improved)
+{
+    QJsonObject obj;
+    obj["skill"] = improved.skill.isEmpty() ? QJsonValue{QJsonValue::Null} : QJsonValue{improved.skill};
+    obj["text"] = improved.text;
+    return GmcpMessage{GmcpMessageTypeEnum::MMAPPER_CHAR_IMPROVED, toGmcpJson(obj)};
+}
+
 GmcpMessage makeCharWimpy(const CharWimpy &wimpy)
 {
     QJsonObject obj;

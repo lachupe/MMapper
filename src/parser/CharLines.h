@@ -214,6 +214,14 @@ struct NODISCARD CharLanguages final
     std::vector<CharLanguage> rows;
 };
 
+/// A skill improved by use: "Yes! You're beginning to get the idea." (which names none: the one just
+/// used) and "You feel your awareness improve." (which does). `skill` is empty where MUME named none.
+struct NODISCARD CharImproved final
+{
+    QString skill;
+    QString text;
+};
+
 struct NODISCARD CharWimpy final
 {
     int64_t wimpy = 0;
@@ -239,11 +247,12 @@ struct NODISCARD CharReplies final
     std::vector<CharBurden> burdens;
     /// After the `stat` or sheet that stated it, when one did.
     std::vector<CharWimpy> wimpies;
+    std::vector<CharImproved> improved;
     std::vector<CharLanguages> languages;
 
     NODISCARD bool empty() const
     {
-        return stats.empty() && scores.empty() && burdens.empty() && wimpies.empty()
+        return stats.empty() && scores.empty() && burdens.empty() && wimpies.empty() && improved.empty()
                && languages.empty();
     }
     void append(CharReplies &&other);

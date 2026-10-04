@@ -623,6 +623,9 @@ void MumeXmlParser::publishCharReplies(const CharReplies &replies)
     for (const CharWimpy &wimpy : replies.wimpies) {
         m_observer.observeCharWimpy(wimpy);
     }
+    for (const CharImproved &improved : replies.improved) {
+        m_observer.observeCharImproved(improved);
+    }
     for (const CharLanguages &languages : replies.languages) {
         m_observer.observeCharLanguages(languages);
     }
