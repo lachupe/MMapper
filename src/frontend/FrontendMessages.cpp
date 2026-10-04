@@ -1022,6 +1022,7 @@ GmcpMessage makeRoomDoor(const RoomDoors &doors)
         putText(row, "name", door.name);
         row["state"] = mmqt::toQStringUtf8(to_string_view(door.state));
         row["since"] = static_cast<qint64>(door.since);
+        putText(row, "by", door.by);
         rows.append(row);
     }
     QJsonObject obj;

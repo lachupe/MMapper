@@ -62,6 +62,10 @@ struct NODISCARD RoomDoor final
     DoorStateEnum state = DoorStateEnum::UNKNOWN;
     /// Unix seconds at which the state last changed, by the caller's clock.
     int64_t since = 0;
+    /// Who made the last change, where a line said: "other side" ("The gate is opened from the other side."),
+    /// "itself" ("The irondoor closes quietly."), or the one in the room as MUME named them ("A brown-skinned orc
+    /// opens the irondoor."); empty for the player's own command, a look, or a refusal.
+    QString by;
 
     NODISCARD bool operator==(const RoomDoor &other) const = default;
 };
@@ -157,6 +161,8 @@ struct NODISCARD DoorLine final
     QString dir;
     /// Who did it, for "X opens the door." and its kin; empty otherwise.
     QString actor;
+    /// "other side" for "... from the other side.", "itself" for "... closes quietly."; empty otherwise.
+    QString side;
 };
 
 /// The door line `line` is (colour removed, matched whole), or nullopt.
@@ -244,7 +250,7 @@ private:
     /// one prompt old; empty otherwise.
     NODISCARD QString freshAimDir(std::initializer_list<const char *> verbs) const;
     /// `soft`: a plain "closed" that must not overwrite locked, iced, blocked or molten.
-    void set(size_t index, DoorStateEnum state, int64_t now, bool soft = false);
+    void set(size_t index, DoorStateEnum state, int64_t now, bool soft = false, const QString &by = {});
     void applyExit(const DoorExit &exit, int64_t now);
     NODISCARD std::optional<RoomDoors> changed(int64_t now);
     void sort();

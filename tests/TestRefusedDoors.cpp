@@ -1028,6 +1028,22 @@ void TestRefusedDoors::othersTest()
              QStringLiteral("n:irondoor:open"));
     QCOMPARE(line("The irondoor is closed from the other side.", T0 + 7),
              QStringLiteral("n:irondoor:closed"));
+    // Who did it (mume3d TODO G.3): the far side, the door itself, somebody here.
+    {
+        const auto far = tracker.receiveLine(QStringLiteral("The irondoor is opened from the other side."),
+                                             QString{}, T0 + 7);
+        QVERIFY(far.has_value());
+        QCOMPARE(far->doors.front().by, QStringLiteral("other side"));
+        const auto quiet = tracker.receiveLine(QStringLiteral("The irondoor closes quietly."), QString{}, T0 + 7);
+        QVERIFY(quiet.has_value());
+        QCOMPARE(quiet->doors.front().by, QStringLiteral("itself"));
+        const auto orc = tracker.receiveLine(QStringLiteral("A brown-skinned orc opens the irondoor."),
+                                             QString{}, T0 + 7);
+        QVERIFY(orc.has_value());
+        QCOMPARE(orc->doors.front().by, QStringLiteral("A brown-skinned orc"));
+        std::ignore = tracker.receiveLine(QStringLiteral("The irondoor is closed from the other side."),
+                                          QString{}, T0 + 7);
+    }
     // A chest is opened in the same words, and is no door.
     QCOMPARE(line("Stolb opens the chest.", T0 + 8), QStringLiteral("(no change)"));
     // A door MUME has not named yet, by somebody's hand: known by its name alone.

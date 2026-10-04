@@ -312,6 +312,11 @@ std::optional<DoorLine> parseDoorLine(const QString &raw)
         if (m.hasCaptured(u"a")) {
             result.actor = m.captured(u"a");
         }
+        if (line.endsWith(QStringLiteral(" from the other side."))) {
+            result.side = QStringLiteral("other side");
+        } else if (line.endsWith(QStringLiteral(" closes quietly."))) {
+            result.side = QStringLiteral("itself");
+        }
         return result;
     }
     return std::nullopt;
@@ -499,7 +504,8 @@ QString RoomDoorTracker::freshAimDir(const std::initializer_list<const char *> v
 void RoomDoorTracker::set(const size_t index,
                           const DoorStateEnum state,
                           const int64_t now,
-                          const bool soft)
+                          const bool soft,
+                          const QString &by)
 {
     RoomDoor &door = m_state.doors[index];
     if (door.state == state && door.since != 0) {
@@ -510,6 +516,7 @@ void RoomDoorTracker::set(const size_t index,
     }
     door.state = state;
     door.since = now;
+    door.by = by;
 }
 
 void RoomDoorTracker::sort()
@@ -737,14 +744,15 @@ std::optional<RoomDoors> RoomDoorTracker::receiveLine(const QString &line,
         }
         const size_t index = entry(QString{}, door.name);
         const DoorStateEnum before = m_state.doors[index].state;
+        const QString by = !door.side.isEmpty() ? door.side : door.actor;
         if (door.kind == K::OPENED) {
-            set(index, S::OPEN, now);
+            set(index, S::OPEN, now, false, by);
         } else if (door.kind == K::CLOSED) {
-            set(index, S::CLOSED, now);
+            set(index, S::CLOSED, now, false, by);
         } else if (door.kind == K::LOCKED) {
-            set(index, S::LOCKED, now);
+            set(index, S::LOCKED, now, false, by);
         } else if (before == S::LOCKED || before == S::UNKNOWN) {
-            set(index, S::CLOSED, now);
+            set(index, S::CLOSED, now, false, by);
         }
         break;
     }
