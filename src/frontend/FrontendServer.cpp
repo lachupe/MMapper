@@ -259,6 +259,13 @@ FrontendServer::FrontendServer(GameObserver &observer,
         publish(msg);
     });
 
+    // State: the languages and how well they are known, as the last `change language` listed them.
+    m_observer.sig2_charLanguages.connect(m_lifetime, [this](const CharLanguages &languages) {
+        const GmcpMessage msg = frontend_messages::makeCharLanguages(languages);
+        m_replayCache.remember(msg);
+        publish(msg);
+    });
+
     // An event: one sentence that refused one command.
     m_observer.sig2_charRefused.connect(m_lifetime, [this](const CharRefused &refused) {
         publish(frontend_messages::makeCharRefused(refused));

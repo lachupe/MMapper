@@ -32,6 +32,7 @@ NODISCARD bool isWholeState(const GmcpMessageTypeEnum type)
     // change, and the wimpy as last stated.
     case GmcpMessageTypeEnum::MMAPPER_CHAR_AFFECTS:
     case GmcpMessageTypeEnum::MMAPPER_CHAR_WIMPY:
+    case GmcpMessageTypeEnum::MMAPPER_CHAR_LANGUAGES:
     // The followers, which CharFollowersTracker keeps and sends whole at each change. What is
     // remembered is the lasting part of each message: see FrontendServer.
     case GmcpMessageTypeEnum::MMAPPER_CHAR_FOLLOWERS:

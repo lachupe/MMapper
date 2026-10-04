@@ -347,6 +347,9 @@ NODISCARD GmcpMessage makeCharLevel(const CharLevel &level);
 /// them: `{"wimpy": 120}`, 0 for none. From the reply to `change wimpy` ("Wimpy set to: 120"),
 /// and again after each `stat` and `info` that states it. State: replayed as last sent.
 NODISCARD GmcpMessage makeCharWimpy(const CharWimpy &wimpy);
+/// MMapper.Char.Languages -- the reply to a bare `change language`: {languages: [{name,
+/// knowledge, speaking}], speaking: the name of the one spoken, or null}.
+NODISCARD GmcpMessage makeCharLanguages(const CharLanguages &languages);
 
 /// MMapper.Char.Affects -- the lasting effects on the player's character, whole, at each
 /// change: `{"affects": [{"name": "armour", "since": 1790842000, "refreshed": 1790842600,

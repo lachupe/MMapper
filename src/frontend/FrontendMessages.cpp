@@ -907,6 +907,26 @@ GmcpMessage makeCharLevel(const CharLevel &level)
     return GmcpMessage{GmcpMessageTypeEnum::MMAPPER_CHAR_LEVEL, toGmcpJson(obj)};
 }
 
+GmcpMessage makeCharLanguages(const CharLanguages &languages)
+{
+    QJsonArray rows;
+    QJsonValue speaking = QJsonValue::Null;
+    for (const CharLanguage &language : languages.rows) {
+        QJsonObject row;
+        row["name"] = language.name;
+        row["knowledge"] = static_cast<qint64>(language.knowledge);
+        row["speaking"] = language.speaking;
+        rows.append(row);
+        if (language.speaking) {
+            speaking = language.name;
+        }
+    }
+    QJsonObject obj;
+    obj["languages"] = rows;
+    obj["speaking"] = speaking;
+    return GmcpMessage{GmcpMessageTypeEnum::MMAPPER_CHAR_LANGUAGES, toGmcpJson(obj)};
+}
+
 GmcpMessage makeCharWimpy(const CharWimpy &wimpy)
 {
     QJsonObject obj;
