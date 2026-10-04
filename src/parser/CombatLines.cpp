@@ -640,6 +640,14 @@ const QRegularExpression g_assistRefused{QStringLiteral(R"(^Who do you want to a
 const QRegularExpression g_death{QStringLiteral(
     R"(^(?<w>.+?) (?:is dead! R\.I\.P\.|has drawn (?:his|her|its) last breath! R\.I\.P\.)$)")};
 const QRegularExpression g_youDead{QStringLiteral(R"(^You are dead!\s+Sorry\.\.\.$)")};
+// A death in the next room, heard: "You hear a death cry from the south." (the powwow logs, some
+// 1,200 lines; "from above"/"from below" too). Nobody is named; `detail` is the direction.
+const QRegularExpression g_deathCryAway{QStringLiteral(
+    R"(^You hear a death cry from (?:the )?(?<d>north|south|east|west|above|below)\.$)")};
+// The player's blow stunned the one fought: "Your victim is shocked by your hit!" (mume3d's live
+// test of 2026-10-03, all-2026-10-03-110500.log:973; some 14,000 lines in the powwow logs).
+const QRegularExpression g_victimShocked{
+    QStringLiteral(R"(^Your victim is shocked by your hit!$)")};
 // The tail is MUME's prognosis, "and will slowly die, if not aided", and nothing else, so that
 // "You are stunned by the shine that glimmers in his eyes." is not taken for a condition.
 const QRegularExpression g_condition{QStringLiteral(
@@ -1442,6 +1450,19 @@ std::optional<CombatEvent> parseCombatLine(const QString &raw)
     if (g_youDead.match(line).hasMatch()) {
         CombatEvent event = make(CombatKindEnum::DEATH, line);
         event.actor = QStringLiteral("you");
+        return event;
+    }
+    if ((m = g_deathCryAway.match(line)).hasMatch()) {
+        CombatEvent event = make(CombatKindEnum::DEATH, line);
+        const QString way = m.captured(u"d");
+        event.detail = way == QStringLiteral("above") ? QStringLiteral("up")
+                       : way == QStringLiteral("below") ? QStringLiteral("down")
+                                                       : way;
+        return event;
+    }
+    if (g_victimShocked.match(line).hasMatch()) {
+        CombatEvent event = make(CombatKindEnum::CONDITION, line);
+        event.detail = QStringLiteral("shocked");
         return event;
     }
     if ((m = g_condition.match(line)).hasMatch()) {

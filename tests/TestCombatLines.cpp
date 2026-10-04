@@ -208,6 +208,17 @@ void TestCombatLines::deathAndConditionTest()
     QCOMPARE(down.detail, QString("incapacitated"));
     QCOMPARE(parsed("A dirty uruk is mortally wounded and will die soon if not aided.").detail,
              QString("mortally wounded"));
+
+    // mume3d's live test of 2026-10-03 and the powwow logs: the victim shocked, a death heard away.
+    const CombatEvent shocked = parsed("Your victim is shocked by your hit!");
+    QCOMPARE(shocked.kind, CombatKindEnum::CONDITION);
+    QCOMPARE(shocked.detail, QString("shocked"));
+    QVERIFY(shocked.actor.isEmpty());
+    const CombatEvent away = parsed("You hear a death cry from the south.");
+    QCOMPARE(away.kind, CombatKindEnum::DEATH);
+    QVERIFY(away.actor.isEmpty());
+    QCOMPARE(away.detail, QString("south"));
+    QCOMPARE(parsed("You hear a death cry from above.").detail, QString("up"));
 }
 
 void TestCombatLines::castTest()
