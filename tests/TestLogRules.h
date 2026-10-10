@@ -27,6 +27,7 @@ private Q_SLOTS:
     static void suggestTest();
     static void performanceTest();
     static void shippedDefaultsTest();
+    static void reportedCombatLinesTest();
     // The tags (LineTags), with the readers driven in MumeXmlParser::parse()'s order.
     static void roomTagsTest();
     static void promptTagsTest();

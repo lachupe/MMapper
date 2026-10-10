@@ -143,8 +143,20 @@ struct NODISCARD Tagging final
             std::ignore = chars.receivePrompt();
             readers.receivePrompt();
         }
+        if (!goAhead && parseItemEvent(c.plain)) {
+            facts.tags.insert(LineTagEnum::ITEM);
+        }
         if (wants) {
-            tagElements(facts, elements);
+            std::vector<XmlElement> made = elements;
+            // As parse() does: someone coming or going on a plain line becomes a movement
+            // element, unless markup already said what the line is.
+            if (made.empty() && !goAhead && !inRoom) {
+                QString plainLine = c.plain;
+                if (auto movement = plainMovementElement(plainLine)) {
+                    made.push_back(std::move(*movement));
+                }
+            }
+            tagElements(facts, made);
             facts.text = text;
             facts.plain = c.plain.trimmed();
             for (LineFacts &record : tagger.finish(std::move(facts), commOpen)) {
@@ -669,6 +681,26 @@ void TestLogRules::shippedDefaultsTest()
     QCOMPARE(rank("o HP:Fine>", {QStringLiteral("prompt")}), 0);
     QCOMPARE(rank("A crow caws somewhere far away.", {QStringLiteral("text")}), 2);
 
+    // Coming and going is not for the Log (the user, 2026-10-11), except a groupmate's own;
+    // the player's own flee stays at 4, and a hidden enemy showing itself stays raised.
+    const auto rankAbout = [&rules, &calm](const char *const plain,
+                                           const QStringList &tags,
+                                           const char *const about) {
+        return rules
+            .classify(lineOf(QString::fromUtf8(plain), tags, QString::fromUtf8(about)), calm)
+            .priority;
+    };
+    QCOMPARE(rankAbout("A hungry warg has arrived from the north.", {QStringLiteral("move")}, "other"),
+             0);
+    QCOMPARE(rankAbout("A hungry warg leaves south.", {QStringLiteral("move")}, "other"), 0);
+    QCOMPARE(rankAbout("Kili has arrived from the north.", {QStringLiteral("move")}, "group"), 2);
+    const QStringList flee{QStringLiteral("combat"), QStringLiteral("combat.flee")};
+    QCOMPARE(rankAbout("A hungry warg panics, and attempts to flee.", flee, "other"), 0);
+    QCOMPARE(rankAbout("Kili panics, and attempts to flee.", flee, "group"), 2);
+    QCOMPARE(rankAbout("You flee head over heels.", flee, "you"), 4);
+    QVERIFY(rankAbout("A hooded man leaves his hiding place.", {QStringLiteral("text")}, "other")
+            >= 3);
+
     // 10,000 lines against them.
     QElapsedTimer timer;
     timer.start();
@@ -678,6 +710,60 @@ void TestLogRules::shippedDefaultsTest()
                            {QStringLiteral("text")});
     }
     qInfo() << rules.defaultCount() << "shipped rules x 10000 lines:" << timer.elapsed() << "ms";
+}
+
+void TestLogRules::reportedCombatLinesTest()
+{
+    // Lines the user saw in the Log while testing (2026-10-11): routine fighting, kills, an
+    // arrival and equipment chatter, none of which belongs there. Each goes through the readers
+    // as parse() drives them and is ranked by the shipped rules; only the bleeding stays.
+    QFile file{QStringLiteral(MMAPPER_LOG_RULES_JSON)};
+    QVERIFY(file.open(QIODevice::ReadOnly));
+    LogRuleSet rules;
+    QVERIFY(rules.loadDefaults(file.readAll()));
+    LogContext fighting;
+    fighting.inFight = true;
+    const std::vector<std::pair<const char *, int>> lines{
+        {"You slash Something's right foot and shatter it.", 0},
+        {"You slash Something's right wing hard and shatter it.", 0},
+        {"You receive your share of experience.", 0},
+        {"Yes! You're beginning to get the idea.", 0},
+        {"You hear Something's death cry as he collapses.", 0},
+        {"Something is dead! R.I.P.", 0},
+        {"You are already holding too much.", 0},
+        {"You stop using a small wooden shield.", 0},
+        {"You hold a torch.", 0},
+        {"You light a torch.", 0},
+        {"You strongly slash a rooster's body and shatter it.", 0},
+        {"A Dúnadan soldier has arrived from the south.", 0},
+        {"You swiftly dodge a rooster's attempt to hit you.", 0},
+        {"Your attempt to slash a rooster fails.", 0},
+        {"A Dúnadan soldier joins your fight.", 0},
+        {"You bleed from open wounds.", 3},
+        {"You slash a rooster's body and shatter it.", 0},
+        {"A rooster is incapacitated and will slowly die, if not aided.", 0},
+        {"You hear a rooster's death cry", 0},
+    };
+    QStringList wrong;
+    for (const auto &[raw, expected] : lines) {
+        Tagging tagging;
+        const QString text = QString::fromUtf8(raw);
+        tagging.line(text);
+        QCOMPARE(tagging.records.size(), size_t{1});
+        LogLine line;
+        line.plain = tagging.records.back().plain;
+        line.tags = tagging.records.back().tags;
+        line.about = tagging.records.back().about == LineAboutEnum::YOU ? QStringLiteral("you")
+                                                                         : QStringLiteral("other");
+        const auto result = rules.classify(line, fighting);
+        if (result.priority != expected) {
+            wrong << text + QStringLiteral(" | tags: ") + tagging.tagsOfLast().join(u',')
+                         + QStringLiteral(" | priority ") + QString::number(result.priority)
+                         + QStringLiteral(" by ")
+                         + (result.rule ? result.rule->id : QStringLiteral("none"));
+        }
+    }
+    QVERIFY2(wrong.isEmpty(), qPrintable(wrong.join(u'\n')));
 }
 
 void TestLogRules::roomTagsTest()

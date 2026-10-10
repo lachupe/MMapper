@@ -275,15 +275,135 @@
    "source": "section 37"
   },
   {
-   "id": "d.tag.combat.you",
+   "id": "d.tag.move",
+   "tags": [
+    "move"
+   ],
+   "priority": 0,
+   "source": "section 37"
+  },
+  {
+   "id": "d.tag.combat.flee",
+   "tags": [
+    "combat.flee"
+   ],
+   "priority": 0,
+   "source": "section 37"
+  },
+  {
+   "id": "d.tag.combat",
    "tags": [
     "combat"
+   ],
+   "priority": 0,
+   "source": "section 37"
+  },
+  {
+   "id": "d.tag.item",
+   "tags": [
+    "item"
+   ],
+   "priority": 0,
+   "source": "section 37"
+  },
+  {
+   "id": "d.tag.combat.flee.you",
+   "tags": [
+    "combat.flee"
    ],
    "when": {
     "who": "you"
    },
    "priority": 4,
-   "source": "section 37"
+   "source": "the user, 2026-10-11"
+  },
+  {
+   "id": "d.tag.combat.bash.you",
+   "tags": [
+    "combat.bash"
+   ],
+   "when": {
+    "who": "you"
+   },
+   "priority": 4,
+   "source": "the user, 2026-10-11"
+  },
+  {
+   "id": "d.tag.combat.backstab.you",
+   "tags": [
+    "combat.backstab"
+   ],
+   "when": {
+    "who": "you"
+   },
+   "priority": 4,
+   "source": "the user, 2026-10-11"
+  },
+  {
+   "id": "d.tag.combat.condition.you",
+   "tags": [
+    "combat.condition"
+   ],
+   "when": {
+    "who": "you"
+   },
+   "priority": 4,
+   "source": "the user, 2026-10-11"
+  },
+  {
+   "id": "d.tag.combat.rescue.you",
+   "tags": [
+    "combat.rescue"
+   ],
+   "when": {
+    "who": "you"
+   },
+   "priority": 4,
+   "source": "the user, 2026-10-11"
+  },
+  {
+   "id": "d.tag.combat.death.group",
+   "tags": [
+    "combat.death"
+   ],
+   "when": {
+    "who": "group"
+   },
+   "priority": 4,
+   "source": "the user, 2026-10-11"
+  },
+  {
+   "id": "d.tag.combat.condition.group",
+   "tags": [
+    "combat.condition"
+   ],
+   "when": {
+    "who": "group"
+   },
+   "priority": 4,
+   "source": "the user, 2026-10-11"
+  },
+  {
+   "id": "d.tag.combat.flee.group",
+   "tags": [
+    "combat.flee"
+   ],
+   "when": {
+    "who": "group"
+   },
+   "priority": 2,
+   "source": "the user, 2026-10-11"
+  },
+  {
+   "id": "d.tag.move.group",
+   "tags": [
+    "move"
+   ],
+   "when": {
+    "who": "group"
+   },
+   "priority": 2,
+   "source": "the user, 2026-10-11"
   },
   {
    "id": "d.ok.1",
@@ -330,6 +450,18 @@
   {
    "id": "d.ok.8",
    "text": "You stop scouting.",
+   "priority": 0,
+   "source": "plain reply"
+  },
+  {
+   "id": "d.ok.9",
+   "text": "You receive your share of experience.",
+   "priority": 0,
+   "source": "plain reply"
+  },
+  {
+   "id": "d.ok.10",
+   "text": "Yes! You're beginning to get the idea.",
    "priority": 0,
    "source": "plain reply"
   },
@@ -19837,20 +19969,6 @@
    }
   },
   {
-   "id": "d.s.hit_on_you",
-   "regex": "(lightly|strongly|barely|hard|very hard)? ?(hits|pounds|smites|slashes|cleaves|pierces|stabs|crushes|shoots|strikes) your",
-   "notTags": [
-    "comm",
-    "room",
-    "prompt",
-    "pager",
-    "quiet"
-   ],
-   "priority": 3,
-   "note": "Hit on you",
-   "source": "situation-rules.json"
-  },
-  {
    "id": "d.s.spell_dmg_you",
    "regex": "lightning bolt at you|fireball completely envelops you|burns you\\.|sprays you with piercing rays|makes your evil soul suffer|calls great pain upon you|Your lungs seem to burst",
    "notTags": [
@@ -19877,40 +19995,6 @@
    "priority": 4,
    "note": "Earthquake damage",
    "source": "situation-rules.json"
-  },
-  {
-   "id": "d.s.parry_dodge",
-   "regex": "parr(y|ies)|swiftly dodge",
-   "notTags": [
-    "comm",
-    "room",
-    "prompt",
-    "pager",
-    "quiet"
-   ],
-   "priority": 2,
-   "note": "Attack on you was avoided",
-   "source": "situation-rules.json",
-   "when": {
-    "inFight": true
-   }
-  },
-  {
-   "id": "d.s.your_hit_tickle",
-   "regex": "^You (lightly|strongly|hard)? ?(hit|pound|slash|pierce|smite|cleave)",
-   "notTags": [
-    "comm",
-    "room",
-    "prompt",
-    "pager",
-    "quiet"
-   ],
-   "priority": 1,
-   "note": "Your own hit",
-   "source": "situation-rules.json",
-   "when": {
-    "inFight": true
-   }
   },
   {
    "id": "d.s.hp_line_critical",
@@ -19986,54 +20070,6 @@
    "source": "situation-rules.json"
   },
   {
-   "id": "d.s.death_group",
-   "regex": "\\S+ is (dead|incapacitated|mortally wounded)|IS INCAPACITATED",
-   "notTags": [
-    "comm",
-    "room",
-    "prompt",
-    "pager",
-    "quiet"
-   ],
-   "priority": 4,
-   "note": "Groupmate dying or dead",
-   "source": "situation-rules.json",
-   "when": {
-    "grouped": true
-   }
-  },
-  {
-   "id": "d.s.kill_confirm",
-   "regex": "has drawn (his|her) last breath|death cry|is dead! R.I.P.|to death\\.",
-   "notTags": [
-    "comm",
-    "room",
-    "prompt",
-    "pager",
-    "quiet"
-   ],
-   "priority": 3,
-   "note": "Kill confirmed",
-   "source": "situation-rules.json"
-  },
-  {
-   "id": "d.s.enemy_nearly_dead",
-   "regex": "is (incapacitated|mortally wounded|stunned) and will",
-   "notTags": [
-    "comm",
-    "room",
-    "prompt",
-    "pager",
-    "quiet"
-   ],
-   "priority": 3,
-   "note": "Finish the enemy",
-   "source": "situation-rules.json",
-   "when": {
-    "inFight": true
-   }
-  },
-  {
    "id": "d.s.shadow_rises",
    "regex": "A shadow slowly rises above the corpse",
    "notTags": [
@@ -20073,20 +20109,6 @@
    ],
    "priority": 4,
    "note": "Position changed, still in danger",
-   "source": "situation-rules.json"
-  },
-  {
-   "id": "d.s.flee_enemy",
-   "regex": "panics, and attempts to flee|IS TRYING TO ESCAPE",
-   "notTags": [
-    "comm",
-    "room",
-    "prompt",
-    "pager",
-    "quiet"
-   ],
-   "priority": 1,
-   "note": "Enemy flee spam",
    "source": "situation-rules.json"
   },
   {
@@ -20376,20 +20398,6 @@
    ],
    "priority": 4,
    "note": "Helpless",
-   "source": "situation-rules.json"
-  },
-  {
-   "id": "d.s.enemy_arrive",
-   "regex": "has (arrived|ARRIVED|>>ARRIVED<<) from|has arrived from",
-   "notTags": [
-    "comm",
-    "room",
-    "prompt",
-    "pager",
-    "quiet"
-   ],
-   "priority": 2,
-   "note": "Arrival in your room",
    "source": "situation-rules.json"
   },
   {
@@ -20848,20 +20856,6 @@
    ],
    "priority": 4,
    "note": "Level change",
-   "source": "situation-rules.json"
-  },
-  {
-   "id": "d.s.xp",
-   "regex": "You feel more experienced|receive your share of experience",
-   "notTags": [
-    "comm",
-    "room",
-    "prompt",
-    "pager",
-    "quiet"
-   ],
-   "priority": 2,
-   "note": "Kill XP",
    "source": "situation-rules.json"
   },
   {

@@ -640,6 +640,12 @@ const QRegularExpression g_assistRefused{QStringLiteral(R"(^Who do you want to a
 const QRegularExpression g_death{QStringLiteral(
     R"(^(?<w>.+?) (?:is dead! R\.I\.P\.|has drawn (?:his|her|its) last breath! R\.I\.P\.)$)")};
 const QRegularExpression g_youDead{QStringLiteral(R"(^You are dead!\s+Sorry\.\.\.$)")};
+// A death cry in the room: "You hear a rooster's death cry as it collapses.", "Your blood freezes
+// as you hear *a Dwarf*'s death cry." (the logs survey: some 8,000 lines of the first form, 1,600
+// of the second; the user's test of 2026-10-11 saw them in the Log untagged). The tail is optional
+// because a pasted or cut line may end at "death cry".
+const QRegularExpression g_deathCry{QStringLiteral(
+    R"(^(?:You hear|Your blood freezes as you hear) (?<w>.+?)'s? death cry(?: as (?:he|she|it) collapses)?\.?$)")};
 // A death in the next room, heard: "You hear a death cry from the south." (the powwow logs, some
 // 1,200 lines; "from above"/"from below" too). Nobody is named; `detail` is the direction.
 const QRegularExpression g_deathCryAway{QStringLiteral(
@@ -1450,6 +1456,11 @@ std::optional<CombatEvent> parseCombatLine(const QString &raw)
     if (g_youDead.match(line).hasMatch()) {
         CombatEvent event = make(CombatKindEnum::DEATH, line);
         event.actor = QStringLiteral("you");
+        return event;
+    }
+    if ((m = g_deathCry.match(line)).hasMatch()) {
+        CombatEvent event = make(CombatKindEnum::DEATH, line);
+        event.actor = who(m.captured(u"w"));
         return event;
     }
     if ((m = g_deathCryAway.match(line)).hasMatch()) {
