@@ -509,6 +509,12 @@ if(WITH_FRONTEND)
         ../src/frontend/FrontendReplayCache.cpp
         ../src/frontend/FrontendReplayCache.h
         ../src/frontend/FrontendRenderPause.h
+        ../src/frontend/ImportantLog.cpp
+        ../src/frontend/ImportantLog.h
+        ../src/frontend/LogRules.cpp
+        ../src/frontend/LogRules.h
+        ../src/parser/LineTags.cpp
+        ../src/parser/LineTags.h
         ../src/parser/AccountLines.cpp
         ../src/parser/AccountLines.h
         ../src/parser/CharAffects.cpp
@@ -563,6 +569,37 @@ if(WITH_FRONTEND)
       COMPILE_FLAGS "${WARNING_FLAGS}"
     )
     add_test(NAME TestFrontend COMMAND TestFrontend)
+
+    # The prioritised Log: its rules, its situation, and the tags the parser's readers give
+    set(TestLogRules_SRCS
+        TestLogRules.cpp
+        TestLogRules.h
+        ../src/parser/QuietCapture.cpp
+        ../src/parser/QuietCapture.h
+        ../src/parser/TradeLines.cpp
+        ../src/parser/TradeLines.h
+        )
+    add_executable(TestLogRules ${TestLogRules_SRCS} ${frontend_SRCS} ${clock_SRCS})
+    add_dependencies(TestLogRules mm_test mm_global mm_map)
+    target_link_libraries(TestLogRules
+            mm_map
+            mm_test
+            mm_global
+            Qt6::Gui
+            Qt6::Network
+            Qt6::Test
+            Qt6::Widgets
+            coverage_config)
+    set_target_properties(
+      TestLogRules PROPERTIES
+      CXX_STANDARD 20
+      CXX_STANDARD_REQUIRED ON
+      CXX_EXTENSIONS OFF
+      COMPILE_FLAGS "${WARNING_FLAGS}"
+    )
+    target_compile_definitions(TestLogRules PRIVATE
+        MMAPPER_LOG_RULES_JSON="${CMAKE_SOURCE_DIR}/src/resources/log/rules.json")
+    add_test(NAME TestLogRules COMMAND TestLogRules)
 
     # Trade operations: the steps, the pager answers and the viewer, against a scripted MUME;
     # and the quiet command, with the parser's readers beside the runner

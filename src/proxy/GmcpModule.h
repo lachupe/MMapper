@@ -31,6 +31,7 @@
     X(MMAPPER_GUILD, MMapperGuild, "mmapper.guild", "MMapper.Guild") \
     X(MMAPPER_INN, MMapperInn, "mmapper.inn", "MMapper.Inn") \
     X(MMAPPER_INPUT, MMapperInput, "mmapper.input", "MMapper.Input") \
+    X(MMAPPER_LOG, MMapperLog, "mmapper.log", "MMapper.Log") \
     X(MMAPPER_MAP, MMapperMap, "mmapper.map", "MMapper.Map") \
     X(MMAPPER_ROOM, MMapperRoom, "mmapper.room", "MMapper.Room") \
     X(MMAPPER_SESSION, MMapperSession, "mmapper.session", "MMapper.Session") \
@@ -53,7 +54,7 @@ enum class NODISCARD GmcpModuleTypeEnum : uint8_t {
 #define X_COUNT(...) +1
 static constexpr const size_t NUM_GMCP_MODULES = XFOREACH_GMCP_MODULE_TYPE(X_COUNT);
 #undef X_COUNT
-static_assert(NUM_GMCP_MODULES == 26);
+static_assert(NUM_GMCP_MODULES == 27);
 static_assert(NUM_GMCP_MODULES == enums::to_underlying(GmcpModuleTypeEnum::UNKNOWN));
 DEFINE_ENUM_COUNT(GmcpModuleTypeEnum, NUM_GMCP_MODULES)
 

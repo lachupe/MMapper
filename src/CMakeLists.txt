@@ -536,6 +536,8 @@ set(mmapper_SRCS
     parser/ItemLines.cpp
     parser/ItemLines.h
     parser/LineFlags.h
+    parser/LineTags.cpp
+    parser/LineTags.h
     parser/LoginLines.cpp
     parser/LoginLines.h
     parser/QuietCapture.cpp
@@ -708,6 +710,10 @@ if(WITH_FRONTEND)
         frontend/FrontendSession.h
         frontend/FrontendSubscriptions.cpp
         frontend/FrontendSubscriptions.h
+        frontend/ImportantLog.cpp
+        frontend/ImportantLog.h
+        frontend/LogRules.cpp
+        frontend/LogRules.h
         frontend/TradeMessages.cpp
         frontend/TradeMessages.h
         frontend/TradeOperations.cpp

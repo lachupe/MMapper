@@ -15,6 +15,7 @@
 #include "FrontendReplayCache.h"
 #include "FrontendSession.h"
 #include "FrontendSubscriptions.h"
+#include "ImportantLog.h"
 #include "TradeOperations.h"
 
 #include <cstdint>
@@ -55,7 +56,9 @@ class QWebSocketServer;
 /// Everything MUME sends is relayed verbatim under its own package name, except Core and
 /// MUME.Client, which are never relayed (FrontendSubscriptions::isRelayable). MMapper's own
 /// additions live under MMapper.Combat, MMapper.Char, MMapper.Map, MMapper.Room, MMapper.Session,
-/// MMapper.Terminal, MMapper.Time, MMapper.Weather and MMapper.Xml. The one package a frontend
+/// MMapper.Terminal, MMapper.Time, MMapper.Weather, MMapper.Xml and MMapper.Log (the prioritised
+/// Log, ImportantLog: MMapper.Log.SetRule and .DeleteRule from the driving frontend only, Explain
+/// from any). The one package a frontend
 /// sends besides Core.Hello and Core.Supports are MMapper.Input.Command, MMapper.Input.Quiet,
 /// MMapper.Session.RememberLogin and MMapper.Trade.Request and .Cancel, and only the driving
 /// frontend may send them. RememberLogin {"remember": bool} asks MMapper to keep the login it
@@ -118,6 +121,8 @@ private:
 
     /// Runs MMapper.Trade.Request through m_session, and keeps MUME's viewer setting.
     TradeOperations m_trade;
+    /// The prioritised Log (MMapper.Log): ranks MUME's lines and keeps the user's rules.
+    ImportantLog m_importantLog;
     /// Four times a second while an operation runs: its step's time may be up, or MUME idle
     /// at last for a quiet command that waits.
     QTimer m_tradeTimer;
@@ -262,6 +267,8 @@ private:
     void handleFilter(Client &client, const GmcpMessage &msg);
     /// MMapper.Session.RememberLogin.
     void handleRememberLogin(Client &client, const GmcpMessage &msg);
+    /// MMapper.Log.SetRule, .DeleteRule and .Explain.
+    void handleLog(Client &client, const GmcpMessage &msg);
     /// MUME accepted the login: what LoginMemory held goes to the keychain, if it was asked for.
     void rememberAccepted();
     /// MMapper.Terminal.Output, to each frontend as its filter has it.

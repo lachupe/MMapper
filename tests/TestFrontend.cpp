@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (C) 2026 The MMapper Authors
 
+#include "../src/frontend/ImportantLog.h"
 #include "TestFrontend.h"
 
 #include "../src/frontend/FrontendLoginMemory.h"
@@ -40,6 +41,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QTemporaryDir>
 #include <QtTest/QtTest>
 
 namespace {
@@ -2638,6 +2640,243 @@ void TestFrontend::charSkillsReplayTest()
     // Another character's skills are not this one's.
     cache.clearGame();
     QVERIFY(!cache.messages().contains(GmcpMessageTypeEnum::MMAPPER_CHAR_SKILLS));
+}
+
+namespace {
+
+/// Frontends as FrontendServer serves them: a package reaches the ones subscribed to its module.
+struct NODISCARD LogClients final
+{
+    FrontendSubscriptions logSubscriber;
+    FrontendSubscriptions sessionOnly;
+    std::vector<GmcpMessage> toLog;
+    std::vector<GmcpMessage> toSession;
+
+    LogClients()
+    {
+        std::ignore = logSubscriber.applySupports(
+            parse(R"(Core.Supports.Set [ "MMapper.Log 1", "MMapper.Session 1" ])"));
+        std::ignore = sessionOnly.applySupports(
+            parse(R"(Core.Supports.Set [ "MMapper.Session 1" ])"));
+    }
+    void publish(const GmcpMessage &msg)
+    {
+        if (logSubscriber.wants(msg)) {
+            toLog.push_back(msg);
+        }
+        if (sessionOnly.wants(msg)) {
+            toSession.push_back(msg);
+        }
+    }
+};
+
+NODISCARD QByteArray logDefaults()
+{
+    return QByteArray{R"({"version":1,"rules":[
+        {"id":"d.tell","tags":["comm.tell"],"priority":10},
+        {"id":"d.gtell","tags":["comm.gtell"],"priority":10,"route":"screen"},
+        {"id":"d.prompt","tags":["prompt"],"priority":0},
+        {"id":"d.ok","text":"Ok.","priority":0}]})"};
+}
+
+NODISCARD LineFacts factsOf(const QString &plain, const std::initializer_list<LineTagEnum> tags)
+{
+    LineFacts facts;
+    facts.plain = plain;
+    facts.text = QStringLiteral("\x1b[32m") + plain + QStringLiteral("\x1b[0m");
+    for (const LineTagEnum tag : tags) {
+        facts.tags.insert(tag);
+    }
+    if (facts.tags.empty()) {
+        facts.tags.insert(LineTagEnum::TEXT);
+    }
+    return facts;
+}
+
+} // namespace
+
+void TestFrontend::logLineTest()
+{
+    // MMapper.Log.Line: only to MMapper.Log's subscribers, never at priority 0, one package per
+    // line, in order, with the window closed at the prompt.
+    LogClients clients;
+    ImportantLog log{[&clients](const GmcpMessage &msg) { clients.publish(msg); }};
+    log.loadDefaults(logDefaults());
+    log.receiveGmcp(parse(
+        R"(Group.Set [{"id":1,"name":"Ugluk","type":"you"},{"id":2,"name":"Kili","type":"player"}])"));
+
+    LineFacts gtell = factsOf(QStringLiteral("Kili tells the group 'heal'"),
+                              {LineTagEnum::COMM, LineTagEnum::COMM_GTELL});
+    gtell.names = QStringList{QStringLiteral("Kili")};
+    gtell.about = LineAboutEnum::GROUP;
+    log.receiveFacts(gtell);
+    log.receiveFacts(factsOf(QStringLiteral("Ok."), {}));
+    log.receiveFacts(factsOf(QStringLiteral("A crow flies by."), {}));
+    LineFacts fromKili = factsOf(QStringLiteral("Kili waves."), {});
+    fromKili.names = QStringList{QStringLiteral("Kili")};
+    log.receiveFacts(fromKili);
+    log.receiveFacts(factsOf(QStringLiteral("o HP:Fine>"), {LineTagEnum::PROMPT}));
+    QVERIFY(clients.toLog.empty()); // held until the window closes
+    log.receivePrompt();
+
+    QVERIFY(clients.toSession.empty());
+    QCOMPARE(clients.toLog.size(), size_t{3});
+    const QJsonObject first = payloadOf(clients.toLog.at(0));
+    QCOMPARE(clients.toLog.at(0).getName().toQString(), QStringLiteral("MMapper.Log.Line"));
+    QCOMPARE(first["plain"].toString(), QStringLiteral("Kili tells the group 'heal'"));
+    QVERIFY(first["text"].toString().startsWith(QStringLiteral("\x1b[32m")));
+    QCOMPARE(first["priority"].toInt(), 10);
+    QCOMPARE(first["route"].toString(), QStringLiteral("screen"));
+    QCOMPARE(first["tags"].toArray(), (QJsonArray{"comm", "comm.gtell"}));
+    QCOMPARE(first["about"].toString(), QStringLiteral("group"));
+    QCOMPARE(first["rule"].toString(), QStringLiteral("d.gtell"));
+    const QJsonObject crow = payloadOf(clients.toLog.at(1));
+    QCOMPARE(crow["plain"].toString(), QStringLiteral("A crow flies by."));
+    QCOMPARE(crow["priority"].toInt(), 2);
+    QVERIFY(crow["rule"].isNull());
+    QCOMPARE(crow["about"].toString(), QStringLiteral("other"));
+    QCOMPARE(crow["seq"].toInteger(), first["seq"].toInteger() + 2); // "Ok." was counted
+    // A line naming a member of the group is about the group.
+    QCOMPARE(payloadOf(clients.toLog.at(2))["about"].toString(), QStringLiteral("group"));
+    for (const GmcpMessage &msg : clients.toLog) {
+        QVERIFY(payloadOf(msg)["priority"].toInt() > 0);
+    }
+
+    // The pager closes the window as well.
+    log.receiveFacts(factsOf(QStringLiteral("A crow flies by."), {}));
+    log.receiveFacts(
+        factsOf(QStringLiteral("*** Return: continue (50%) ***"), {LineTagEnum::PAGER}));
+    QCOMPARE(clients.toLog.size(), size_t{5});
+    QCOMPARE(payloadOf(clients.toLog.back())["priority"].toInt(), 2);
+}
+
+void TestFrontend::logRulesTest()
+{
+    QTemporaryDir dir;
+    const QString path = dir.filePath(QStringLiteral("MMapper-log-rules.json"));
+    LogClients clients;
+    ImportantLog log{[&clients](const GmcpMessage &msg) { clients.publish(msg); }};
+    log.loadDefaults(logDefaults());
+    log.loadUserFile(path);
+
+    // Session.State says the Log is there.
+    QCOMPARE(payloadOf(frontend_messages::makeSessionState(true, {}, true, true))["log"].toInt(), 1);
+
+    // Rules is state: what FrontendServer::replayTo() sends on subscribe reaches MMapper.Log's
+    // subscribers only.
+    const GmcpMessage rules = log.rulesMessage();
+    QCOMPARE(rules.getName().toQString(), QStringLiteral("MMapper.Log.Rules"));
+    clients.publish(rules);
+    QCOMPARE(clients.toLog.size(), size_t{1});
+    QVERIFY(clients.toSession.empty());
+    QCOMPARE(payloadOf(rules)["defaults"].toInt(), 4);
+    QCOMPARE(payloadOf(rules)["file"].toString(), path);
+    QCOMPARE(payloadOf(rules)["version"].toInt(), 1);
+    QVERIFY(payloadOf(rules)["user"].toArray().isEmpty());
+
+    // An observer may not edit: the answer carries its request's id.
+    const auto observing = log.handle(
+        parse(R"(MMapper.Log.SetRule {"requestId":"r4","rule":{"text":"Ok.","priority":1}})"),
+        false);
+    QVERIFY(!observing.rulesChanged);
+    QCOMPARE(observing.toClient.size(), size_t{2});
+    QCOMPARE(observing.toClient.at(0).getName().toQString(),
+             QStringLiteral("MMapper.Log.RuleSaved"));
+    QCOMPARE(payloadOf(observing.toClient.at(0))["requestId"].toString(), QStringLiteral("r4"));
+    QCOMPARE(payloadOf(observing.toClient.at(0))["ok"].toBool(), false);
+    QCOMPARE(payloadOf(observing.toClient.at(0))["error"].toString(), QStringLiteral("read-only"));
+    QCOMPARE(payloadOf(observing.toClient.at(1))["code"].toString(), QStringLiteral("read-only"));
+    QVERIFY(!QFile::exists(path));
+    QCOMPARE(payloadOf(log.handle(parse(R"(MMapper.Log.DeleteRule {"requestId":"r9","id":"d.ok"})"),
+                                  false)
+                           .toClient.at(0))["error"]
+                 .toString(),
+             QStringLiteral("read-only"));
+
+    // The driving frontend adds a rule: saved, answered, and the rules go to every subscriber.
+    const auto added = log.handle(
+        parse(
+            R"(MMapper.Log.SetRule {"requestId":"r5","rule":{"text":"<N> pats you on the head.","priority":1},"sample":"Kili pats you on the head."})"),
+        true);
+    QVERIFY(added.rulesChanged);
+    const QJsonObject saved = payloadOf(added.toClient.at(0));
+    QCOMPARE(saved["requestId"].toString(), QStringLiteral("r5"));
+    QCOMPARE(saved["ok"].toBool(), true);
+    QCOMPARE(saved["id"].toString(), QStringLiteral("u1"));
+    QCOMPARE(saved["samplePriority"].toInt(), 1);
+    QVERIFY(QFile::exists(path));
+    clients.publish(log.rulesMessage());
+    const QJsonObject after = payloadOf(clients.toLog.back());
+    QCOMPARE(after["user"].toArray().size(), 1);
+    QCOMPARE(after["user"].toArray().at(0).toObject()["id"].toString(), QStringLiteral("u1"));
+
+    // Deleting a default disables it.
+    const auto deleted = log.handle(parse(
+                                        R"(MMapper.Log.DeleteRule {"requestId":"r6","id":"d.ok"})"),
+                                    true);
+    QVERIFY(deleted.rulesChanged);
+    QCOMPARE(payloadOf(deleted.toClient.at(0))["ok"].toBool(), true);
+    QCOMPARE(payloadOf(deleted.toClient.at(0))["id"].toString(), QStringLiteral("d.ok"));
+    QCOMPARE(payloadOf(log.rulesMessage())["disabled"].toArray(), QJsonArray{"d.ok"});
+    QCOMPARE(payloadOf(log.rulesMessage())["defaults"].toInt(), 4);
+    // ...so "Ok." now reaches the Log, as a line no rule knows.
+    log.receiveFacts(factsOf(QStringLiteral("Ok."), {}));
+    log.receivePrompt();
+    QCOMPARE(payloadOf(clients.toLog.back())["plain"].toString(), QStringLiteral("Ok."));
+    QCOMPARE(payloadOf(clients.toLog.back())["priority"].toInt(), 2);
+
+    // Deleting a user rule.
+    QVERIFY(log.handle(parse(R"(MMapper.Log.DeleteRule {"requestId":"r7","id":"u1"})"), true)
+                .rulesChanged);
+    QVERIFY(payloadOf(log.rulesMessage())["user"].toArray().isEmpty());
+    // A rule that is no rule.
+    const auto invalid
+        = log.handle(parse(R"(MMapper.Log.SetRule {"requestId":"r8","rule":{"text":"x"}})"), true);
+    QVERIFY(!invalid.rulesChanged);
+    QCOMPARE(payloadOf(invalid.toClient.at(0))["error"].toString(), QStringLiteral("invalid-rule"));
+    QVERIFY(!payloadOf(invalid.toClient.at(0))["message"].toString().isEmpty());
+}
+
+void TestFrontend::logExplainTest()
+{
+    ImportantLog log{[](const GmcpMessage &) {}};
+    log.loadDefaults(logDefaults());
+    log.receiveGmcp(parse(R"(Room.Chars.Set [{"id":7,"name":"Bob the Baker"}])"));
+    LineFacts pat = factsOf(QStringLiteral("Kili pats you on the head."), {});
+    pat.names = QStringList{QStringLiteral("Kili")};
+    log.receiveFacts(pat);
+    log.receivePrompt();
+
+    // Any frontend may ask, observing or driving.
+    const auto known
+        = log.handle(parse(R"(MMapper.Log.Explain {"text":"Kili pats you on the head."})"), false);
+    QCOMPARE(known.toClient.size(), size_t{1});
+    QCOMPARE(known.toClient.at(0).getName().toQString(), QStringLiteral("MMapper.Log.Explained"));
+    const QJsonObject explained = payloadOf(known.toClient.at(0));
+    QCOMPARE(explained["text"].toString(), QStringLiteral("Kili pats you on the head."));
+    QCOMPARE(explained["template"].toString(), QStringLiteral("<N> pats you on the head."));
+    QCOMPARE(explained["tags"].toArray(), QJsonArray{"text"});
+    QCOMPARE(explained["names"].toArray(), QJsonArray{"Kili"});
+    QCOMPARE(explained["priority"].toInt(), 2);
+    QVERIFY(explained["rule"].isNull());
+
+    // A line MMapper has not kept: a template all the same, from the names it knows, no tags.
+    const QJsonObject older = payloadOf(
+        log.handle(parse(R"(MMapper.Log.Explain {"text":"Bob the Baker sells *an Orc* 3 pies."})"),
+                   true)
+            .toClient.at(0));
+    QCOMPARE(older["template"].toString(), QStringLiteral("<N> sells <N> <#> pies."));
+    QVERIFY(older["tags"].toArray().isEmpty());
+    QCOMPARE(older["priority"].toInt(), 2);
+    // A text rule decides even without the tags.
+    QCOMPARE(payloadOf(log.handle(parse(R"(MMapper.Log.Explain {"text":"Ok."})"), true)
+                           .toClient.at(0))["rule"]
+                 .toString(),
+             QStringLiteral("d.ok"));
+    QCOMPARE(payloadOf(log.handle(parse(R"(MMapper.Log.Explain {"nothing":1})"), true)
+                           .toClient.at(0))["code"]
+                 .toString(),
+             QStringLiteral("invalid-log"));
 }
 
 QTEST_MAIN(TestFrontend)

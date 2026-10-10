@@ -115,6 +115,19 @@ class ParseEvent;
     X(MMAPPER_INPUT_COMMAND, MMapperInputCommand, "mmapper.input.command", "MMapper.Input.Command") \
     X(MMAPPER_INPUT_QUIET, MMapperInputQuiet, "mmapper.input.quiet", "MMapper.Input.Quiet") \
     X(MMAPPER_INPUT_REPLY, MMapperInputReply, "mmapper.input.reply", "MMapper.Input.Reply") \
+    X(MMAPPER_LOG_DELETE_RULE, \
+      MMapperLogDeleteRule, \
+      "mmapper.log.deleterule", \
+      "MMapper.Log.DeleteRule") \
+    X(MMAPPER_LOG_EXPLAIN, MMapperLogExplain, "mmapper.log.explain", "MMapper.Log.Explain") \
+    X(MMAPPER_LOG_EXPLAINED, MMapperLogExplained, "mmapper.log.explained", "MMapper.Log.Explained") \
+    X(MMAPPER_LOG_LINE, MMapperLogLine, "mmapper.log.line", "MMapper.Log.Line") \
+    X(MMAPPER_LOG_RULE_SAVED, \
+      MMapperLogRuleSaved, \
+      "mmapper.log.rulesaved", \
+      "MMapper.Log.RuleSaved") \
+    X(MMAPPER_LOG_RULES, MMapperLogRules, "mmapper.log.rules", "MMapper.Log.Rules") \
+    X(MMAPPER_LOG_SET_RULE, MMapperLogSetRule, "mmapper.log.setrule", "MMapper.Log.SetRule") \
     X(MMAPPER_MAP_POSITION, MMapperMapPosition, "mmapper.map.position", "MMapper.Map.Position") \
     X(MMAPPER_ROOM_CONTAINER, \
       MMapperRoomContainer, \
@@ -169,7 +182,7 @@ enum class NODISCARD GmcpMessageTypeEnum {
 #define X_COUNT(...) +1
 static constexpr const size_t NUM_GMCP_MESSAGES = XFOREACH_GMCP_MESSAGE_TYPE(X_COUNT);
 #undef X_COUNT
-static_assert(NUM_GMCP_MESSAGES == 89);
+static_assert(NUM_GMCP_MESSAGES == 96);
 DEFINE_ENUM_COUNT(GmcpMessageTypeEnum, NUM_GMCP_MESSAGES)
 
 namespace tags {

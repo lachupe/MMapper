@@ -306,6 +306,7 @@ GmcpMessage makeSessionState(const bool upstreamConnected,
     obj["trade"] = 1;
     obj["quiet"] = 1;
     obj["hidden"] = 1;
+    obj["log"] = 1;
     obj["viewer"] = viewer;
     obj["upstream"] = upstreamConnected ? QStringLiteral("connected")
                                         : QStringLiteral("disconnected");
@@ -1085,6 +1086,81 @@ GmcpMessage makeCharCommand(const ItemCommandObservation &command)
     obj["replies"] = replies;
     obj["text"] = QJsonArray::fromStringList(command.text);
     return GmcpMessage{GmcpMessageTypeEnum::MMAPPER_CHAR_COMMAND, toGmcpJson(obj)};
+}
+
+namespace {
+
+NODISCARD QJsonValue idOrNull(const QString &id)
+{
+    return id.isEmpty() ? QJsonValue{QJsonValue::Null} : QJsonValue{id};
+}
+
+} // namespace
+
+GmcpMessage makeLogLine(const int64_t seq,
+                        const QString &text,
+                        const QString &plain,
+                        const int priority,
+                        const QString &route,
+                        const QStringList &tags,
+                        const QString &about,
+                        const QString &ruleId)
+{
+    QJsonObject obj;
+    obj["seq"] = static_cast<qint64>(seq);
+    obj["text"] = text;
+    obj["plain"] = plain;
+    obj["priority"] = priority;
+    obj["route"] = route;
+    obj["tags"] = QJsonArray::fromStringList(tags);
+    obj["about"] = about;
+    obj["rule"] = idOrNull(ruleId);
+    return GmcpMessage{GmcpMessageTypeEnum::MMAPPER_LOG_LINE, toGmcpJson(obj)};
+}
+
+GmcpMessage makeLogRules(const QJsonObject &rules)
+{
+    return GmcpMessage{GmcpMessageTypeEnum::MMAPPER_LOG_RULES, toGmcpJson(rules)};
+}
+
+GmcpMessage makeLogRuleSaved(const QString &requestId,
+                             const bool ok,
+                             const QString &id,
+                             const QString &error,
+                             const QString &message,
+                             const std::optional<int> samplePriority)
+{
+    QJsonObject obj;
+    obj["requestId"] = requestId;
+    obj["ok"] = ok;
+    obj["id"] = idOrNull(id);
+    if (!ok) {
+        obj["error"] = error;
+        obj["message"] = message;
+    }
+    if (samplePriority.has_value()) {
+        obj["samplePriority"] = *samplePriority;
+    }
+    return GmcpMessage{GmcpMessageTypeEnum::MMAPPER_LOG_RULE_SAVED, toGmcpJson(obj)};
+}
+
+GmcpMessage makeLogExplained(const QString &text,
+                             const QString &templateText,
+                             const QStringList &tags,
+                             const QStringList &names,
+                             const int priority,
+                             const QString &route,
+                             const QString &ruleId)
+{
+    QJsonObject obj;
+    obj["text"] = text;
+    obj["template"] = templateText;
+    obj["tags"] = QJsonArray::fromStringList(tags);
+    obj["names"] = QJsonArray::fromStringList(names);
+    obj["priority"] = priority;
+    obj["route"] = route;
+    obj["rule"] = idOrNull(ruleId);
+    return GmcpMessage{GmcpMessageTypeEnum::MMAPPER_LOG_EXPLAINED, toGmcpJson(obj)};
 }
 
 } // namespace frontend_messages

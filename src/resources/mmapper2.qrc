@@ -9,6 +9,7 @@
         <file>fonts/Cantarell-Regular.ttf</file>
         <file>fonts/DejaVuSansMono.ttf</file>
         <file>fonts/LICENSE</file>
+        <file>log/rules.json</file>
         <file>icons/affect-bashed.png</file>
         <file>icons/affect-blind.png</file>
         <file>icons/affect-hungry.png</file>

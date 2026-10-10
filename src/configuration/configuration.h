@@ -498,6 +498,9 @@ void setEnteredMain();
 /// Returns a reference to the application configuration object.
 NODISCARD Configuration &setConfig();
 NODISCARD const Configuration &getConfig();
+/// The file MMapper's settings are read from and written to: the profile given by
+/// MMAPPER_PROFILE_PATH, or QSettings' own place (on Windows, the registry's path).
+NODISCARD QString getSettingsFileName();
 
 using SharedCanvasNamedColorOptions
     = std::shared_ptr<const Configuration::ResolvedCanvasNamedColorOptions>;

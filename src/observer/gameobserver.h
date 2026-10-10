@@ -10,6 +10,7 @@
 #include "../parser/CharFollowers.h"
 #include "../parser/CharRefused.h"
 #include "../parser/ExitLooks.h"
+#include "../parser/LineTags.h"
 #include "../parser/RoomDoors.h"
 #include "../parser/CharLines.h"
 #include "../parser/CombatLines.h"
@@ -183,6 +184,11 @@ public:
     Signal2<> sig2_quietEnded;
     /// Something that was, or for some frontends is, kept out of the terminal. See TerminalHidden.
     Signal2<TerminalHidden> sig2_terminalHidden;
+    /// What MumeXmlParser's readers made of one chunk of MUME's output, for the prioritised
+    /// Log (MMapper.Log): emitted once per chunk after every reader, before sig2_realPrompt; a
+    /// chunk kept from the terminal, a twiddler and a blank line give none, and a message of
+    /// communication over several lines gives one.
+    Signal2<LineFacts> sig2_lineFacts;
     /// A text MUME showed through its viewer, published instead of MMapper's own window while a
     /// frontend has claimed the viewer. See setViewerClaimed().
     Signal2<ViewText> sig2_viewText;
@@ -278,6 +284,7 @@ public:
     void observeQuietLine(const QString &plain) { sig2_quietLine.invoke(plain); }
     void observeQuietEnded() { sig2_quietEnded.invoke(); }
     void observeTerminalHidden(const TerminalHidden &hidden) { sig2_terminalHidden.invoke(hidden); }
+    void observeLineFacts(const LineFacts &facts) { sig2_lineFacts.invoke(facts); }
     void observeViewText(const ViewText &view) { sig2_viewText.invoke(view); }
     /// Whether a frontend has claimed MUME's viewer: viewed texts then go out as sig2_viewText
     /// and MMapper opens no window of its own for them.

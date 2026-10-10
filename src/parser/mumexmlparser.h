@@ -11,7 +11,6 @@
 #include "../map/PromptFlags.h"
 #include "../observer/gameobserver.h"
 #include "AccountLines.h"
-#include "LoginLines.h"
 #include "CharFollowers.h"
 #include "CharLines.h"
 #include "CharRefused.h"
@@ -20,6 +19,8 @@
 #include "ExitLooks.h"
 #include "ItemLines.h"
 #include "LineFlags.h"
+#include "LineTags.h"
+#include "LoginLines.h"
 #include "RoomContents.h"
 #include "RoomDoors.h"
 #include "TradeLines.h"
@@ -103,6 +104,8 @@ private:
     /// MUME's replies at shops, guilds and inns and to `trop`, and the pager, which is told
     /// from the real prompt here for every reader. See TradeReaders.
     TradeReaders m_tradeReaders;
+    /// Joins a message of communication over several lines into one record for the Log.
+    LineTagger m_lineTagger;
     /// The chunk being parsed was the pager line, not a prompt.
     bool m_chunkIsPager = false;
     /// When the player's own spell goes off, which MUME marks only by sending the prompt

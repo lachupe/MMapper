@@ -123,6 +123,8 @@ struct NODISCARD MapIdentity final
 /// `change viewer` setting as far as MMapper knows it: "external", "simple", "off" or "unknown"
 /// (TradeOperations::viewerState()).
 ///
+/// `log` is the version of the prioritised Log, MMapper.Log (spec section 37), 1 today.
+///
 /// `login` is there only while MUME waits at a login prompt (LoginLinesTracker): `kind` "name"
 /// or "password", `text` (the prompt as MUME printed it), `serial` (one more for every prompt
 /// MUME prints, to tell a prompt printed again from the state sent again) and, when MUME asks
@@ -435,5 +437,52 @@ NODISCARD GmcpMessage makeAccountChars(const AccountChars &chars);
 /// MMapper.Account.Reply -- a one-line answer of the menu: `kind` "wait" (`seconds` before the
 /// character may log in) or "unknown" (`command` MUME did not know), and `text`. Event.
 NODISCARD GmcpMessage makeAccountReply(const AccountReply &reply);
+
+/// MMapper.Log.Line -- one line of MUME's that the prioritised Log shows (spec section 37):
+/// `seq` (one more for every line classified since MMapper started), `text` (as the terminal had
+/// it, ANSI kept; a message over several lines joined by "\n"), `plain` (colour removed,
+/// trimmed), `priority` 1 to 10, `route` "log" or "screen", `tags` (what MMapper's readers made
+/// of it: "comm", "comm.gtell", ...), `about` ("you", "group" or "other") and `rule` (the id of
+/// the rule that ranked it, or null for a line no rule knows). An event, batched per prompt
+/// window; never sent for priority 0. See ImportantLog.
+NODISCARD GmcpMessage makeLogLine(int64_t seq,
+                                  const QString &text,
+                                  const QString &plain,
+                                  int priority,
+                                  const QString &route,
+                                  const QStringList &tags,
+                                  const QString &about,
+                                  const QString &ruleId);
+
+/// MMapper.Log.Rules -- the rules as they stand: `version`, `file` (the user's rule file),
+/// `user` (the user's rules in full), `disabled` (default rules switched off), `defaults` (how
+/// many default rules there are) and `inactive` ({`id`, `reason`} of rules loaded but never
+/// matched, such as a `when` MMapper does not know: "when.swimming"); `fileVersion` only when
+/// the file is of a newer MMapper and is therefore not written. State: replayed on subscribe
+/// and sent again after every change. The payload is LogRuleSet::toRulesJson().
+NODISCARD GmcpMessage makeLogRules(const QJsonObject &rules);
+
+/// MMapper.Log.RuleSaved -- the answer to MMapper.Log.SetRule or .DeleteRule, to the frontend
+/// that sent it: `requestId` (echoed), `ok`, `id` (the rule's), and `samplePriority` (what the
+/// request's `sample` line ranks now) when it gave one; when not ok, `error` ("invalid-rule",
+/// "unwritable" or "newer-file") and `message`.
+NODISCARD GmcpMessage makeLogRuleSaved(const QString &requestId,
+                                       bool ok,
+                                       const QString &id,
+                                       const QString &error,
+                                       const QString &message,
+                                       std::optional<int> samplePriority);
+
+/// MMapper.Log.Explained -- the answer to MMapper.Log.Explain: `text` (as asked), `template`
+/// (the template MMapper suggests for it), `tags` and `names` (as the readers had them; empty
+/// for a line older than the last 1000), `priority`, `route` and `rule` (the id of the rule that
+/// ranked it, or null).
+NODISCARD GmcpMessage makeLogExplained(const QString &text,
+                                       const QString &templateText,
+                                       const QStringList &tags,
+                                       const QStringList &names,
+                                       int priority,
+                                       const QString &route,
+                                       const QString &ruleId);
 
 } // namespace frontend_messages

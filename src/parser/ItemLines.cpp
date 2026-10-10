@@ -527,6 +527,7 @@ void ItemBlockTracker::receiveCommand(const QString &input)
 std::vector<ItemBlock> ItemBlockTracker::receiveLine(const QString &line)
 {
     std::vector<ItemBlock> blocks;
+    m_lastClaimed = false;
     const QString text = cleaned(line);
 
     if (m_open.has_value()) {
@@ -534,9 +535,11 @@ std::vector<ItemBlock> ItemBlockTracker::receiveLine(const QString &line)
             return close();
         }
         if (m_open->overflow) {
+            m_lastClaimed = true;
             return blocks; // swallowed until the listing ends
         }
         if (accept(text)) {
+            m_lastClaimed = true;
             return blocks;
         }
         // A sentence after a listing ends it, and is read on its own below.
@@ -605,6 +608,11 @@ std::vector<ItemBlock> ItemBlockTracker::receiveLine(const QString &line)
         block.text = text;
         m_look.reset();
         blocks.push_back(std::move(block));
+        m_lastClaimed = true;
+    }
+    // A header opened a listing.
+    if (m_open.has_value()) {
+        m_lastClaimed = true;
     }
     return blocks;
 }
@@ -620,6 +628,7 @@ std::vector<ItemBlock> ItemBlockTracker::receivePrompt()
 
 void ItemBlockTracker::reset()
 {
+    m_lastClaimed = false;
     m_open.reset();
     m_look.reset();
     m_lastOwner.clear();

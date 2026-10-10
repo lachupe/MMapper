@@ -23,6 +23,7 @@
 #include "../proxy/telnetfilter.h"
 #include "CombatLines.h"
 #include "GameStateLines.h"
+#include "LineTags.h"
 #include "abstractparser.h"
 
 #include <cctype>
@@ -139,6 +140,7 @@ MumeXmlParser::MumeXmlParser(MapData &md,
         m_followersTracker.reset();
         m_doorTracker.reset();
         m_exitLooks.reset();
+        m_lineTagger.reset();
     });
     // The followers were this character's and this session's: forgotten, with nothing sent,
     // when MMapper connects again and when the character leaves the game (a rent, a quit,
@@ -300,6 +302,27 @@ void MumeXmlParser::parse(const TelnetData &data, const bool isGoAhead)
                                                      traffic);
     const bool isRealPrompt = chunk.kind == MudChunkKindEnum::PROMPT;
     m_chunkIsPager = chunk.kind == MudChunkKindEnum::PAGER;
+    // What the readers below make of the chunk, for the prioritised Log (MMapper.Log): one
+    // record, emitted after every reader. A chunk kept from the terminal (a quiet command's
+    // reply; the MMXP line, cleared above), a twiddler and a blank line get none.
+    LineFacts facts;
+    const bool wantsFacts = !m_lineToUser.isEmpty() && !chunk.hidden
+                            && chunk.kind != MudChunkKindEnum::TWIDDLER
+                            && !chunk.plain.trimmed().isEmpty();
+    if (chunk.kind == MudChunkKindEnum::PROMPT) {
+        facts.tags.insert(LineTagEnum::PROMPT);
+    } else if (chunk.kind == MudChunkKindEnum::PAGER) {
+        facts.tags.insert(LineTagEnum::PAGER);
+    }
+    if (chunk.captured) {
+        facts.tags.insert(LineTagEnum::QUIET);
+    }
+    if (inRoom) {
+        facts.tags.insert(LineTagEnum::ROOM);
+        if (!m_descriptionSpans.empty()) {
+            facts.tags.insert(LineTagEnum::ROOM_DESC);
+        }
+    }
     if (!m_lineToUser.isEmpty()) {
         // The reply to a quiet command is not the player's: its lines, its pager and the prompt
         // that ends it stay out of the terminal and out of MMapper.Terminal.Output, and the
@@ -339,6 +362,7 @@ void MumeXmlParser::parse(const TelnetData &data, const bool isGoAhead)
             m_ownCastTracker.attribute(*combat);
             m_ownCastTracker.receiveEvent(*combat);
             m_observer.observeSentToUserCombat(*combat);
+            tagCombat(facts, *combat);
         }
         // MUME's login: the name prompt, the pass phrase prompt and its refusals, for a
         // frontend that asks in a window of its own (MMapper.Session.State's `login`). Read
@@ -348,6 +372,7 @@ void MumeXmlParser::parse(const TelnetData &data, const bool isGoAhead)
         if (m_observer.getGameState() != GameStateEnum::PLAYING) {
             if (const auto loginPrompt = m_loginTracker.receiveLine(plain)) {
                 m_observer.observeLoginPrompt(*loginPrompt);
+                facts.tags.insert(LineTagEnum::LOGIN);
             }
         }
         // A rent, camp rent or quit, or MUME's menu: the character has left the game with the
@@ -358,56 +383,109 @@ void MumeXmlParser::parse(const TelnetData &data, const bool isGoAhead)
         // The account menu, `list`'s characters and the menu's refusals. The `Account> ` prompt
         // comes as a line or glued to the next, so this reads every chunk, GO-AHEAD or not;
         // the rows are columns, so the line is not trimmed.
-        publishAccountReplies(m_accountTracker.receiveLine(plain));
+        {
+            const AccountReplies account = m_accountTracker.receiveLine(plain);
+            if (!account.empty() || m_accountTracker.reading()) {
+                facts.tags.insert(LineTagEnum::ACCOUNT);
+            }
+            publishAccountReplies(account);
+        }
         // Replies to the player's container commands: "Ok.", "*click*", a listing. A prompt
         // is not one, and ends the reply being gathered instead (below).
         if (!isGoAhead) {
             m_itemCommands.receiveLine(plain);
-            publishContainerEvents(
-                m_containerTracker.receiveLine(plain, QDateTime::currentSecsSinceEpoch()));
+            {
+                const std::vector<ContainerEvent> events
+                    = m_containerTracker.receiveLine(plain, QDateTime::currentSecsSinceEpoch());
+                if (!events.empty()) {
+                    facts.tags.insert(LineTagEnum::CONTAINER);
+                }
+                publishContainerEvents(events);
+            }
             // The doors of the room: the answers to the player's door commands, which the
             // container tracker paired, and the lines that tell of a door by themselves. And
             // the refusals no other reader takes, a door's among them.
             {
                 const int64_t now = QDateTime::currentSecsSinceEpoch();
                 for (const DoorReply &reply : m_containerTracker.takeDoorReplies()) {
+                    facts.tags.insert(LineTagEnum::DOOR);
                     if (const auto doors = m_doorTracker.receiveDoorReply(reply, now)) {
                         m_observer.observeRoomDoors(*doors);
                     }
                     if (const auto refused = refusedFromDoorReply(reply)) {
                         m_observer.observeCharRefused(*refused);
+                        facts.tags.insert(LineTagEnum::REFUSED);
                     }
                 }
                 if (const auto doors = m_doorTracker.receiveLine(plain, moveDir, now)) {
                     m_observer.observeRoomDoors(*doors);
+                    facts.tags.insert(LineTagEnum::DOOR);
                 }
                 if (auto refused = parseRefusedLine(plain)) {
                     if (refused->action == QStringLiteral("move")) {
                         refused->dir = moveDir;
                     }
                     m_observer.observeCharRefused(*refused);
+                    facts.tags.insert(LineTagEnum::REFUSED);
                 }
             }
             // What the player wears and carries: listings that name themselves in their first
             // line and end at a blank line or the prompt, and the one-line replies to wear,
             // remove, get, put, drop and give.
-            publishItemBlocks(m_itemTracker.receiveLine(plain));
+            {
+                const std::vector<ItemBlock> blocks = m_itemTracker.receiveLine(plain);
+                if (m_itemTracker.lastLineClaimed()) {
+                    facts.tags.insert(LineTagEnum::ITEMS);
+                }
+                publishItemBlocks(blocks);
+            }
             if (const auto item = parseItemEvent(plain)) {
                 m_itemCommands.receiveEvent(*item);
                 m_observer.observeItemEvent(*item);
+                facts.tags.insert(LineTagEnum::ITEM);
             }
             // The character's figures: `stat`'s block, `score`'s line, `info`'s sheet and its
             // burden line. Read whoever sent the command -- the player, an alias, or a frontend
             // asking quietly -- and left in the terminal as they are.
             publishCharReplies(m_charTracker.receiveLine(plain));
+            switch (m_charTracker.lastLineKind()) {
+            case CharLineKindEnum::STAT:
+                facts.tags.insert(LineTagEnum::STAT);
+                break;
+            case CharLineKindEnum::SCORE:
+                facts.tags.insert(LineTagEnum::SCORE);
+                break;
+            case CharLineKindEnum::INFO:
+                facts.tags.insert(LineTagEnum::INFO);
+                break;
+            case CharLineKindEnum::NONE:
+                break;
+            }
             // Who follows the player and takes its orders: a bond made or ended, one left
             // behind or back. The answer to an `order` goes out at the prompt that ends it.
             if (const auto followers
                 = m_followersTracker.receiveLine(plain, QDateTime::currentSecsSinceEpoch())) {
                 m_observer.observeCharFollowers(*followers);
+                facts.tags.insert(LineTagEnum::FOLLOWERS);
             }
             // Shops, guilds, inns and trophies, read the same way.
             m_tradeReaders.receiveLine(plain);
+            switch (m_tradeReaders.lastLineKind()) {
+            case TradeLineKindEnum::SHOP:
+                facts.tags.insert(LineTagEnum::SHOP);
+                break;
+            case TradeLineKindEnum::GUILD:
+                facts.tags.insert(LineTagEnum::GUILD);
+                break;
+            case TradeLineKindEnum::INN:
+                facts.tags.insert(LineTagEnum::INN);
+                break;
+            case TradeLineKindEnum::TROPHIES:
+                facts.tags.insert(LineTagEnum::TROPHIES);
+                break;
+            case TradeLineKindEnum::NONE:
+                break;
+            }
         }
     }
     if (data.type == TelnetDataEnum::Backspace && m_ownCastTracker.casting()) {
@@ -511,6 +589,7 @@ void MumeXmlParser::parse(const TelnetData &data, const bool isGoAhead)
         const std::optional<WeatherLine> weather = parseWeatherElement(xml);
         if (weather.has_value()) {
             m_observer.observeWeatherLine(*weather);
+            facts.tags.insert(LineTagEnum::WEATHER);
         }
         if (const auto ground = m_groundTracker.receive(xml, weather)) {
             m_observer.observeGround(*ground);
@@ -557,6 +636,20 @@ void MumeXmlParser::parse(const TelnetData &data, const bool isGoAhead)
         // Finish after all listings and room snapshots at this prompt have been published.
         for (const auto &command : m_itemCommands.finish(true)) {
             m_observer.sig2_itemCommand.invoke(command);
+        }
+    }
+    // The Log's record of the chunk, now that every reader has read it; a message of
+    // communication MUME wraps over several lines is held until its element closes.
+    if (wantsFacts) {
+        tagElements(facts, elements);
+        facts.text = m_lineToUser;
+        facts.plain = chunk.plain.trimmed();
+        bool commOpen = false;
+        for (const XmlTagEnum tag : m_xmlTracker.openTags()) {
+            commOpen = commOpen || toXmlCategory(tag) == XmlCategoryEnum::COMMUNICATION;
+        }
+        for (const LineFacts &record : m_lineTagger.finish(std::move(facts), commOpen)) {
+            m_observer.observeLineFacts(record);
         }
     }
     // Last of all: sig2_realPrompt, once every reader of this prompt has published.

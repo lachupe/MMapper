@@ -512,6 +512,7 @@ void CharReplies::append(CharReplies &&other)
 CharReplies CharLinesTracker::receiveLine(const QString &line)
 {
     CharReplies out;
+    m_lastKind = CharLineKindEnum::NONE;
     const QString text = cleaned(line);
 
     // MumeXmlParser takes the level line out before it gets here; should one arrive anyway it
@@ -527,8 +528,10 @@ CharReplies CharLinesTracker::receiveLine(const QString &line)
         QStringLiteral(R"(^\s*(-?\d+)\s+(\*\s*)?(\S+)\s*$)")};
     if (m_languages.has_value()) {
         if (const auto row = languageRow.match(text); row.hasMatch()) {
-            m_languages->rows.push_back(
-                CharLanguage{row.captured(3), row.captured(1).toLongLong(), row.capturedLength(2) > 0});
+            m_languages->rows.push_back(CharLanguage{row.captured(3),
+                                                     row.captured(1).toLongLong(),
+                                                     row.capturedLength(2) > 0});
+            m_lastKind = CharLineKindEnum::INFO;
             return out;
         }
         out.languages.push_back(std::move(*m_languages));
@@ -539,11 +542,13 @@ CharReplies CharLinesTracker::receiveLine(const QString &line)
     }
     if (languagesHead.match(text.trimmed()).hasMatch()) {
         m_languages.emplace();
+        m_lastKind = CharLineKindEnum::INFO;
         return out;
     }
 
     if (m_stat.has_value()) {
         if (acceptStat(text)) {
+            m_lastKind = CharLineKindEnum::STAT;
             return out;
         }
         out.append(closeStat());
@@ -578,12 +583,14 @@ CharReplies CharLinesTracker::receiveLine(const QString &line)
         m_statSection = StatSectionEnum::HEAD;
         m_statHasSecondLine = false;
         readStatFirst(text, *m_stat);
+        m_lastKind = CharLineKindEnum::STAT;
         return out;
     }
 
     if (auto score = parseScoreLine(text)) {
         out.append(closeSheet());
         out.scores.push_back(std::move(*score));
+        m_lastKind = CharLineKindEnum::SCORE;
         return out;
     }
 
@@ -597,6 +604,7 @@ CharReplies CharLinesTracker::receiveLine(const QString &line)
             return out;
         }
         if (readSheetLine(text, out)) {
+            m_lastKind = CharLineKindEnum::INFO;
             m_sheetLines.append(text);
             m_sheetStrangers = 0;
             if (m_sheetLines.size() > MAX_REPLY_LINES) {
@@ -633,6 +641,7 @@ CharReplies CharLinesTracker::receiveLine(const QString &line)
     m_sheetHasFigure = false;
     m_sheetStrangers = 0;
     if (readSheetLine(text, out)) {
+        m_lastKind = CharLineKindEnum::INFO;
         m_sheetLines.append(text);
     } else {
         m_sheet.reset();

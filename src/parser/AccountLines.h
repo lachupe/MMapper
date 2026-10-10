@@ -208,6 +208,9 @@ public:
     NODISCARD AccountReplies receivePrompt();
     /// For a new session.
     void reset();
+    /// Whether the menu or a list of characters is being read: the lines in between are the
+    /// account's.
+    NODISCARD bool reading() const { return m_menu.has_value() || m_list.has_value(); }
 
 private:
     NODISCARD AccountReplies closeAll();

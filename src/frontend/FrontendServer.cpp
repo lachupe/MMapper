@@ -24,6 +24,8 @@
 
 #include <QDateTime>
 #include <QDebug>
+#include <QDir>
+#include <QFileInfo>
 #include <QHostAddress>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -61,6 +63,7 @@ FrontendServer::FrontendServer(GameObserver &observer,
     , m_trade{observer,
               [this](const QString &line) { m_session.sendLine(line); },
               [this](const GmcpMessage &msg) { publish(msg); }}
+    , m_importantLog{[this](const GmcpMessage &msg) { publish(msg); }}
     , m_loginMemory{!NO_QTKEYCHAIN}
     , m_passwordConfig{std::make_unique<PasswordConfig>()}
 {
@@ -90,6 +93,29 @@ FrontendServer::FrontendServer(GameObserver &observer,
         publishSessionState();
     });
 
+    // The prioritised Log: the shipped rules and the user's file beside MMapper's settings.
+    m_importantLog.setOutdoors([this]() {
+        // The game's own flag, as mapped: outdoors unless the room is no-sundeath.
+        if (const auto optId = m_mapData.getCurrentRoomId()) {
+            if (const auto room = m_mapData.findRoomHandle(*optId)) {
+                return room.getSundeathType() != RoomSundeathEnum::NO_SUNDEATH;
+            }
+        }
+        return true;
+    });
+    m_importantLog.loadDefaults();
+    m_importantLog.loadUserFile(QFileInfo{getSettingsFileName()}.absoluteDir().filePath(
+        QStringLiteral("MMapper-log-rules.json")));
+    log(QString("Log rules: %1 defaults, user file %2")
+            .arg(m_importantLog.rules().defaultCount())
+            .arg(m_importantLog.rules().filePath()));
+    m_observer.sig2_lineFacts.connect(m_lifetime, [this](const LineFacts &facts) {
+        m_importantLog.receiveFacts(facts);
+    });
+    m_observer.sig2_realPrompt.connect(m_lifetime, [this]() { m_importantLog.receivePrompt(); });
+    m_observer.sig2_pager.connect(m_lifetime,
+                                  [this](const PagerLine &) { m_importantLog.receivePager(); });
+
     // The viewer setting is in MMapper.Session.State.
     m_trade.setViewerChanged([this]() { publishSessionState(); });
     m_tradeTimer.setInterval(250);
@@ -113,6 +139,7 @@ FrontendServer::FrontendServer(GameObserver &observer,
         m_loginMemory.reset();
         // A new game session invalidates everything we cached from the previous one.
         m_replayCache.clear();
+        m_importantLog.reset();
         m_charAffects.reset();
         m_groundState.reset();
         m_roomContents.reset();
@@ -387,6 +414,8 @@ FrontendServer::FrontendServer(GameObserver &observer,
     });
 
     m_observer.sig2_sentToUserGmcp.connect(m_lifetime, [this](const GmcpMessage &msg) {
+        // The Log's situation: race, hit points, group, who is in the room.
+        m_importantLog.receiveGmcp(msg);
         // Relayed verbatim: same package name, same payload the game sent. Core and
         // MUME.Client are not: the proxy only filters out the MUME.Client messages it knows,
         // and MUME's Core ones come through, so both are dropped here before anything a
@@ -574,6 +603,11 @@ void FrontendServer::onTextMessage(QWebSocket *const socket, const QString &fram
 
     if (msg.isMMapperTradeRequest() || msg.isMMapperTradeCancel()) {
         handleTrade(*client, msg);
+        return;
+    }
+
+    if (ImportantLog::handles(msg)) {
+        handleLog(*client, msg);
         return;
     }
 
@@ -811,6 +845,19 @@ void FrontendServer::handleQuiet(Client &client, const GmcpMessage &msg)
     }
 }
 
+void FrontendServer::handleLog(Client &client, const GmcpMessage &msg)
+{
+    const bool driving = m_driver != nullptr && m_driver == client.socket;
+    const ImportantLog::Reply reply = m_importantLog.handle(msg, driving);
+    for (const GmcpMessage &one : reply.toClient) {
+        sendTo(client, one);
+    }
+    if (reply.rulesChanged) {
+        // State: every subscriber is told the rules as they stand now.
+        publish(m_importantLog.rulesMessage());
+    }
+}
+
 void FrontendServer::handleFilter(Client &client, const GmcpMessage &msg)
 {
     // Its own terminal output only, so an observing frontend may ask as well.
@@ -878,6 +925,8 @@ void FrontendServer::sendTo(Client &client, const GmcpMessage &msg)
 void FrontendServer::replayTo(Client &client)
 {
     sendTo(client, sessionStateFor(client));
+    // The Log's rules are state too.
+    sendTo(client, m_importantLog.rulesMessage());
 
     for (const auto &[type, msg] : m_replayCache.messages()) {
         sendTo(client, msg);

@@ -166,6 +166,7 @@ private:
     int m_commands = 0;
     /// Whose equipment the reply being read showed, for the peek at their inventory after it.
     QString m_lastOwner;
+    bool m_lastClaimed = false;
 
 public:
     /// Notes a command on its way to MUME: only a look into a container matters here.
@@ -176,6 +177,9 @@ public:
     NODISCARD std::vector<ItemBlock> receivePrompt();
     /// For a new session, or when XML mode goes away.
     void reset();
+    /// Whether the last line receiveLine() read was a listing's: its header, an item, or the
+    /// "It is closed." that answers a look into a container.
+    NODISCARD bool lastLineClaimed() const { return m_lastClaimed; }
 
 private:
     NODISCARD std::vector<ItemBlock> close();

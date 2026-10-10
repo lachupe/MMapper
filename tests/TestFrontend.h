@@ -62,4 +62,7 @@ private Q_SLOTS:
     static void replaySetChangesTest();
     static void mumeModuleCoverageTest();
     static void mumeMessageCoverageTest();
+    static void logLineTest();
+    static void logRulesTest();
+    static void logExplainTest();
 };

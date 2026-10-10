@@ -295,6 +295,10 @@ struct NODISCARD TradeReplies final
 /// A reply opens on its first line, lets foreign lines through (someone arriving, a tell) up to
 /// a bound, and closes at its blank line, at the start of another reply, or at the prompt. A
 /// pager line keeps an open reply open and marks it paged.
+/// Which reply the last line read was a line of (TradeLinesTracker::lastLineKind()), for the
+/// prioritised Log's tags.
+enum class NODISCARD TradeLineKindEnum : uint8_t { NONE, SHOP, GUILD, INN, TROPHIES };
+
 class NODISCARD TradeLinesTracker final
 {
 private:
@@ -343,6 +347,7 @@ private:
 
     /// Replies closed in this prompt window, published at the prompt.
     TradeReplies m_done;
+    TradeLineKindEnum m_lastKind = TradeLineKindEnum::NONE;
 
     /// The filters of `list` commands gone out, oldest first, and the names of `prac <name>`.
     std::deque<QString> m_listQueries;
@@ -360,8 +365,12 @@ public:
     NODISCARD TradeReplies receivePrompt();
     /// For a new session, or when XML mode goes away.
     void reset();
+    /// Whose line the last one receiveLine() read was: a shop's, a guild's, an inn's, the
+    /// trophies'; NONE for a line of no reply here (a keeper's tell is MUME's speech).
+    NODISCARD TradeLineKindEnum lastLineKind() const { return m_lastKind; }
 
 private:
+    NODISCARD static TradeLineKindEnum kindOfTable(TableEnum table);
     /// A blank line ends a list or a practice table that has a row, except right after a pager:
     /// there it is what MUME puts before whatever else it says while the pager waits, and the
     /// next page goes on with the table.
@@ -454,6 +463,8 @@ public:
                                   QuietTrafficEnum traffic = QuietTrafficEnum::REPLY);
     /// One line of MUME's output, as classified.
     void receiveLine(const QString &plain);
+    /// Whose line the last one receiveLine() read was (TradeLinesTracker::lastLineKind()).
+    NODISCARD TradeLineKindEnum lastLineKind() const { return m_tracker.lastLineKind(); }
     /// The real prompt: publishes what the window completed.
     void receivePrompt();
     /// After everything else for the chunk: sig2_realPrompt for a real prompt.

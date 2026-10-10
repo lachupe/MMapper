@@ -265,9 +265,14 @@ struct NODISCARD CharReplies final
 /// opens on any of its lines and closes at the prompt, at the blank line after its effects
 /// list, when a `stat` begins, or after a run of lines that are none of its own. A sheet that
 /// stated no figure is not published.
+/// Which reply the last line read was a line of (CharLinesTracker::lastLineKind()), for the
+/// prioritised Log's tags.
+enum class NODISCARD CharLineKindEnum : uint8_t { NONE, STAT, SCORE, INFO };
+
 class NODISCARD CharLinesTracker final
 {
 private:
+    CharLineKindEnum m_lastKind = CharLineKindEnum::NONE;
     std::optional<CharStat> m_stat;
     QStringList m_statLines;
     /// Which list the "- name" lines of the open `stat` belong to.
@@ -293,6 +298,9 @@ public:
     NODISCARD CharReplies receivePrompt();
     /// For a new session, or when XML mode goes away.
     void reset();
+    /// Whose line the last one receiveLine() read was: `stat`'s block, `score`'s line, or the
+    /// `info` sheet (the languages table with it); NONE for any other.
+    NODISCARD CharLineKindEnum lastLineKind() const { return m_lastKind; }
 
 private:
     NODISCARD CharReplies closeStat();

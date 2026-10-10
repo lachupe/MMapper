@@ -1061,9 +1061,26 @@ void TradeLinesTracker::closeRetire(TradeReplies &out)
     }
 }
 
+TradeLineKindEnum TradeLinesTracker::kindOfTable(const TableEnum table)
+{
+    switch (table) {
+    case TableEnum::LIST:
+        return TradeLineKindEnum::SHOP;
+    case TableEnum::TEACHER:
+    case TableEnum::SKILLS:
+        return TradeLineKindEnum::GUILD;
+    case TableEnum::TROPHIES:
+        return TradeLineKindEnum::TROPHIES;
+    case TableEnum::NONE:
+        break;
+    }
+    return TradeLineKindEnum::NONE;
+}
+
 TradeReplies TradeLinesTracker::receiveLine(const QString &line)
 {
     TradeReplies out;
+    m_lastKind = TradeLineKindEnum::NONE;
     const QString raw = rawLine(line);
     const QString text = raw.simplified();
 
@@ -1087,6 +1104,7 @@ TradeReplies TradeLinesTracker::receiveLine(const QString &line)
             m_sellOpen = false;
             m_deal->items = soldItems(m_sellList);
         }
+        m_lastKind = TradeLineKindEnum::SHOP;
         return out;
     }
     if (m_retire.has_value()) {
@@ -1094,6 +1112,7 @@ TradeReplies TradeLinesTracker::receiveLine(const QString &line)
         if (g_retireRepeat.match(text).hasMatch() || ++m_retireLines > 3) {
             closeRetire(out);
         }
+        m_lastKind = TradeLineKindEnum::INN;
         return out;
     }
 
@@ -1101,6 +1120,7 @@ TradeReplies TradeLinesTracker::receiveLine(const QString &line)
     if (g_listHeader.match(text).hasMatch()) {
         openTable(TableEnum::LIST, raw);
         m_listGroup = 0;
+        m_lastKind = TradeLineKindEnum::SHOP;
         return out;
     }
     if (g_listNone.match(text).hasMatch()) {
@@ -1113,6 +1133,7 @@ TradeReplies TradeLinesTracker::receiveLine(const QString &line)
             m_listQueries.pop_front();
         }
         m_done.lists.push_back(std::move(none));
+        m_lastKind = TradeLineKindEnum::SHOP;
         return out;
     }
     if (const auto m = g_sessionsLeft.match(text); m.hasMatch()) {
@@ -1121,6 +1142,7 @@ TradeReplies TradeLinesTracker::receiveLine(const QString &line)
             m_sessionsLeft = left;
             m_sessionsLinePending = true;
             m_sessionsLine = raw;
+            m_lastKind = TradeLineKindEnum::GUILD;
             return out;
         }
     }
@@ -1129,6 +1151,7 @@ TradeReplies TradeLinesTracker::receiveLine(const QString &line)
         m_teacher->teacher = m.captured(1);
         m_teacher->kind = m.captured(2);
         m_teacherBeforeHeading = true;
+        m_lastKind = TradeLineKindEnum::GUILD;
         return out;
     }
     if (const auto h = g_teacherHeader.match(text);
@@ -1136,19 +1159,24 @@ TradeReplies TradeLinesTracker::receiveLine(const QString &line)
         // A heading without its "can teach" line opens a table of its own.
         openTable(TableEnum::TEACHER, raw);
         m_teacher->kind = teacherKind(h);
+        m_lastKind = TradeLineKindEnum::GUILD;
         return out;
     }
     if (g_skillsHeader.match(text).hasMatch()) {
         openTable(TableEnum::SKILLS, raw);
+        m_lastKind = TradeLineKindEnum::GUILD;
         return out;
     }
     if (g_trophyHeader.match(text).hasMatch()) {
         openTable(TableEnum::TROPHIES, raw);
+        m_lastKind = TradeLineKindEnum::TROPHIES;
         return out;
     }
 
     if (m_table != TableEnum::NONE) {
+        const TradeLineKindEnum tableKind = kindOfTable(m_table);
         if (readTableLine(raw, text)) {
+            m_lastKind = tableKind;
             return out;
         }
         if (m_table != TableEnum::NONE && ++m_strangers > MAX_STRANGERS) {
@@ -1170,6 +1198,7 @@ TradeReplies TradeLinesTracker::receiveLine(const QString &line)
             m_pracNames.pop_front();
         }
         out.practised.push_back(std::move(practised));
+        m_lastKind = TradeLineKindEnum::GUILD;
         return out;
     }
     if (g_practiseRefused.match(text).hasMatch()) {
@@ -1181,6 +1210,7 @@ TradeReplies TradeLinesTracker::receiveLine(const QString &line)
             m_pracNames.pop_front();
         }
         out.practised.push_back(std::move(refused));
+        m_lastKind = TradeLineKindEnum::GUILD;
         return out;
     }
 
@@ -1198,9 +1228,12 @@ TradeReplies TradeLinesTracker::receiveLine(const QString &line)
         return out;
     }
     if (readDealLine(text, out)) {
+        m_lastKind = TradeLineKindEnum::SHOP;
         return out;
     }
-    std::ignore = readInnLine(text, out);
+    if (readInnLine(text, out)) {
+        m_lastKind = TradeLineKindEnum::INN;
+    }
     return out;
 }
 
@@ -1237,6 +1270,7 @@ TradeReplies TradeLinesTracker::receivePrompt()
 
 void TradeLinesTracker::reset()
 {
+    m_lastKind = TradeLineKindEnum::NONE;
     m_table = TableEnum::NONE;
     m_tableHasRow = false;
     m_teacherBeforeHeading = false;

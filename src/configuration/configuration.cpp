@@ -165,6 +165,12 @@ void Settings::initSettings()
     });
 }
 
+QString getSettingsFileName()
+{
+    Settings settings;
+    return static_cast<QSettings &>(settings).fileName();
+}
+
 //
 // NOTES:
 //
