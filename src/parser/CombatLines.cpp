@@ -796,6 +796,9 @@ struct NODISCARD AffectLine final
     CombatKindEnum kind;
     CombatPhaseEnum phase;
     const char *detail;
+    /// The event's effect, for a wound tended: its new state. A named group "e" in the
+    /// pattern gives it instead, lowercase.
+    const char *effect = nullptr;
 };
 
 #define AFFECT_LINE(re, phase, detail) \
@@ -805,6 +808,14 @@ struct NODISCARD AffectLine final
      CombatKindEnum::CONDITION, \
      CombatPhaseEnum::NONE, \
      detail}
+/// The player's own wound tended: an AFFECT with detail "wound", no phase, and the wound's new
+/// state as the effect (CharAffectsTracker picks the wound it is about).
+#define WOUND_LINE(re, effect) \
+    {QRegularExpression{QStringLiteral(re)}, \
+     CombatKindEnum::AFFECT, \
+     CombatPhaseEnum::NONE, \
+     "wound", \
+     effect}
 
 const AffectLine g_affectLines[] = {
     AFFECT_LINE(R"(^A blue transparent wall slowly appears around you\.$)", UP, "armour"),
@@ -915,6 +926,20 @@ const AffectLine g_affectLines[] = {
     AFFECT_LINE(R"(^A warm feeling runs through your body, you feel better\.$)", DOWN, "poisoned"),
     CONDITION_LINE(R"(^(?:You bleed|(?<w>.+?) bleeds) from open wounds\.$)", "bleeding"),
     CONDITION_LINE(R"(^You wish that your wounds would stop BLEEDING so much!$)", "bleeding"),
+    CONDITION_LINE(R"(^You really wish that your wounds wouldn't BLEED so much!$)", "bleeding"),
+    CONDITION_LINE(R"(^You bleed from your many wounds\.$)", "bleeding"),
+    // The player's own wound bound or cleaned, by the player ("You try to bind your wounds.")
+    // or by somebody tending it ("Sedoha (Se) starts tending your wounds."). How well it is
+    // bound comes as "Your wound is now ...", and "successfully binds" after it or alone; the
+    // failures ("You fail to bind your wound.", "You try to bind your wound but only make it
+    // worse.") change nothing known and are not read. "You successfully bind the wound." is
+    // somebody else's wound (after "firstaid trori"). Logs-survey templates t013303, t015454,
+    // t058349 and their neighbours.
+    WOUND_LINE(R"(^Your wound is now (?<e>poorly bound|bound up|bound UP|securely bound)\.$)",
+               nullptr),
+    WOUND_LINE(R"(^You successfully bind your wound\.$)", "bound"),
+    WOUND_LINE(R"(^.+? successfully binds your wound\.$)", "bound"),
+    WOUND_LINE(R"(^You (?:barely )?(?:manage to )?clean your wound\.$)", "clean"),
     // Webs.
     CONDITION_LINE(R"(^You fight the web to get free, but just become more entangled\.$)",
                    "entangled"),
@@ -1593,6 +1618,11 @@ std::optional<CombatEvent> parseCombatLine(const QString &raw)
             event.actor = m.captured(u"w").isEmpty() ? QStringLiteral("you")
                                                      : who(m.captured(u"w"));
             event.detail = QString::fromLatin1(affect.detail);
+            if (const QString said = m.captured(u"e"); !said.isEmpty()) {
+                event.effect = said.toLower();
+            } else if (affect.effect != nullptr) {
+                event.effect = QString::fromLatin1(affect.effect);
+            }
             return event;
         }
     }

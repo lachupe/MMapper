@@ -370,6 +370,26 @@ NODISCARD GmcpMessage makeCharLanguages(const CharLanguages &languages);
 /// seconds and left out when not known; `source` is "line" when one of MUME's lines told of the
 /// effect, "stat" when only `stat`'s list did. State: replayed as last sent. See
 /// CharAffectsTracker.
+///
+/// Two kinds of entry have rules of their own:
+/// - `{"name": "bleeding", "since": ..., "refreshed": ..., "source": "line"}`: the player is
+///   bleeding. On at the player's first bleed line ("You bleed from open wounds.", "You wish
+///   that your wounds would stop BLEEDING so much!", "You really wish that your wounds wouldn't
+///   BLEED so much!", "You bleed from your many wounds."), `refreshed` renewed by each one. MUME
+///   never says it stopped, so it goes when no bleed line came for 90 seconds
+///   (CharAffectsTracker::BLEED_QUIET_SECONDS), when a line says the player's wound is bound
+///   up, securely bound or successfully bound ("poorly bound" leaves it on), or when a `stat`
+///   or `info` lists no wound, or only bound ones.
+/// - one `{"name": "wound", "source": "stat", "severity": "deep", "location": "left foot",
+///   "state": "poorly bound", "dirty": false, "bandaged": true}` per wound, from `stat`'s (or
+///   `info`'s) "- a deep wound at the left foot (poorly bound)". `severity` is light, deep,
+///   serious, critical or grievous; `location` is without "the"; `state` is MUME's word --
+///   clean, dirty, poorly bound, bound up, securely bound -- "bound" after a line that said it
+///   was bound but not how well, or "" when MUME gave none; `dirty` is state == "dirty";
+///   `bandaged` is true for the bound states. Each `stat` (and `info` with its effects list)
+///   replaces the wounds. A line binding or cleaning the player's wound updates the one it can
+///   tell (the only one it fits, else the most severe, unbound ones first for a bind), which
+///   then has `source` "line" and `refreshed`; a line never adds a wound `stat` did not list.
 NODISCARD GmcpMessage makeCharAffects(const std::vector<CharAffect> &affects);
 
 /// MMapper.Char.Followers -- the creatures that follow the player's character and take its

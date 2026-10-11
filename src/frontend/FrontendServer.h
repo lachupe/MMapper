@@ -134,6 +134,8 @@ private:
     /// The effects on the player's character, published whole as MMapper.Char.Affects at
     /// each change and replayed through the cache; forgotten with it.
     CharAffectsTracker m_charAffects;
+    /// Fires when the bleeding kept in m_charAffects would end for lack of bleed lines.
+    QTimer m_bleedTimer;
 
     bool m_upstreamConnected = false;
     bool m_echo = true;

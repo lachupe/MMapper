@@ -83,7 +83,7 @@ enum class NODISCARD BlowOutcomeEnum : uint8_t { HIT, PARRY, DODGE, MISS };
 /// tried it, recovered for somebody getting over one.
 /// For SELF: stunned, sleepy, stood, fell.
 /// For AFFECT: up when it takes hold (a heal too), down when it wears off, refresh when it is
-/// renewed while still on.
+/// renewed while still on; none for the player's own wound tended (detail "wound").
 /// For BACKSTAB: none for a stab that landed, attempt for one being set up (sneaking behind),
 /// failed for one the victim noticed, refused before it began.
 /// For RESCUE: none for a rescue made, failed, or refused before it began. For ASSIST: none, or
@@ -127,7 +127,10 @@ struct NODISCARD CombatEvent final
     QString quality;
     /// After the part: "hard", "very hard", "extremely hard".
     QString severity;
-    /// Base form: "shatter", "tickle", "fragment". For a blow a tunic turned aside, the tunic
+    /// Base form: "shatter", "tickle", "fragment". For an AFFECT with detail "wound" (the
+    /// player's own wound bound or cleaned), the wound's new state: "poorly bound", "bound
+    /// up", "securely bound", "bound" (bound, how well not said), "clean". For a blow a tunic
+    /// turned aside, the tunic
     /// as MUME named it: "ebony tunic", "tunic". For a missile weapon made ready, the weapon
     /// without its article: "vicious bow", "crossbow".
     QString effect;

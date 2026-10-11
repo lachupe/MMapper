@@ -1866,6 +1866,8 @@ void TestCombatLines::harmfulConditionTest()
         {"A mother eagle (Kongo) bleeds from open wounds.", C, N, "A mother eagle", "", "bleeding"},
         {"*a Dwarf* bleeds from open wounds.", C, N, "*a Dwarf*", "", "bleeding"},
         {"You wish that your wounds would stop BLEEDING so much!", C, N, "you", "", "bleeding"},
+        {"You really wish that your wounds wouldn't BLEED so much!", C, N, "you", "", "bleeding"},
+        {"You bleed from your many wounds.", C, N, "you", "", "bleeding"},
         {"Your body turns numb as the poison speeds to your brain!", C, N, "you", "", "poisoned"},
         {"*Stitch the Half-Elf*'s body turns numb as the poison speeds to his brain!",
          C,
@@ -1893,6 +1895,43 @@ void TestCombatLines::harmfulConditionTest()
         {"You have been blinded!", C, N, "you", "", "blind"},
         {"You feel a cloak of blindness dissolve.", A, DOWN, "you", "", "blind"},
     });
+}
+
+void TestCombatLines::woundTendedTest()
+{
+    // The player's own wound bound or cleaned: an AFFECT on "you" with detail "wound", no
+    // phase, and the wound's new state as the effect, whoever did the tending.
+    const struct
+    {
+        const char *line;
+        const char *state;
+    } cases[] = {
+        {"Your wound is now poorly bound.", "poorly bound"},
+        {"Your wound is now bound up.", "bound up"},
+        {"Your wound is now bound UP.", "bound up"},
+        {"Your wound is now securely bound.", "securely bound"},
+        {"You successfully bind your wound.", "bound"},
+        {"Farseer (F) successfully binds your wound.", "bound"},
+        {"Sedoha successfully binds your wound.", "bound"},
+        {"You barely manage to clean your wound.", "clean"},
+    };
+    for (const auto &c : cases) {
+        const std::optional<CombatEvent> e = parseCombatLine(QString::fromUtf8(c.line));
+        QVERIFY2(e.has_value(), c.line);
+        QCOMPARE(e->kind, CombatKindEnum::AFFECT);
+        QCOMPARE(e->phase, CombatPhaseEnum::NONE);
+        QCOMPARE(e->actor, QStringLiteral("you"));
+        QCOMPARE(e->detail, QStringLiteral("wound"));
+        QCOMPARE(e->effect, QString::fromUtf8(c.state));
+    }
+    // Somebody else's wound, and the failures, which change nothing known.
+    for (const char *line : {"Dragoth successfully binds his wound.",
+                             "You successfully bind the wound.",
+                             "You fail to bind your wound.",
+                             "You try to bind your wound but only make it worse."}) {
+        const std::optional<CombatEvent> e = parseCombatLine(QString::fromUtf8(line));
+        QVERIFY2(!e.has_value() || e->detail != QStringLiteral("wound"), line);
+    }
 }
 
 void TestCombatLines::notFix16Test()

@@ -49,6 +49,7 @@ private Q_SLOTS:
     static void charLevelTest();
     static void charWimpyTest();
     static void charAffectsTest();
+    static void charWoundsTest();
     static void charFollowersTest();
     static void charRefusedTest();
     static void roomDoorTest();

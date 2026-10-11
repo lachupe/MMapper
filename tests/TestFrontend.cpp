@@ -1714,7 +1714,7 @@ void TestFrontend::charAffectsTest()
     // that are no effect at all leave the list alone.
     QVERIFY(!line("Walo is surrounded by a brilliant white aura.", 1602));
     QVERIFY(!line("Your scratches and bruises disappear.", 1603));
-    QVERIFY(!line("You bleed from open wounds.", 1604));
+    QVERIFY(!line("Dragoth bleeds from open wounds.", 1604));
     QVERIFY(!line("You fight the web to get free, but just become more entangled.", 1605));
     QVERIFY(!line("You are incapacitated and will slowly die, if not aided.", 1606));
     QVERIFY(!line("Bert the stone-troll seems to be blinded!", 1607));
@@ -1806,6 +1806,225 @@ void TestFrontend::charAffectsTest()
     cache.remember(current);
     cache.clear();
     QVERIFY(replayed(cache, GmcpMessageTypeEnum::MMAPPER_CHAR_AFFECTS).isNull());
+}
+
+void TestFrontend::charWoundsTest()
+{
+    // One function reads a wound of `stat`'s or `info`'s list, every severity and state.
+    const struct
+    {
+        const char *text;
+        const char *severity;
+        const char *location;
+        const char *state;
+        bool dirty;
+        bool bandaged;
+    } wounds[] = {
+        {"a light wound at the head (clean)", "light", "head", "clean", false, false},
+        {"a deep wound at the left foot (poorly bound)",
+         "deep",
+         "left foot",
+         "poorly bound",
+         false,
+         true},
+        {"a serious wound at the body (dirty)", "serious", "body", "dirty", true, false},
+        {"a critical wound at the right arm (bound up)",
+         "critical",
+         "right arm",
+         "bound up",
+         false,
+         true},
+        {"a grievous wound at the left foreleg (securely bound)",
+         "grievous",
+         "left foreleg",
+         "securely bound",
+         false,
+         true},
+        {"a deep wound at the left hand", "deep", "left hand", "", false, false},
+        {"A Light wound at the right leg (Clean)", "light", "right leg", "clean", false, false},
+    };
+    for (const auto &w : wounds) {
+        const std::optional<CharWound> parsed = parseCharWound(QString::fromUtf8(w.text));
+        QVERIFY2(parsed.has_value(), w.text);
+        QCOMPARE(parsed->severity, QString::fromUtf8(w.severity));
+        QCOMPARE(parsed->location, QString::fromUtf8(w.location));
+        QCOMPARE(parsed->state, QString::fromUtf8(w.state));
+        QCOMPARE(parsed->dirty(), w.dirty);
+        QCOMPARE(parsed->bandaged(), w.bandaged);
+    }
+    QVERIFY(!parseCharWound(QStringLiteral("armour")).has_value());
+    QVERIFY(charWoundSeverityRank(QStringLiteral("light"))
+            < charWoundSeverityRank(QStringLiteral("deep")));
+    QVERIFY(charWoundSeverityRank(QStringLiteral("critical"))
+            < charWoundSeverityRank(QStringLiteral("grievous")));
+
+    CharAffectsTracker tracker;
+    const auto line = [&tracker](const char *const text, const int64_t now) {
+        const std::optional<CombatEvent> event = parseCombatLine(QString::fromUtf8(text));
+        return event.has_value() && tracker.receiveEvent(*event, now);
+    };
+    const auto names = [&tracker]() {
+        QStringList result;
+        for (const CharAffect &affect : tracker.affects()) {
+            result.append(affect.name);
+        }
+        return result;
+    };
+    const auto bleeding = [&tracker]() -> std::optional<CharAffect> {
+        for (const CharAffect &affect : tracker.affects()) {
+            if (affect.name == QStringLiteral("bleeding")) {
+                return affect;
+            }
+        }
+        return std::nullopt;
+    };
+    const auto states = [&tracker]() {
+        QStringList result;
+        for (const CharAffect &affect : tracker.affects()) {
+            if (affect.wound.has_value()) {
+                result.append(affect.wound->location + QStringLiteral(": ") + affect.wound->state);
+            }
+        }
+        return result;
+    };
+    const auto payload = [&tracker]() {
+        return payloadOf(frontend_messages::makeCharAffects(tracker.affects()));
+    };
+
+    // Somebody else bleeding is not the player.
+    QVERIFY(!line("Dragoth bleeds from open wounds.", 1000));
+    QVERIFY(!line("Kazadoe (K) bleeds from open wounds.", 1000));
+    QVERIFY(!bleeding().has_value());
+
+    // The player's bleed line switches it on, from a line, with both times.
+    QVERIFY(line("You bleed from open wounds.", 1000));
+    QCOMPARE(names(), QStringList{QStringLiteral("bleeding")});
+    QCOMPARE(frontend_messages::makeCharAffects(tracker.affects()).toRawBytes(),
+             QByteArray(R"(MMapper.Char.Affects {"affects":[)"
+                        R"({"name":"bleeding","refreshed":1000,"since":1000,"source":"line"}]})"));
+    // Each tick renews it; `since` stays.
+    QVERIFY(line("You wish that your wounds would stop BLEEDING so much!", 1030));
+    QVERIFY(line("You really wish that your wounds wouldn't BLEED so much!", 1060));
+    QCOMPARE(bleeding()->since, std::optional<int64_t>{1000});
+    QCOMPARE(bleeding()->refreshed, std::optional<int64_t>{1060});
+    QCOMPARE(tracker.bleedingEndsAt(),
+             std::optional<int64_t>{1060 + CharAffectsTracker::BLEED_QUIET_SECONDS});
+    // Quiet for less than BLEED_QUIET_SECONDS: still on; for that long: off.
+    QVERIFY(!tracker.tick(1060 + CharAffectsTracker::BLEED_QUIET_SECONDS - 1));
+    QVERIFY(bleeding().has_value());
+    QVERIFY(tracker.tick(1060 + CharAffectsTracker::BLEED_QUIET_SECONDS));
+    QVERIFY(!bleeding().has_value());
+    QVERIFY(!tracker.bleedingEndsAt().has_value());
+    QVERIFY(!tracker.tick(5000));
+
+    // A wound line with no wound known from `stat` makes up no wound.
+    QVERIFY(!line("Your wound is now poorly bound.", 1200));
+    QVERIFY(tracker.affects().empty());
+
+    // `stat` gives the wounds, one entry each; the list it gives replaces the known one.
+    QVERIFY(tracker.receiveWounds(QStringList{QStringLiteral("a light wound at the head (clean)"),
+                                              QStringLiteral("a deep wound at the body (dirty)")}));
+    QCOMPARE(states(), (QStringList{QStringLiteral("head: clean"), QStringLiteral("body: dirty")}));
+    QVERIFY(!tracker.receiveWounds(QStringList{QStringLiteral("a light wound at the head (clean)"),
+                                               QStringLiteral("a deep wound at the body (dirty)")}));
+    QVERIFY(tracker.receiveWounds(
+        QStringList{QStringLiteral("a critical wound at the left foot (clean)"),
+                    QStringLiteral("a light wound at the head (clean)"),
+                    QStringLiteral("a deep wound at the left hand")}));
+    QCOMPARE(states(),
+             (QStringList{QStringLiteral("head: clean"),
+                          QStringLiteral("left foot: clean"),
+                          QStringLiteral("left hand: ")}));
+
+    // The payload: the wound's fields, exactly so named.
+    const QJsonObject foot = payload()["affects"].toArray().at(1).toObject();
+    QCOMPARE(foot["name"].toString(), QStringLiteral("wound"));
+    QCOMPARE(foot["source"].toString(), QStringLiteral("stat"));
+    QCOMPARE(foot["severity"].toString(), QStringLiteral("critical"));
+    QCOMPARE(foot["location"].toString(), QStringLiteral("left foot"));
+    QCOMPARE(foot["state"].toString(), QStringLiteral("clean"));
+    QCOMPARE(foot["dirty"].toBool(true), false);
+    QCOMPARE(foot["bandaged"].toBool(true), false);
+    QVERIFY(!foot.contains("since"));
+    QVERIFY(!foot.contains("refreshed"));
+    QCOMPARE(payload()["affects"].toArray().at(2).toObject()["state"].toString(), QString(""));
+
+    // A bind line updates the most severe unbound wound, from a line; poorly bound leaves the
+    // bleeding on.
+    QVERIFY(line("You bleed from open wounds.", 2000));
+    QVERIFY(line("Your wound is now poorly bound.", 2010));
+    QCOMPARE(states(),
+             (QStringList{QStringLiteral("head: clean"),
+                          QStringLiteral("left foot: poorly bound"),
+                          QStringLiteral("left hand: ")}));
+    QVERIFY(bleeding().has_value());
+    const QJsonObject bound = payload()["affects"].toArray().at(1).toObject();
+    QCOMPARE(bound["source"].toString(), QStringLiteral("line"));
+    QCOMPARE(bound["refreshed"].toInteger(), 2010);
+    QCOMPARE(bound["bandaged"].toBool(), true);
+    QCOMPARE(bound["dirty"].toBool(true), false);
+    // The next one goes to the next unbound wound (deep before light), and bound up ends the
+    // bleeding.
+    QVERIFY(line("Your wound is now bound UP.", 2020));
+    QCOMPARE(states(),
+             (QStringList{QStringLiteral("head: clean"),
+                          QStringLiteral("left foot: poorly bound"),
+                          QStringLiteral("left hand: bound up")}));
+    QVERIFY(!bleeding().has_value());
+    // With one unbound wound left, "successfully binds" is about it, and ends the bleeding.
+    QVERIFY(line("You bleed from open wounds.", 2030));
+    QVERIFY(line("Farseer (F) successfully binds your wound.", 2040));
+    QCOMPARE(states(),
+             (QStringList{QStringLiteral("head: bound"),
+                          QStringLiteral("left foot: poorly bound"),
+                          QStringLiteral("left hand: bound up")}));
+    QVERIFY(!bleeding().has_value());
+    // Securely bound, with all bound: of those bound less well, the most severe.
+    QVERIFY(line("Your wound is now securely bound.", 2050));
+    QCOMPARE(states(),
+             (QStringList{QStringLiteral("head: bound"),
+                          QStringLiteral("left foot: securely bound"),
+                          QStringLiteral("left hand: bound up")}));
+
+    // A stat with all wounds bound ends the bleeding; one with an unbound wound does not.
+    QVERIFY(line("You bleed from open wounds.", 3000));
+    QVERIFY(tracker.receiveWounds(
+        QStringList{QStringLiteral("a serious wound at the body (dirty)"),
+                    QStringLiteral("a light wound at the head (securely bound)")}));
+    QVERIFY(bleeding().has_value());
+    // `stat`'s affects list does not drop the bleeding or the wounds.
+    QVERIFY(tracker.receiveStat(QStringList{QStringLiteral("armour")}));
+    QVERIFY(bleeding().has_value());
+    QCOMPARE(states().size(), 2);
+    // A clean line cleans the dirty one.
+    QVERIFY(line("You barely manage to clean your wound.", 3010));
+    QCOMPARE(states(),
+             (QStringList{QStringLiteral("body: clean"), QStringLiteral("head: securely bound")}));
+    QVERIFY(bleeding().has_value());
+    QVERIFY(tracker.receiveWounds(
+        QStringList{QStringLiteral("a serious wound at the body (bound up)"),
+                    QStringLiteral("a light wound at the head (securely bound)")}));
+    QVERIFY(!bleeding().has_value());
+
+    // A stat with no wounds ends it too, and leaves none.
+    QVERIFY(line("You bleed from open wounds.", 4000));
+    QVERIFY(tracker.receiveWounds(QStringList{}));
+    QVERIFY(!bleeding().has_value());
+    QVERIFY(states().isEmpty());
+    QCOMPARE(names(), QStringList{QStringLiteral("armour")});
+
+    // Of two unbound wounds, the more severe is bound; of two dirty ones, the more severe is
+    // cleaned.
+    QVERIFY(tracker.receiveWounds(
+        QStringList{QStringLiteral("a light wound at the head (dirty)"),
+                    QStringLiteral("a grievous wound at the left foreleg (dirty)"),
+                    QStringLiteral("a deep wound at the body (clean)")}));
+    QVERIFY(line("You barely manage to clean your wound.", 5000));
+    QVERIFY(line("Your wound is now securely bound.", 5010));
+    QCOMPARE(states(),
+             (QStringList{QStringLiteral("head: dirty"),
+                          QStringLiteral("left foreleg: securely bound"),
+                          QStringLiteral("body: clean")}));
 }
 
 void TestFrontend::charFollowersTest()

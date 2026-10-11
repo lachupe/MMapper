@@ -130,6 +130,14 @@ FrontendServer::FrontendServer(GameObserver &observer,
     m_mapIdentity.loaded(m_mapData.getCurrentMap(), m_mapData.getFileName());
     m_sessionStateTimer.setSingleShot(true);
     connect(&m_sessionStateTimer, &QTimer::timeout, this, &FrontendServer::publishSessionState);
+    // The bleeding ends when MUME has been quiet about it for a while: checked when that time
+    // comes (publishCharAffects() sets the timer), as well as at the player's next event.
+    m_bleedTimer.setSingleShot(true);
+    connect(&m_bleedTimer, &QTimer::timeout, this, [this]() {
+        if (m_charAffects.tick(QDateTime::currentSecsSinceEpoch())) {
+            publishCharAffects();
+        }
+    });
     connect(&m_mapData, &MapData::sig_onDataChanged, this, &FrontendServer::onMapChanged);
 
     m_observer.sig2_connected.connect(m_lifetime, [this]() {
@@ -294,7 +302,10 @@ FrontendServer::FrontendServer(GameObserver &observer,
         m_replayCache.remember(msg);
         publish(msg);
         // `stat`'s list sets the tracked effects right: after the reply it came in.
-        if (m_charAffects.receiveStat(stat.affects)) {
+        // Both, then one message: the wounds come in the same reply.
+        const bool affectsChanged = m_charAffects.receiveStat(stat.affects);
+        const bool woundsChanged = m_charAffects.receiveWounds(stat.wounds);
+        if (affectsChanged || woundsChanged) {
             publishCharAffects();
         }
     });
@@ -302,6 +313,10 @@ FrontendServer::FrontendServer(GameObserver &observer,
         const GmcpMessage msg = frontend_messages::makeCharScore(score);
         m_replayCache.remember(msg);
         publish(msg);
+        // `info`'s effects list states the wounds as `stat`'s does.
+        if (score.effectsKnown && m_charAffects.receiveWounds(score.wounds)) {
+            publishCharAffects();
+        }
     });
     m_observer.sig2_charBurden.connect(m_lifetime, [this](const CharBurden &burden) {
         const GmcpMessage msg = frontend_messages::makeCharBurden(burden);
@@ -967,6 +982,12 @@ void FrontendServer::publishCharAffects()
     const GmcpMessage msg = frontend_messages::makeCharAffects(m_charAffects.affects());
     m_replayCache.remember(msg);
     publish(msg);
+    if (const auto endsAt = m_charAffects.bleedingEndsAt()) {
+        const int64_t wait = std::max<int64_t>(*endsAt - QDateTime::currentSecsSinceEpoch(), 0);
+        m_bleedTimer.start(static_cast<int>(wait * 1000 + 100));
+    } else {
+        m_bleedTimer.stop();
+    }
 }
 
 void FrontendServer::publishSessionState()

@@ -960,6 +960,14 @@ GmcpMessage makeCharAffects(const std::vector<CharAffect> &affects)
         putNumber(row, "since", affect.since);
         putNumber(row, "refreshed", affect.refreshed);
         row["source"] = affect.fromLine ? QStringLiteral("line") : QStringLiteral("stat");
+        if (affect.wound.has_value()) {
+            const CharWound &wound = *affect.wound;
+            row["severity"] = wound.severity;
+            row["location"] = wound.location;
+            row["state"] = wound.state;
+            row["dirty"] = wound.dirty();
+            row["bandaged"] = wound.bandaged();
+        }
         rows.append(row);
     }
     QJsonObject obj;
