@@ -352,12 +352,12 @@ const QRegularExpression g_practised{QStringLiteral(
 // before practicing this skill further." (mume3d's live test of 2026-10-03, 13:58: read as no reply
 // before, so the client said the practice failed although MUME had answered).
 const QRegularExpression g_practiseRefused{QStringLiteral(
-    R"(^(?:You have to stand in order to practi[cs]e anything|You need to be more experienced before practi[cs]ing this (?:skill|spell) further)\.$)")};
+    R"(^(?:You have to stand in order to practi[cs]e anything|You need to be more experienced before practi[cs]ing this (?:skill|spell) further|You do not seem to be able to practice now)\.$)")};
 
 // -- trophies ------------------------------------------------------------------------------
 
 const QRegularExpression g_trophyHeader{QStringLiteral(R"(\*\*\* TROPHY \*\*\* \()")};
-const QRegularExpression g_trophyRowStart{QStringLiteral(R"(^\s*\d[\d,]*,\s*-?\d+%,)")};
+const QRegularExpression g_trophyRowStart{QStringLiteral(R"(^\s*(?:\|\s*)?\d[\d,]*,\s*-?\d+%,)")};
 const QRegularExpression g_trophyCell{
     QStringLiteral(R"((\d[\d,]*),\s*(-?\d+)%,\s*([^|]*?)\s*(?:\||$))")};
 const QRegularExpression g_trophyTotal{
@@ -1171,6 +1171,12 @@ TradeReplies TradeLinesTracker::receiveLine(const QString &line)
         openTable(TableEnum::TROPHIES, raw);
         m_lastKind = TradeLineKindEnum::TROPHIES;
         return out;
+    }
+
+    // A resumed or heading-free trophy reply still identifies itself by its first cell.
+    if (m_table == TableEnum::NONE && g_trophyRowStart.match(raw).hasMatch()) {
+        openTable(TableEnum::TROPHIES, raw);
+        m_lines.clear(); // readTableLine records this first row once.
     }
 
     if (m_table != TableEnum::NONE) {

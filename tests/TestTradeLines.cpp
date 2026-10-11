@@ -758,12 +758,26 @@ void TestTradeLines::practisedTest()
     // mume3d's live test of 2026-10-03 (all-2026-10-03-134913.log:1479): the level's limit.
     TradeLinesTracker limited;
     limited.receiveCommand(QStringLiteral("prac slashing weapons"));
-    const TradeReplies limit = limited.receiveLine(QStringLiteral(
-        "You need to be more experienced before practicing this skill further."));
+    const TradeReplies limit = limited.receiveLine(
+        QStringLiteral("You need to be more experienced before practicing this skill further."));
     QCOMPARE(limit.practised.size(), size_t{1});
     QCOMPARE(limit.practised[0].refused,
-             QStringLiteral("You need to be more experienced before practicing this skill further."));
+             QStringLiteral(
+                 "You need to be more experienced before practicing this skill further."));
     QCOMPARE(limit.practised[0].name, QStringLiteral("slashing weapons"));
+
+    // Live reply reported on 2026-10-11, both to a named practice and to bare `prac`.
+    for (const char *const command : {"prac slashing weapons", "prac"}) {
+        TradeLinesTracker unavailable;
+        unavailable.receiveCommand(QString::fromUtf8(command));
+        const TradeReplies no = unavailable.receiveLine(
+            QStringLiteral("You do not seem to be able to practice now."));
+        QCOMPARE(no.practised.size(), size_t{1});
+        QCOMPARE(no.practised[0].refused,
+                 QStringLiteral("You do not seem to be able to practice now."));
+        QVERIFY(!no.practised[0].used.has_value());
+        QCOMPARE(unavailable.lastLineKind(), TradeLineKindEnum::GUILD);
+    }
 
     // `prac` alone and `list` are no practice commands.
     TradeLinesTracker bare;
@@ -1107,6 +1121,38 @@ void TestTradeLines::trophiesTest()
     QCOMPARE(matching.trophies[0].totalKills, std::optional<int64_t>{27});
 }
 
+void TestTradeLines::trophiesFramedTest()
+{
+    // User's live output, 2026-10-11: a leading pipe and an unfinished closing border.
+    for (const bool heading : {false, true}) {
+        TradeLinesTracker tracker;
+        if (heading) {
+            std::ignore = tracker.receiveLine(
+                QStringLiteral("*** TROPHY *** (Kills, Knowledge, Name)"));
+        }
+        const TradeReplies r = feedInto(
+            tracker,
+            {"Alas, you cannot go that way...",
+             "|   1,  1%,  a tiny spider             |   1,  1%,  a brown fox               |",
+             "|   2,  3%,  a fallow deer             |   5,  5%,  a rooster",
+             PROMPT});
+        QCOMPARE(r.trophies.size(), size_t{1});
+        const CharTrophies &t = r.trophies.front();
+        QCOMPARE(t.rows.size(), size_t{4});
+        QCOMPARE(t.rows[0].name, QStringLiteral("a tiny spider"));
+        QCOMPARE(t.rows[1].name, QStringLiteral("a brown fox"));
+        QCOMPARE(t.rows[2].name, QStringLiteral("a fallow deer"));
+        QCOMPARE(t.rows[2].kills, int64_t{2});
+        QCOMPARE(t.rows[2].knowledgePct, int64_t{3});
+        QCOMPARE(t.rows[3].name, QStringLiteral("a rooster"));
+        QCOMPARE(t.rows[3].kills, int64_t{5});
+        QVERIFY(t.complete);
+        QVERIFY(!t.text.contains(QStringLiteral("Alas")));
+        QCOMPARE(t.text.count(QStringLiteral("a tiny spider")), 1);
+    }
+    QVERIFY(feed({"Alas, you cannot go that way...", "| not a trophy |", PROMPT}).trophies.empty());
+}
+
 void TestTradeLines::trophiesPagedTest()
 {
     // The long list is the pager's main case: continued twice, then quit.
@@ -1233,26 +1279,28 @@ void TestTradeLines::quietCommandAllowedTest()
     // (pr(actice), sc(ore), inf(o), stat, eq(uipment), i(nventory), ti(me), wh(o), tro(phy),
     // ex(its), exa(mine), l(ook), li(st)).
     for (const char *const word :
-         {"practice", "practic", "practi", "pract", "prac", "pra", "pr",
-          "score", "scor", "sco", "sc",
-          "info", "inf",
-          "stat",
-          "equipment", "equipmen", "equipme", "equipm", "equip", "equi", "equ", "eq",
-          "inventory", "inventor", "invento", "invent", "inven", "inve", "inv", "in", "i",
-          "time", "tim", "ti",
-          "who", "wh",
-          "trophy", "troph", "trop", "tro",
-          "exits", "exit", "exi", "ex",
-          "examine", "examin", "exami", "exam", "exa",
-          "look", "loo", "lo", "l",
-          "list", "lis", "li"}) {
+         {"practice", "practic", "practi", "pract", "prac",    "pra",    "pr",        "score",
+          "scor",     "sco",     "sc",     "info",  "inf",     "stat",   "equipment", "equipmen",
+          "equipme",  "equipm",  "equip",  "equi",  "equ",     "eq",     "inventory", "inventor",
+          "invento",  "invent",  "inven",  "inve",  "inv",     "in",     "i",         "time",
+          "tim",      "ti",      "who",    "wh",    "trophy",  "troph",  "trop",      "tro",
+          "exits",    "exit",    "exi",    "ex",    "examine", "examin", "exami",     "exam",
+          "exa",      "look",    "loo",    "lo",    "l",       "list",   "lis",       "li"}) {
         QVERIFY2(allowed(word), word);
     }
 
     // With arguments, which belong to the command.
-    for (const char *const line :
-         {"info MMXP %l %x %X %t %T", "look in pack", "look north", "l 2.map", "examine sword",
-          "exa corpse", "list helm", "trophy -line orc", "who number", "eq all", "i  "}) {
+    for (const char *const line : {"info MMXP %l %x %X %t %T",
+                                   "look in pack",
+                                   "look north",
+                                   "l 2.map",
+                                   "examine sword",
+                                   "exa corpse",
+                                   "list helm",
+                                   "trophy -line orc",
+                                   "who number",
+                                   "eq all",
+                                   "i  "}) {
         QVERIFY2(allowed(line), line);
     }
 
@@ -1263,10 +1311,28 @@ void TestTradeLines::quietCommandAllowedTest()
     }
 
     // Anything that acts, or is not known to only read.
-    for (const char *const line :
-         {"drop all", "say x", "kill orc", "north", "n", "cast 'armour'", "rent", "buy bread",
-          "give sword orc", "flee", "get all", "sell sword", "tell gandalf hi", "change mood wimpy",
-          "offer", "quit", "sleep", "open door", "_help", "weather", "where", "consider orc"}) {
+    for (const char *const line : {"drop all",
+                                   "say x",
+                                   "kill orc",
+                                   "north",
+                                   "n",
+                                   "cast 'armour'",
+                                   "rent",
+                                   "buy bread",
+                                   "give sword orc",
+                                   "flee",
+                                   "get all",
+                                   "sell sword",
+                                   "tell gandalf hi",
+                                   "change mood wimpy",
+                                   "offer",
+                                   "quit",
+                                   "sleep",
+                                   "open door",
+                                   "_help",
+                                   "weather",
+                                   "where",
+                                   "consider orc"}) {
         QVERIFY2(!allowed(line), line);
     }
 
@@ -1275,15 +1341,36 @@ void TestTradeLines::quietCommandAllowedTest()
     QVERIFY(!allowed("practice ride"));
     QVERIFY(!allowed("pr block door"));
     // `score report` tells the room; and the commands MUME's help gives no arguments take none.
-    for (const char *const line : {"score report", "sc report", "stat all", "time now",
-                                   "exits north", "inventory all", "i sword", "in pack"}) {
+    for (const char *const line : {"score report",
+                                   "sc report",
+                                   "stat all",
+                                   "time now",
+                                   "exits north",
+                                   "inventory all",
+                                   "i sword",
+                                   "in pack"}) {
         QVERIFY2(!allowed(line), line);
     }
 
     // Shorter than MUME takes it for that command, or a spelling MUME's help does not have: it
     // would be another command, or none.
-    for (const char *const word : {"p", "s", "st", "sta", "e", "eq.", "t", "tr", "w", "practise",
-                                   "prax", "looks", "infos", "statx", "exb", "affects", "aff"}) {
+    for (const char *const word : {"p",
+                                   "s",
+                                   "st",
+                                   "sta",
+                                   "e",
+                                   "eq.",
+                                   "t",
+                                   "tr",
+                                   "w",
+                                   "practise",
+                                   "prax",
+                                   "looks",
+                                   "infos",
+                                   "statx",
+                                   "exb",
+                                   "affects",
+                                   "aff"}) {
         QVERIFY2(!allowed(word), word);
     }
 
@@ -1328,7 +1415,9 @@ void TestTradeLines::quietTrafficTest()
     // 2026-10-03), is the reply's; a header inside a room display is not.
     const char *const heading = "Skill             Knowledge  Difficulty  Class";
     QCOMPARE(of(heading, {element(XmlTagEnum::HEADER, heading)}), QuietTrafficEnum::REPLY);
-    QCOMPARE(of("Obvious exits:", {element(XmlTagEnum::HEADER, "Obvious exits:")}, {XmlTagEnum::ROOM}),
+    QCOMPARE(of("Obvious exits:",
+                {element(XmlTagEnum::HEADER, "Obvious exits:")},
+                {XmlTagEnum::ROOM}),
              QuietTrafficEnum::OTHER);
 
     // A line an element of other traffic covers is that traffic: speech, a movement, a blow,
@@ -1347,7 +1436,8 @@ void TestTradeLines::quietTrafficTest()
 
     // A tell that wraps: its first line lies in the element still open, and its last line is
     // the end of the element that closed on it.
-    QCOMPARE(of("Gandalf tells you 'a long tell that goes on and on and wraps at the", none,
+    QCOMPARE(of("Gandalf tells you 'a long tell that goes on and on and wraps at the",
+                none,
                 {XmlTagEnum::TELL}),
              QuietTrafficEnum::OTHER);
     QCOMPARE(of("line's end'",
@@ -1370,8 +1460,7 @@ void TestTradeLines::quietTrafficTest()
              QuietTrafficEnum::UNSURE);
     QCOMPARE(of("You are thirsty.", {element(XmlTagEnum::STATUS, "You are thirsty.")}),
              QuietTrafficEnum::UNSURE);
-    QCOMPARE(of("A lantern", {element(XmlTagEnum::OBJECT, "A lantern")}),
-             QuietTrafficEnum::UNSURE);
+    QCOMPARE(of("A lantern", {element(XmlTagEnum::OBJECT, "A lantern")}), QuietTrafficEnum::UNSURE);
     QCOMPARE(of("Something new.", {element(XmlTagEnum::UNKNOWN, "Something new.")}),
              QuietTrafficEnum::UNSURE);
     QCOMPARE(of("In a status block", none, {XmlTagEnum::STATUS}), QuietTrafficEnum::UNSURE);
@@ -1381,7 +1470,8 @@ void TestTradeLines::quietTrafficTest()
 
 void TestTradeLines::quietCaptureTest()
 {
-    const auto line = [](QuietCapture &q, const char *const text,
+    const auto line = [](QuietCapture &q,
+                         const char *const text,
                          const QuietTrafficEnum traffic = QuietTrafficEnum::REPLY) {
         return q.receiveLine(QString::fromUtf8(text), traffic);
     };
@@ -1623,8 +1713,7 @@ void TestTradeLines::quietReadersForeignTest()
                        "A black wolf arrives from the north.\n",
                        MUME_PROMPT}));
         QCOMPARE(mid.captured.size(), qsizetype{6});
-        QCOMPARE(mid.events,
-                 list({"pager:73:1", "pager:73:1", "skills:2:1", "ended", "prompt"}));
+        QCOMPARE(mid.events, list({"pager:73:1", "pager:73:1", "skills:2:1", "ended", "prompt"}));
         QVERIFY(!mid.readers.quietOpen());
     }
 

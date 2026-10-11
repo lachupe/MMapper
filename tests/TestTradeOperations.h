@@ -23,6 +23,7 @@ private Q_SLOTS:
     static void practiseTimesTest();
     static void practiseLimitTest();
     static void practiseRefusalTest();
+    static void dialogReplyParsingTest();
     static void innOfferAndRentTest();
     static void innRetireTest();
     static void trophiesPagerTest();

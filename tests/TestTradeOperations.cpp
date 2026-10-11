@@ -142,9 +142,8 @@ struct NODISCARD Mume final
     {
         PagerLine pager;
         pager.percent = percent;
-        pager.text
-            = QStringLiteral("*** Return: continue, b: back, r: redisplay, q: quit (%1%) ***")
-                  .arg(percent);
+        pager.text = QStringLiteral("*** Return: continue, b: back, r: redisplay, q: quit (%1%) ***")
+                         .arg(percent);
         pager.hidden = true;
         observer.observePager(pager);
     }
@@ -298,11 +297,11 @@ struct NODISCARD Whole final
 };
 
 // elvenrunes 2020-12-30_..._Aquator.txt:1716-1747, as in TestTradeLines: the table's two pages.
-const std::initializer_list<const char *> g_pageOne{
-    "You have 1 practice session left.",
-    "Skill / Spell          Knowledge  Difficulty  Class       Mana  Casting time",
-    "Climb                  Good       Very easy   None       ",
-    "Cure blindness         Fair       Normal      Cleric         4  Very short"};
+const std::initializer_list<const char *>
+    g_pageOne{"You have 1 practice session left.",
+              "Skill / Spell          Knowledge  Difficulty  Class       Mana  Casting time",
+              "Climb                  Good       Very easy   None       ",
+              "Cure blindness         Fair       Normal      Cleric         4  Very short"};
 const std::initializer_list<const char *>
     g_pageTwo{"Dispel evil            Superb     Hard        Cleric        17  Very short",
               "Pick                   Poor       Normal      Thief      ",
@@ -607,6 +606,51 @@ void TestTradeOperations::practiseRefusalTest()
     QCOMPARE(bad.reason(), QStringLiteral("invalid arguments"));
 }
 
+void TestTradeOperations::dialogReplyParsingTest()
+{
+    // Drive the real readers and operation runner together, as the XML parser does.
+    for (const char *const request :
+         {R"({"id":"list","action":"guild.list"})",
+          R"({"id":"practice","action":"guild.practise","name":"dodge","times":4})"}) {
+        Mume mume;
+        TradeReaders readers{mume.observer};
+        mume.request(request);
+        mume.flush();
+        QVERIFY(readers.receiveCommand(mume.sent.back()));
+        const QString reply = QStringLiteral("You do not seem to be able to practice now.");
+        mume.line(reply);
+        std::ignore = readers.beginChunk(false, false, reply);
+        readers.receiveLine(reply);
+        readers.endChunk();
+        std::ignore = readers.beginChunk(true, false, QStringLiteral("> "));
+        readers.receivePrompt();
+        readers.endChunk();
+        QCOMPARE(mume.status(), QStringLiteral("refused"));
+        QCOMPARE(mume.last()["text"].toArray().at(0).toString(), reply);
+        QCOMPARE(mume.sent.size(), 1);
+    }
+
+    Mume trophies;
+    TradeReaders readers{trophies.observer};
+    trophies.request(R"({"id":"trophy","action":"char.trophies"})");
+    trophies.flush();
+    QVERIFY(readers.receiveCommand(trophies.sent.back()));
+    for (const char *const line :
+         {"Alas, you cannot go that way...",
+          "|   1,  1%,  a tiny spider             |   1,  1%,  a brown fox               |",
+          "|   2,  3%,  a fallow deer             |   5,  5%,  a rooster"}) {
+        const QString text = QString::fromUtf8(line);
+        trophies.line(text);
+        std::ignore = readers.beginChunk(false, false, text);
+        readers.receiveLine(text);
+        readers.endChunk();
+    }
+    std::ignore = readers.beginChunk(true, false, QStringLiteral("> "));
+    readers.receivePrompt();
+    readers.endChunk();
+    QCOMPARE(trophies.status(), QStringLiteral("done"));
+}
+
 void TestTradeOperations::innOfferAndRentTest()
 {
     Mume mume;
@@ -860,11 +904,33 @@ void TestTradeOperations::quietCommandTest()
 void TestTradeOperations::quietAllowedTest()
 {
     // A command the player never sees may only read. Each of these is sent.
-    for (const char *const line :
-         {"prac", "practice", "sc", "score", "inf", "info", "info MMXP %l %x %X %t %T", "stat",
-          "eq", "equipment", "i", "inv", "inventory", "time", "who", "trop", "trophy", "exits",
-          "exa sword", "examine sword", "l", "look", "look in pack", "list", "list helm", "PRAC",
-          "  Look north  "}) {
+    for (const char *const line : {"prac",
+                                   "practice",
+                                   "sc",
+                                   "score",
+                                   "inf",
+                                   "info",
+                                   "info MMXP %l %x %X %t %T",
+                                   "stat",
+                                   "eq",
+                                   "equipment",
+                                   "i",
+                                   "inv",
+                                   "inventory",
+                                   "time",
+                                   "who",
+                                   "trop",
+                                   "trophy",
+                                   "exits",
+                                   "exa sword",
+                                   "examine sword",
+                                   "l",
+                                   "look",
+                                   "look in pack",
+                                   "list",
+                                   "list helm",
+                                   "PRAC",
+                                   "  Look north  "}) {
         Mume mume;
         mume.trade->requestQuiet(QJsonObject{{"id", "k"}, {"text", QString::fromUtf8(line)}},
                                  Mume::context());
@@ -876,10 +942,22 @@ void TestTradeOperations::quietAllowedTest()
 
     // Anything else is refused whole, as `not allowed`, and nothing of it goes to MUME: not
     // an action, not a second command joined to an allowed one, not an empty line.
-    for (const char *const line :
-         {"drop all", "say x", "kill orc", "north", "cast 'armour'", "rent", "buy bread",
-          "prac bash", "prac; drop all", "prac\ndrop all", "look\r\nflee", "", "   ", " drop all",
-          "_help", "practise"}) {
+    for (const char *const line : {"drop all",
+                                   "say x",
+                                   "kill orc",
+                                   "north",
+                                   "cast 'armour'",
+                                   "rent",
+                                   "buy bread",
+                                   "prac bash",
+                                   "prac; drop all",
+                                   "prac\ndrop all",
+                                   "look\r\nflee",
+                                   "",
+                                   "   ",
+                                   " drop all",
+                                   "_help",
+                                   "practise"}) {
         Mume mume;
         mume.trade->requestQuiet(QJsonObject{{"id", "k"}, {"text", QString::fromUtf8(line)}},
                                  Mume::context());
@@ -1360,8 +1438,7 @@ void TestTradeOperations::quietWholeTest()
         mume.prompt();
         mume.lines({"A dark cave"});
         mume.prompt();
-        QCOMPARE(mume.shown,
-                 (QStringList{"o W C Mana:Hot>", "A dark cave\n", "o W C Mana:Hot>"}));
+        QCOMPARE(mume.shown, (QStringList{"o W C Mana:Hot>", "A dark cave\n", "o W C Mana:Hot>"}));
     }
 
     // The player's own `prac` is the player's: shown, its pager shown and left alone.

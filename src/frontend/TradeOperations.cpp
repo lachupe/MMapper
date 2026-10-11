@@ -116,8 +116,7 @@ GmcpMessage makeQuietReply(const QuietReplyState &state)
     obj["paged"] = state.paged;
     obj["complete"] = state.complete;
     const QByteArray json = QJsonDocument{obj}.toJson(QJsonDocument::Compact);
-    return GmcpMessage{GmcpMessageTypeEnum::MMAPPER_INPUT_REPLY,
-                       GmcpJson{QString::fromUtf8(json)}};
+    return GmcpMessage{GmcpMessageTypeEnum::MMAPPER_INPUT_REPLY, GmcpJson{QString::fromUtf8(json)}};
 }
 
 GmcpMessage makeQuietHidden(const QuietReplyState &state)
@@ -808,6 +807,9 @@ TradeOperations::Outcome TradeOperations::judge() const
         }
         break;
     case KindEnum::GUILD_LIST:
+        if (op.practised.has_value() && !op.practised->refused.isEmpty()) {
+            return {OutcomeEnum::REFUSED, QStringLiteral("refused")};
+        }
         if (op.teacher.has_value() || op.skills) {
             return {OutcomeEnum::DONE, {}};
         }
