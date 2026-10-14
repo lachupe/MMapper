@@ -435,7 +435,9 @@ void MumeXmlParser::parse(const TelnetData &data, const bool isGoAhead)
             {
                 const std::vector<ItemBlock> blocks = m_itemTracker.receiveLine(plain);
                 if (m_itemTracker.lastLineClaimed()) {
-                    facts.tags.insert(LineTagEnum::ITEMS);
+                    // The player's own listings are the inventory window's, not the Log's;
+                    // another's (examine, look, peek) is a reply the player asked to read.
+                    tagItemLine(facts, m_itemTracker.lastLineOwner());
                 }
                 publishItemBlocks(blocks);
             }
@@ -500,8 +502,8 @@ void MumeXmlParser::parse(const TelnetData &data, const bool isGoAhead)
         publishItemBlocks(m_itemTracker.receivePrompt());
         publishCharReplies(m_charTracker.receivePrompt());
         m_doorTracker.receivePrompt();
-        if (const auto followers
-            = m_followersTracker.receivePrompt(QDateTime::currentSecsSinceEpoch())) {
+        if (const auto followers = m_followersTracker.receivePrompt(
+                QDateTime::currentSecsSinceEpoch())) {
             m_observer.observeCharFollowers(*followers);
         }
         m_tradeReaders.receivePrompt();
@@ -525,7 +527,8 @@ void MumeXmlParser::parse(const TelnetData &data, const bool isGoAhead)
         if (lookKind == LineKindEnum::TEXT && !lookLine.isEmpty()) {
             const QString elementText = xml.text.trimmed();
             const bool covers = !elementText.isEmpty()
-                                && (elementText.contains(lookLine) || lookLine.contains(elementText));
+                                && (elementText.contains(lookLine)
+                                    || lookLine.contains(elementText));
             switch (toXmlCategory(xml.tag)) {
             case XmlCategoryEnum::ROOM:
                 lookKind = LineKindEnum::ROOM;
@@ -540,7 +543,8 @@ void MumeXmlParser::parse(const TelnetData &data, const bool isGoAhead)
                 lookKind = covers ? LineKindEnum::ASYNC : lookKind;
                 break;
             case XmlCategoryEnum::STATUS:
-                lookKind = covers && xml.tag == XmlTagEnum::WEATHER ? LineKindEnum::ASYNC : lookKind;
+                lookKind = covers && xml.tag == XmlTagEnum::WEATHER ? LineKindEnum::ASYNC
+                                                                    : lookKind;
                 break;
             case XmlCategoryEnum::ENTITY:
             case XmlCategoryEnum::FORMATTING:

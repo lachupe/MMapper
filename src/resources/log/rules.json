@@ -406,6 +406,28 @@
    "source": "the user, 2026-10-11"
   },
   {
+   "id": "d.tag.items.other",
+   "tags": [
+    "items"
+   ],
+   "when": {
+    "who": "other"
+   },
+   "priority": 2,
+   "source": "FIX.189, 2026-10-15"
+  },
+  {
+   "id": "d.tag.items.group",
+   "tags": [
+    "items"
+   ],
+   "when": {
+    "who": "group"
+   },
+   "priority": 2,
+   "source": "FIX.189, 2026-10-15"
+  },
+  {
    "id": "d.ok.1",
    "text": "Ok.",
    "priority": 0,

@@ -127,7 +127,7 @@ struct NODISCARD Tagging final
         if (!goAhead) {
             std::ignore = items.receiveLine(c.plain);
             if (items.lastLineClaimed()) {
-                facts.tags.insert(LineTagEnum::ITEMS);
+                tagItemLine(facts, items.lastLineOwner());
             }
             std::ignore = chars.receiveLine(c.plain);
             if (chars.lastLineKind() == CharLineKindEnum::STAT) {
@@ -683,14 +683,15 @@ void TestLogRules::shippedDefaultsTest()
 
     // Coming and going is not for the Log (the user, 2026-10-11), except a groupmate's own;
     // the player's own flee stays at 4, and a hidden enemy showing itself stays raised.
-    const auto rankAbout = [&rules, &calm](const char *const plain,
-                                           const QStringList &tags,
-                                           const char *const about) {
-        return rules
-            .classify(lineOf(QString::fromUtf8(plain), tags, QString::fromUtf8(about)), calm)
-            .priority;
-    };
-    QCOMPARE(rankAbout("A hungry warg has arrived from the north.", {QStringLiteral("move")}, "other"),
+    const auto rankAbout =
+        [&rules, &calm](const char *const plain, const QStringList &tags, const char *const about) {
+            return rules
+                .classify(lineOf(QString::fromUtf8(plain), tags, QString::fromUtf8(about)), calm)
+                .priority;
+        };
+    QCOMPARE(rankAbout("A hungry warg has arrived from the north.",
+                       {QStringLiteral("move")},
+                       "other"),
              0);
     QCOMPARE(rankAbout("A hungry warg leaves south.", {QStringLiteral("move")}, "other"), 0);
     QCOMPARE(rankAbout("Kili has arrived from the north.", {QStringLiteral("move")}, "group"), 2);
@@ -754,7 +755,7 @@ void TestLogRules::reportedCombatLinesTest()
         line.plain = tagging.records.back().plain;
         line.tags = tagging.records.back().tags;
         line.about = tagging.records.back().about == LineAboutEnum::YOU ? QStringLiteral("you")
-                                                                         : QStringLiteral("other");
+                                                                        : QStringLiteral("other");
         const auto result = rules.classify(line, fighting);
         if (result.priority != expected) {
             wrong << text + QStringLiteral(" | tags: ") + tagging.tagsOfLast().join(u',')
@@ -881,6 +882,83 @@ void TestLogRules::quietHiddenTest()
     t.readers.receiveQuietCommand(QuietCommandEnum::END);
     t.line(QStringLiteral("You have 0 practice sessions left."));
     QCOMPARE(t.records.size(), before + 1);
+}
+
+void TestLogRules::examineEquipmentTest()
+{
+    // FIX.189 (mume3d): `exa melrandir` in the 2026-10-14 capture. Someone else's "is using:"
+    // block is the reply the player asked for and reaches the Log with the condition line, in
+    // order, once; the player's own `equipment` listing stays out (the inventory window has it).
+    QFile file{QStringLiteral(MMAPPER_LOG_RULES_JSON)};
+    QVERIFY(file.open(QIODevice::ReadOnly));
+    const QByteArray defaults = file.readAll();
+
+    const QStringList examined{
+        QStringLiteral("Melrandir is in an excellent condition."),
+        QStringLiteral("Melrandir is using:"),
+        QStringLiteral("<wielded>            an engraved warhammer"),
+        QStringLiteral("<used as shield>     a bejewelled oak staff; it has a soft glowing aura"),
+        QStringLiteral("<worn on head>       a great helm (flawless)"),
+        QStringLiteral("<worn around neck>   a plain scarf (satisfactory)"),
+        QStringLiteral("<worn on belt>       a red ruby; it has a soft glowing aura"),
+    };
+    const QStringList own{
+        QStringLiteral("You are using:"),
+        QStringLiteral("<wielded>            a long sword"),
+        QStringLiteral("<worn on body>       a leather jacket (flawless)"),
+    };
+    const auto logged = [&defaults](const QStringList &lines, const char *const group) {
+        Tagging tagging;
+        for (const QString &text : lines) {
+            tagging.line(text);
+        }
+        tagging.line(QString{});
+        tagging.prompt();
+        std::vector<GmcpMessage> sent;
+        ImportantLog log{[&sent](const GmcpMessage &msg) { sent.push_back(msg); }};
+        log.loadDefaults(defaults);
+        if (group != nullptr) {
+            log.receiveGmcp(gmcp(QStringLiteral(R"(Group.Set [{"id":1,"name":"Ugluk","type":"you"},)"
+                                                R"({"id":2,"name":"%1","type":"player"}])")
+                                     .arg(QString::fromUtf8(group))
+                                     .toUtf8()
+                                     .constData()));
+        }
+        for (const LineFacts &facts : tagging.records) {
+            log.receiveFacts(facts);
+        }
+        log.receivePrompt();
+        std::vector<QJsonObject> out;
+        for (const GmcpMessage &msg : sent) {
+            if (msg.getName().toQString() == QStringLiteral("MMapper.Log.Line")) {
+                out.push_back(payloadOf(msg));
+            }
+        }
+        return out;
+    };
+
+    const auto other = logged(examined, nullptr);
+    QStringList plains;
+    for (const QJsonObject &line : other) {
+        plains << line["plain"].toString();
+    }
+    QCOMPARE(plains, examined);
+    for (size_t i = 1; i < other.size(); ++i) {
+        const QJsonObject &line = other.at(i);
+        QCOMPARE(line["priority"].toInt(), 2);
+        QCOMPARE(line["about"].toString(), QStringLiteral("other"));
+        QCOMPARE(line["rule"].toString(), QStringLiteral("d.tag.items.other"));
+        QVERIFY(line["tags"].toArray().contains(QStringLiteral("items")));
+    }
+
+    // A groupmate's gear: the same, about the group.
+    const auto mate = logged(examined, "Melrandir");
+    QCOMPARE(mate.size(), static_cast<size_t>(examined.size()));
+    QCOMPARE(mate.back()["about"].toString(), QStringLiteral("group"));
+    QCOMPARE(mate.back()["rule"].toString(), QStringLiteral("d.tag.items.group"));
+
+    // The player's own listing: nothing in the Log.
+    QVERIFY(logged(own, nullptr).empty());
 }
 
 QTEST_MAIN(TestLogRules)

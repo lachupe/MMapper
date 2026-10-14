@@ -182,6 +182,16 @@ void tagCombat(LineFacts &facts, const CombatEvent &event)
     addName(facts, event.target);
 }
 
+void tagItemLine(LineFacts &facts, const QString &owner)
+{
+    facts.tags.insert(LineTagEnum::ITEMS);
+    if (owner == QStringLiteral("you")) {
+        facts.about = LineAboutEnum::YOU;
+    } else {
+        addName(facts, owner);
+    }
+}
+
 void tagElements(LineFacts &facts, const std::vector<XmlElement> &elements)
 {
     for (const XmlElement &element : elements) {

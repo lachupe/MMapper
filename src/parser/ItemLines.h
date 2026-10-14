@@ -167,6 +167,7 @@ private:
     /// Whose equipment the reply being read showed, for the peek at their inventory after it.
     QString m_lastOwner;
     bool m_lastClaimed = false;
+    QString m_lastClaimedOwner = QStringLiteral("you");
 
 public:
     /// Notes a command on its way to MUME: only a look into a container matters here.
@@ -180,6 +181,10 @@ public:
     /// Whether the last line receiveLine() read was a listing's: its header, an item, or the
     /// "It is closed." that answers a look into a container.
     NODISCARD bool lastLineClaimed() const { return m_lastClaimed; }
+    /// Whose listing that line was: "you" for the player's own listings and every container,
+    /// otherwise the owner MUME named (empty for a peek that did not name them). Meaningful
+    /// only when lastLineClaimed().
+    NODISCARD const QString &lastLineOwner() const { return m_lastClaimedOwner; }
 
 private:
     NODISCARD std::vector<ItemBlock> close();
