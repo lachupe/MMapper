@@ -135,6 +135,11 @@ NODISCARD std::optional<LineTagEnum> commTagOf(const XmlElement &element);
 /// its actor and target go into the names, "you" into `about`.
 void tagCombat(LineFacts &facts, const CombatEvent &event);
 
+/// The tag of a line the item tracker claimed (`items`), and whose listing it was: the player's
+/// own ("you", every container included) goes into `about`, someone else's name into the names,
+/// so the Log can keep the player's own listings out and show another's examine reply.
+void tagItemLine(LineFacts &facts, const QString &owner);
+
 /// The tags of the elements that closed on a chunk: communication (with the speaker in the
 /// names), movement, magic, achievements, and a COMBAT element the fight reader did not read.
 /// Room and status elements say nothing here: the parser knows a room display by itself.

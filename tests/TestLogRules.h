@@ -36,4 +36,5 @@ private Q_SLOTS:
     static void statBlockTest();
     static void narrateJoinedTest();
     static void quietHiddenTest();
+    static void examineEquipmentTest();
 };
