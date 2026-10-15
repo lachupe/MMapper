@@ -31,6 +31,7 @@ private Q_SLOTS:
     static void commandObservationTest();
     static void queryAndTimeoutTest();
     void examineStacksTest();
+    void ownContainerHeadersTest();
     static void itemEventTest();
     static void refusedTest();
     static void notItemEventTest();

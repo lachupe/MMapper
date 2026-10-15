@@ -99,9 +99,11 @@ const QRegularExpression g_conditionWords{QStringLiteral(R"(^[a-z][a-z ,.-]*$)")
 
 // "Miltar of the Golden Wood is using:", "*Herby the Dwarf* is using:".
 const QRegularExpression g_using{QStringLiteral(R"(^([A-Z*].*) is using:$)")};
-// "backpack (used) :", "pouch (carried) :", "corpse (here) :", "the corpse of *an Elf* (here):".
+// "backpack (used) :", "pouch (carried) :", "corpse (here) :", "the corpse of *an Elf* (here):",
+// "In your sable pouch (worn on belt):" and, for a keyring, "On your keyring with a set of lock
+// picks (worn on wrist):".
 const QRegularExpression g_container{QStringLiteral(
-    R"(^(?:In your )?([a-z*][^()]*?) \((used|carried|in inventory|here|on ground|on the ground|held|wielded|worn(?: [^()]*)?)\) ?:$)")};
+    R"(^(?:(?:In|On) your )?([a-z*][^()]*?) \((used|carried|in inventory|here|on ground|on the ground|held|wielded|worn(?: [^()]*)?)\) ?:$)")};
 const QRegularExpression g_isClosed{QStringLiteral(R"(^(?:The|An?) (.+) is closed\.$)")};
 
 // Replies of one line.
@@ -237,6 +239,36 @@ NODISCARD bool isClosedReply(const QString &text, const QString &word)
 NODISCARD bool isNothing(const QString &text)
 {
     return text == QStringLiteral("Nothing.") || text == QStringLiteral("You don't see anything.");
+}
+
+/// The noun a header of the player's own container names it by: the last container noun before
+/// " with ", so that "sable pouch" is a pouch rather than a sable, and "keyring with a set of
+/// lock picks" a keyring. Empty when no noun is known.
+NODISCARD QString headerKeyword(const QString &name)
+{
+    const QStringList words = name.section(QStringLiteral(" with "), 0, 0)
+                                  .split(QLatin1Char(' '), Qt::SkipEmptyParts);
+    // The shortest tail holding a noun holds the last one; a tail keeps "key ring" whole.
+    for (qsizetype i = words.size() - 1; i >= 0; --i) {
+        const QString noun = containerKeyword(words.mid(i).join(QLatin1Char(' ')));
+        if (!noun.isEmpty()) {
+            return noun;
+        }
+    }
+    return QString{};
+}
+
+/// Whether a look's word names a container by any word of its header, as MUME takes any of an
+/// object's keywords: `examine equipment.sable` is answered "In your sable pouch (worn on belt):".
+NODISCARD bool namesAnyWord(const QString &word, const QString &name)
+{
+    static const QRegularExpression separators{QStringLiteral(R"([\s-]+)")};
+    for (const QString &part : name.toLower().split(separators, Qt::SkipEmptyParts)) {
+        if (part.size() >= 3 && namesContainer(word, part)) {
+            return true;
+        }
+    }
+    return false;
 }
 
 } // namespace
@@ -576,9 +608,9 @@ std::vector<ItemBlock> ItemBlockTracker::receiveLine(const QString &line)
     } else if (const auto header = g_container.match(text); header.hasMatch()) {
         ItemBlock block;
         block.kind = K::CONTAINER;
-        block.keyword = text.startsWith(QStringLiteral("In your "))
-                            ? containerKeyword(header.captured(1))
-                            : header.captured(1);
+        const bool own = text.startsWith(QStringLiteral("In your "))
+                         || text.startsWith(QStringLiteral("On your "));
+        block.keyword = own ? headerKeyword(header.captured(1)) : header.captured(1);
         if (block.keyword.isEmpty()) {
             block.keyword = header.captured(1);
         }
@@ -593,7 +625,9 @@ std::vector<ItemBlock> ItemBlockTracker::receiveLine(const QString &line)
         if (block.where == QStringLiteral("in inventory")) {
             block.where = QStringLiteral("carried");
         }
-        if (m_look.has_value() && namesContainer(m_look->word, block.keyword)) {
+        if (m_look.has_value()
+            && (namesContainer(m_look->word, block.keyword)
+                || namesAnyWord(m_look->word, header.captured(1)))) {
             block.target = m_look->target;
             block.listingMode = m_look->listingMode;
         }
