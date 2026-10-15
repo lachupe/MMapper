@@ -29,6 +29,7 @@
 #include "../roompanel/RoomManager.h"
 #include "AbstractSocket.h"
 #include "MudTelnet.h"
+#include "PromptNewlines.h"
 #include "UserTelnet.h"
 #include "connectionlistener.h"
 #include "mumesocket.h"
@@ -570,9 +571,7 @@ void Proxy::allocParser()
     private:
         Proxy &m_proxy;
         QString m_lastPrompt;
-        bool m_wasCompact = false;
-        bool m_wasPrompt = false;
-        size_t m_newlines = 0;
+        PromptNewlines m_newlines;
 
     public:
         explicit LocalParserOutputs(Proxy &proxy)
@@ -592,7 +591,7 @@ void Proxy::allocParser()
     private:
         void virt_onSendToMud(const QString &s) final
         {
-            m_wasPrompt = false;
+            m_newlines.clearPrompt();
             getMudTelnet().onSendToMud(s);
 
             if (getMudTelnet().getEchoMode()) {
@@ -612,7 +611,7 @@ void Proxy::allocParser()
             switch (source) {
             case SendToUserSourceEnum::NoLongerPrompted:
                 assert(s.isEmpty());
-                m_wasPrompt = false;
+                m_newlines.clearPrompt();
                 return;
             case SendToUserSourceEnum::DuplicatePrompt:
             case SendToUserSourceEnum::SimulatedPrompt:
@@ -625,7 +624,7 @@ void Proxy::allocParser()
                 isTwiddler = s.back() == char_consts::C_BACKSPACE;
                 isPrompt = s.back() != char_consts::C_NEWLINE && !isTwiddler;
                 if (isPrompt) {
-                    m_wasCompact = (m_newlines == 1);
+                    m_newlines.notePrompt();
                 }
                 break;
             case SendToUserSourceEnum::SimulatedOutput:
@@ -637,7 +636,7 @@ void Proxy::allocParser()
                 return;
             }
 
-            if (isPrompt && m_wasPrompt && m_lastPrompt == s) {
+            if (isPrompt && m_newlines.wasPrompt() && m_lastPrompt == s) {
                 return;
             }
 
@@ -645,21 +644,9 @@ void Proxy::allocParser()
             assert(goAhead == (isPrompt || isTwiddler));
             assert(goAhead == !endsInNewline);
 
-            auto startsWithNewline = [](QStringView sv) {
-                if (sv.isEmpty()) {
-                    return false;
-                }
-                if (sv.front() == char_consts::C_CARRIAGE_RETURN) {
-                    sv = sv.mid(1);
-                }
-                return !sv.empty() && sv.front() == char_consts::C_NEWLINE;
-            };
-
-            // The logic for isMissingNewline may be incomplete; expect more bugs here.
-            const bool isMissingNewline = m_wasPrompt ? (!isTwiddler && !startsWithNewline(s))
-                                                      : (isPrompt
-                                                         && (m_wasCompact ? m_newlines == 0
-                                                                          : m_newlines < 2));
+            // The text after a prompt, or a prompt at the end of a line, starts on a line of its
+            // own (PromptNewlines; tests/TestProxy.cpp).
+            const bool isMissingNewline = m_newlines.isMissingNewline(isPrompt, isTwiddler, s);
             if (isMissingNewline) {
                 // add the missing newline.
                 getUserTelnet().onSendToUser(string_consts::S_NEWLINE, false);
@@ -687,24 +674,9 @@ void Proxy::allocParser()
                 break;
             }
 
-            m_wasPrompt = isPrompt || isTwiddler;
-            if (m_wasPrompt) {
+            m_newlines.sent(isPrompt, isTwiddler, s);
+            if (m_newlines.wasPrompt()) {
                 m_lastPrompt = s;
-            } else {
-                mmqt::foreachLine(s, [this](QStringView sv, bool hasNewline) {
-                    if (!hasNewline) {
-                        m_newlines = 0;
-                        return;
-                    }
-                    if (!sv.empty() && sv.back() == char_consts::C_CARRIAGE_RETURN) {
-                        sv.chop(1);
-                    }
-                    if (sv.isEmpty()) {
-                        ++m_newlines;
-                    } else {
-                        m_newlines = 1;
-                    }
-                });
             }
         }
 
