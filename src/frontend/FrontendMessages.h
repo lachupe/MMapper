@@ -422,6 +422,11 @@ NODISCARD GmcpMessage makeCharFollowers(const CharFollowers &followers);
 /// MMapper.Room.Container are not sent again here, except a ride refused. See CharRefused.
 NODISCARD GmcpMessage makeCharRefused(const CharRefused &refused);
 
+/// MMapper.Room.HandRaised -- a player in the room raised a hand to be grouped (MUME's `raise`
+/// social): `name` as the line gives it, `keyword` (the word `group` takes) and `text`. An event:
+/// not replayed. See HandRaised.
+NODISCARD GmcpMessage makeRoomHandRaised(const HandRaised &hand);
+
 /// MMapper.Room.Door -- the doors of the room the character stands in, as MUME told the player
 /// on this visit: `doors`, each {`dir` (one letter; left out when not known), `name` (the
 /// door's keyword; left out when MUME has not shown it), `state` (open, closed, locked, iced,

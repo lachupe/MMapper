@@ -168,6 +168,23 @@ NODISCARD bool isNpcName(const QString &name);
 /// What a follower of this name is, by the name alone; see FollowerKindEnum.
 NODISCARD FollowerKindEnum followerKindOf(const QString &name);
 
+/// A player in the room asking to be grouped: MUME's `raise` social, "Tipp raises his hand."
+/// Published as MMapper.Room.HandRaised, an event. Nothing groups them by itself: mume3d shows a
+/// "group" button beside the figure and the player's click sends `group <keyword>` (FEAT.42).
+struct NODISCARD HandRaised final
+{
+    /// Who, as the line names them, twiddlers taken off: "Tipp", "Misfit the Mountain Troll-".
+    QString name;
+    /// The word `group` takes: the first run of letters of the name ("Tipp", "Misfit").
+    QString keyword;
+    /// MUME's line, colour removed.
+    QString text;
+};
+
+/// The hand `line` raises (colour removed, matched whole), or nothing: no NPC's (a name with an
+/// article) and no enemy's (`*an Orc*`, who cannot be grouped).
+NODISCARD std::optional<HandRaised> parseHandRaised(const QString &line);
+
 struct NODISCARD CharFollower final
 {
     /// See FollowerLine::name.

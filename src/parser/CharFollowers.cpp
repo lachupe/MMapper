@@ -263,6 +263,13 @@ NODISCARD bool ended(const CharFollower &follower)
     return follower.state == FollowerStateEnum::LEFT || follower.state == FollowerStateEnum::DEAD;
 }
 
+// A player asking to be grouped, MUME's `raise` social (the user's powwow pow/group.pow:12,
+// `#action >+group ^$1 raises $2 hand`; storage/logs-survey/contexts.jsonl):
+//   Tipp raises his hand.
+//   Zmej raises his hand.
+//   -Misfit the Mountain Troll- raises his hand.
+const QRegularExpression g_handRaised{
+    QStringLiteral(R"(^(?<w>.+?) raises (?:his|her|its) hand\.$)")};
 } // namespace
 
 std::string_view to_string_view(const FollowerKindEnum kind)
@@ -1030,4 +1037,36 @@ void CharFollowersTracker::reset()
     m_protectListed.clear();
     m_pending.clear();
     m_ridden.clear();
+}
+
+std::optional<HandRaised> parseHandRaised(const QString &raw)
+{
+    QString line = raw.trimmed();
+    line.remove(g_twiddlers);
+    const QRegularExpressionMatch match = g_handRaised.match(line);
+    if (!match.hasMatch()) {
+        return std::nullopt;
+    }
+    const QString name = match.captured(QStringLiteral("w")).trimmed();
+    // The line begins with the name, so an article there is capitalised ("The guard").
+    const QString lowered = name.left(1).toLower() + name.mid(1);
+    if (name.startsWith(u'*') || isNpcName(lowered)) {
+        return std::nullopt;
+    }
+    QString keyword;
+    for (const QChar c : name) {
+        if (c.isLetter()) {
+            keyword.append(c);
+        } else if (!keyword.isEmpty()) {
+            break;
+        }
+    }
+    if (keyword.isEmpty()) {
+        return std::nullopt;
+    }
+    HandRaised hand;
+    hand.name = name;
+    hand.keyword = keyword;
+    hand.text = line;
+    return hand;
 }

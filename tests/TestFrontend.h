@@ -52,6 +52,7 @@ private Q_SLOTS:
     static void charWoundsTest();
     static void charFollowersTest();
     static void charRefusedTest();
+    static void roomHandRaisedTest();
     static void roomDoorTest();
     static void roomLookTest();
     static void mapPositionRidableTest();

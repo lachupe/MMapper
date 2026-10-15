@@ -141,6 +141,8 @@ public:
     Signal2<CharFollowers> sig2_charFollowers;
     /// A command MUME refused, in a sentence no other reader takes. An event. See CharRefused.
     Signal2<CharRefused> sig2_charRefused;
+    /// A player in the room raised a hand to be grouped. An event. See HandRaised.
+    Signal2<HandRaised> sig2_handRaised;
     /// The doors of the room the character stands in, whole, after a change. See RoomDoorTracker.
     Signal2<RoomDoors> sig2_roomDoors;
     /// MUME's answer to a look at a side, paired with the look, whichever client sent it. An
@@ -261,6 +263,7 @@ public:
         sig2_charFollowers.invoke(followers);
     }
     void observeCharRefused(const CharRefused &refused) { sig2_charRefused.invoke(refused); }
+    void observeHandRaised(const HandRaised &hand) { sig2_handRaised.invoke(hand); }
     void observeRoomDoors(const RoomDoors &doors) { sig2_roomDoors.invoke(doors); }
     void observeExitLook(const ExitLook &look) { sig2_exitLook.invoke(look); }
     void observeCharLevel(const CharLevel &level) { sig2_charLevel.invoke(level); }

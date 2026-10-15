@@ -355,6 +355,9 @@ FrontendServer::FrontendServer(GameObserver &observer,
     m_observer.sig2_charRefused.connect(m_lifetime, [this](const CharRefused &refused) {
         publish(frontend_messages::makeCharRefused(refused));
     });
+    m_observer.sig2_handRaised.connect(m_lifetime, [this](const HandRaised &hand) {
+        publish(frontend_messages::makeRoomHandRaised(hand));
+    });
 
     // State: the doors of the current room as MUME told the player, whole at each change.
     m_observer.sig2_roomDoors.connect(m_lifetime, [this](const RoomDoors &doors) {

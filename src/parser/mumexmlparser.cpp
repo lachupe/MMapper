@@ -428,6 +428,10 @@ void MumeXmlParser::parse(const TelnetData &data, const bool isGoAhead)
                     m_observer.observeCharRefused(*refused);
                     facts.tags.insert(LineTagEnum::REFUSED);
                 }
+                // Somebody asking to be grouped (MMapper.Room.HandRaised).
+                if (const auto hand = parseHandRaised(plain)) {
+                    m_observer.observeHandRaised(*hand);
+                }
             }
             // What the player wears and carries: listings that name themselves in their first
             // line and end at a blank line or the prompt, and the one-line replies to wear,

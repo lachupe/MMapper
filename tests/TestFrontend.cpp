@@ -2571,6 +2571,32 @@ void TestFrontend::mumeMessageCoverageTest()
              QStringLiteral("Room.UpdateExits"));
 }
 
+void TestFrontend::roomHandRaisedTest()
+{
+    QCOMPARE(GmcpMessage::fromRawBytes(QByteArray{"MMapper.Room.HandRaised"}).getType(),
+             GmcpMessageTypeEnum::MMAPPER_ROOM_HAND_RAISED);
+    // MUME's `raise` social (storage/logs-survey; the user's powwow pow/group.pow:12).
+    QCOMPARE(frontend_messages::makeRoomHandRaised(
+                 *parseHandRaised(QStringLiteral("Tipp raises his hand.")))
+                 .toRawBytes(),
+             QByteArray(R"(MMapper.Room.HandRaised {"keyword":"Tipp","name":"Tipp",)"
+                        R"("text":"Tipp raises his hand."})"));
+    // A name with titles and twiddlers: the keyword is its first word.
+    const auto misfit = parseHandRaised(
+        QStringLiteral("-Misfit the Mountain Troll- raises his hand."));
+    QVERIFY(misfit.has_value());
+    QCOMPARE(misfit->keyword, QStringLiteral("Misfit"));
+    QCOMPARE(parseHandRaised(QStringLiteral("Ellara raises her hand."))->keyword,
+             QStringLiteral("Ellara"));
+    // Not a player who can be grouped, or not the line.
+    QVERIFY(!parseHandRaised(QStringLiteral("The guard raises his hand.")).has_value());
+    QVERIFY(!parseHandRaised(QStringLiteral("*an Orc* raises his hand.")).has_value());
+    QVERIFY(!parseHandRaised(QStringLiteral("You raise your hand.")).has_value());
+    QVERIFY(!parseHandRaised(QStringLiteral("Tipp raises his hand and waves.")).has_value());
+    QVERIFY(!parseHandRaised(QStringLiteral("Kili raises his voice and calls great pain upon you."))
+                 .has_value());
+}
+
 void TestFrontend::charRefusedTest()
 {
     QCOMPARE(GmcpMessage::fromRawBytes(QByteArray{"MMapper.Char.Refused"}).getType(),

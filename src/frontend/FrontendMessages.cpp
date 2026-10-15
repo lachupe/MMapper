@@ -1030,6 +1030,15 @@ GmcpMessage makeCharRefused(const CharRefused &refused)
     return GmcpMessage{GmcpMessageTypeEnum::MMAPPER_CHAR_REFUSED, toGmcpJson(obj)};
 }
 
+GmcpMessage makeRoomHandRaised(const HandRaised &hand)
+{
+    QJsonObject obj;
+    obj["name"] = hand.name;
+    obj["keyword"] = hand.keyword;
+    obj["text"] = hand.text;
+    return GmcpMessage{GmcpMessageTypeEnum::MMAPPER_ROOM_HAND_RAISED, toGmcpJson(obj)};
+}
+
 GmcpMessage makeRoomDoor(const RoomDoors &doors)
 {
     QJsonArray rows;
