@@ -60,6 +60,8 @@ NODISCARD bool carriesChangedFields(const GmcpMessageTypeEnum type)
     // `score` states only the pools, `info` the whole sheet: a one-line score must not wipe
     // out the sheet a late frontend would otherwise be told.
     case GmcpMessageTypeEnum::MMAPPER_CHAR_SCORE:
+    // Each reply states one set of abilities: the others stay as they were.
+    case GmcpMessageTypeEnum::MMAPPER_CHAR_ABILITIES:
         return true;
     default:
         return false;

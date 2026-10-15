@@ -24,6 +24,8 @@ private Q_SLOTS:
     static void scoreLineTest();
     static void infoSheetTest();
     static void infoNoArmourTest();
+    static void infoWrappedTest();
+    static void statWrappedTest();
     static void infoMissingArmourTest();
     static void infoOldWordingTest();
     static void infoHighestLevelTest();
@@ -34,6 +36,7 @@ private Q_SLOTS:
     static void burdenTest();
     static void numberWordsTest();
     static void levelLineTest();
+    static void abilitiesLineTest();
     static void wimpyTest();
     static void notCharTest();
     static void resetTest();

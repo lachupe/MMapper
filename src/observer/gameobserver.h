@@ -8,17 +8,17 @@
 #include "../map/PromptFlags.h"
 #include "../parser/AccountLines.h"
 #include "../parser/CharFollowers.h"
-#include "../parser/CharRefused.h"
-#include "../parser/ExitLooks.h"
-#include "../parser/LineTags.h"
-#include "../parser/RoomDoors.h"
 #include "../parser/CharLines.h"
+#include "../parser/CharRefused.h"
 #include "../parser/CombatLines.h"
 #include "../parser/ContainerLines.h"
+#include "../parser/ExitLooks.h"
 #include "../parser/GameStateLines.h"
 #include "../parser/ItemLines.h"
+#include "../parser/LineTags.h"
 #include "../parser/LoginLines.h"
 #include "../parser/RoomContents.h"
+#include "../parser/RoomDoors.h"
 #include "../parser/SendToUserSourceEnum.h"
 #include "../parser/TradeLines.h"
 #include "../parser/WeatherLines.h"
@@ -44,7 +44,9 @@ enum class NODISCARD TerminalHiddenEnum : uint8_t {
     /// A room's description, left out for the frontends that asked (MMapper.Terminal.Filter).
     ROOM_DESCRIPTION,
     /// The reply to CHAR_LEVEL_REQUEST, the MMXP line, which no terminal is sent.
-    CHAR_LEVEL
+    CHAR_LEVEL,
+    /// The reply to a CHAR_ABILITIES_*_REQUEST, the MMAB line, which no terminal is sent.
+    CHAR_ABILITIES
 };
 
 struct NODISCARD TerminalHidden final
@@ -150,6 +152,9 @@ public:
     Signal2<ExitLook> sig2_exitLook;
     /// The reply to CHAR_LEVEL_REQUEST, which is kept out of the terminal. See parseCharLevelLine.
     Signal2<CharLevel> sig2_charLevel;
+    /// The reply to a CHAR_ABILITIES_*_REQUEST, which is kept out of the terminal. See
+    /// parseCharAbilitiesLine.
+    Signal2<CharAbilitySet> sig2_charAbilities;
     /// MUME's account menu, its `list` of characters and its one-line answers. See
     /// AccountLinesTracker.
     Signal2<AccountMenu> sig2_accountMenu;
@@ -267,6 +272,7 @@ public:
     void observeRoomDoors(const RoomDoors &doors) { sig2_roomDoors.invoke(doors); }
     void observeExitLook(const ExitLook &look) { sig2_exitLook.invoke(look); }
     void observeCharLevel(const CharLevel &level) { sig2_charLevel.invoke(level); }
+    void observeCharAbilities(const CharAbilitySet &set) { sig2_charAbilities.invoke(set); }
     void observeAccountMenu(const AccountMenu &menu) { sig2_accountMenu.invoke(menu); }
     void observeAccountChars(const AccountChars &chars) { sig2_accountChars.invoke(chars); }
     void observeAccountReply(const AccountReply &reply) { sig2_accountReply.invoke(reply); }

@@ -232,6 +232,8 @@ std::string_view toProtocolString(const TerminalHiddenEnum kind)
         return "room.description";
     case TerminalHiddenEnum::CHAR_LEVEL:
         return "char.level";
+    case TerminalHiddenEnum::CHAR_ABILITIES:
+        return "char.abilities";
     }
     return "unknown";
 }
@@ -916,6 +918,19 @@ GmcpMessage makeCharLevel(const CharLevel &level)
     return GmcpMessage{GmcpMessageTypeEnum::MMAPPER_CHAR_LEVEL, toGmcpJson(obj)};
 }
 
+GmcpMessage makeCharAbilities(const CharAbilitySet &set)
+{
+    static const std::array<const char *, 7>
+        abilityKeys{"str", "int", "wis", "dex", "con", "wil", "per"};
+    QJsonObject abilities;
+    for (size_t i = 0; i < abilityKeys.size(); ++i) {
+        putNumber(abilities, abilityKeys[i], set.abilities[i]);
+    }
+    QJsonObject obj;
+    obj[set.set] = abilities;
+    return GmcpMessage{GmcpMessageTypeEnum::MMAPPER_CHAR_ABILITIES, toGmcpJson(obj)};
+}
+
 GmcpMessage makeCharLanguages(const CharLanguages &languages)
 {
     QJsonArray rows;
@@ -939,7 +954,8 @@ GmcpMessage makeCharLanguages(const CharLanguages &languages)
 GmcpMessage makeCharImproved(const CharImproved &improved)
 {
     QJsonObject obj;
-    obj["skill"] = improved.skill.isEmpty() ? QJsonValue{QJsonValue::Null} : QJsonValue{improved.skill};
+    obj["skill"] = improved.skill.isEmpty() ? QJsonValue{QJsonValue::Null}
+                                            : QJsonValue{improved.skill};
     obj["text"] = improved.text;
     return GmcpMessage{GmcpMessageTypeEnum::MMAPPER_CHAR_IMPROVED, toGmcpJson(obj)};
 }

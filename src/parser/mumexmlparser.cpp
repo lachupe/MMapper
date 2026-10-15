@@ -233,14 +233,22 @@ void MumeXmlParser::parse(const TelnetData &data, const bool isGoAhead)
         m_xmlTracker.receiveText(m_tempCharacters);
         m_tempCharacters.clear();
     }
-    // The reply to CHAR_LEVEL_REQUEST, which a frontend asks for on its own account: published
-    // as MMapper.Char.Level and kept out of the terminal, as if MUME had not sent the line, so
-    // nothing below reads it either.
-    if (!isGoAhead && m_lineToUser.contains(QStringLiteral("MMXP "))) {
+    // The reply to CHAR_LEVEL_REQUEST or a CHAR_ABILITIES_*_REQUEST, which a frontend asks for
+    // on its own account: published as MMapper.Char.Level or MMapper.Char.Abilities and kept
+    // out of the terminal, as if MUME had not sent the line, so nothing below reads it either.
+    if (!isGoAhead
+        && (m_lineToUser.contains(QStringLiteral("MMXP "))
+            || m_lineToUser.contains(QStringLiteral("MMAB ")))) {
         QString plain = m_lineToUser;
         ParserUtils::removeAnsiMarksInPlace(plain);
-        if (const auto level = parseCharLevelLine(plain)) {
-            m_observer.observeCharLevel(*level);
+        const auto level = parseCharLevelLine(plain);
+        const auto abilities = level.has_value() ? std::nullopt : parseCharAbilitiesLine(plain);
+        if (level.has_value() || abilities.has_value()) {
+            if (level.has_value()) {
+                m_observer.observeCharLevel(*level);
+            } else {
+                m_observer.observeCharAbilities(*abilities);
+            }
             // Asked by a quiet command, it is a line of that reply like any other, though no
             // reader below is given it: without it the reply would seem never to have come.
             const bool quiet = m_tradeReaders.captureQuietLine(plain);
@@ -252,7 +260,8 @@ void MumeXmlParser::parse(const TelnetData &data, const bool isGoAhead)
             // For a frontend that says what was hidden; a quiet command says so itself.
             if (!quiet) {
                 TerminalHidden hidden;
-                hidden.kind = TerminalHiddenEnum::CHAR_LEVEL;
+                hidden.kind = level.has_value() ? TerminalHiddenEnum::CHAR_LEVEL
+                                                : TerminalHiddenEnum::CHAR_ABILITIES;
                 hidden.text = plain.trimmed();
                 m_observer.observeTerminalHidden(hidden);
             }

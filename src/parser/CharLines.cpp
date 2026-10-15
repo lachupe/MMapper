@@ -5,6 +5,7 @@
 
 #include "../global/parserutils.h"
 
+#include <algorithm>
 #include <array>
 #include <utility>
 
@@ -445,6 +446,44 @@ std::optional<CharScore> parseScoreLine(const QString &line)
     return score;
 }
 
+namespace {
+/// Reads "Str:19 Int:18 ... Per:12" wherever it stands in `text`.
+void readAbilities(const QString &text, std::array<std::optional<int64_t>, 7> &abilities)
+{
+    static const std::array<const char *, 7> names{"Str", "Int", "Wis", "Dex", "Con", "Wil", "Per"};
+    auto it = g_ability.globalMatch(text);
+    while (it.hasNext()) {
+        const QRegularExpressionMatch m = it.next();
+        for (size_t i = 0; i < names.size(); ++i) {
+            if (m.captured(1) == QLatin1String(names[i])) {
+                abilities[i] = toNumber(m.captured(2));
+            }
+        }
+    }
+}
+} // namespace
+
+std::optional<CharAbilitySet> parseCharAbilitiesLine(const QString &line)
+{
+    static const QRegularExpression head{
+        QStringLiteral(R"(^MMAB (unmodified|unaffected|reference) (.*)$)")};
+    const QString text = cleaned(line);
+    const QRegularExpressionMatch m = head.match(text);
+    if (!m.hasMatch()) {
+        return std::nullopt;
+    }
+    CharAbilitySet result;
+    result.set = m.captured(1);
+    readAbilities(m.captured(2), result.abilities);
+    if (std::none_of(result.abilities.begin(), result.abilities.end(), [](const auto &a) {
+            return a.has_value();
+        })) {
+        return std::nullopt;
+    }
+    result.text = text;
+    return result;
+}
+
 std::optional<CharLevel> parseCharLevelLine(const QString &line)
 {
     const QString text = cleaned(line);
@@ -509,13 +548,69 @@ void CharReplies::append(CharReplies &&other)
 
 CharReplies CharLinesTracker::receiveLine(const QString &line)
 {
+    QString text = cleaned(line);
+    // A line that begins a sentence of its own is no continuation: "You are a citizen of:
+    // GoblinTown" (an old sheet) is followed by its burden line, not by the rest of it.
+    static const QRegularExpression beginsSentence{QStringLiteral(
+        R"(^(?:You|Your|This|Perception:|Offensive Bonus:|OB:|Needed:|Gold:|Lauren:|Affected by:|MMXP |MMAB |Wimpy set to:|- ))")};
+    if (!m_wrapped.isEmpty()) {
+        QString held = std::exchange(m_wrapped, QString{});
+        if (text.isEmpty() || beginsSentence.match(text).hasMatch()) {
+            // The cut sentence was whole after all, or the reply ended on it: read it as it
+            // is, then this line.
+            CharReplies out = receiveText(held);
+            out.append(receiveLine(line));
+            return out;
+        }
+        text = held + QLatin1Char(' ') + text;
+    }
+    if (isWrapped(text)) {
+        m_wrapped = text;
+        m_lastKind = m_sheet.has_value() && !g_statFirst.match(text).hasMatch()
+                         ? CharLineKindEnum::INFO
+                         : CharLineKindEnum::STAT;
+        return CharReplies{};
+    }
+    return receiveText(text);
+}
+
+// MUME wraps a long sentence of a reply over two lines, more often as the numbers grow:
+// "You have scored 76,308,853 experience points and you have 459,609 travel" / "points.", or
+// a welcome list ending "Rivendell, and the Shire." on a line of its own (the user's paste,
+// 2026-10-16). Every sentence of `stat` and of the sheet before its effects list ends in a
+// full stop, a colon or a closing bracket, so a line that does not is the first part of one.
+bool CharLinesTracker::isWrapped(const QString &text) const
+{
+    // A run of lines that never ends a sentence is not a wrapped sentence.
+    static constexpr qsizetype MAX_WRAPPED_LENGTH = 400;
+    // `stat`'s lists and its clients' "Exp: ... from last score" are not sentences.
+    const bool inReply = (m_sheet.has_value() && !m_sheetInEffects)
+                         || (m_stat.has_value() && m_statSection == StatSectionEnum::HEAD)
+                         || g_statFirst.match(text).hasMatch();
+    if (!inReply || m_languages.has_value() || text.isEmpty() || text.size() > MAX_WRAPPED_LENGTH
+        || text.startsWith(QStringLiteral("- ")) || text.startsWith(QStringLiteral("Exp: "))
+        || parseCharLevelLine(text).has_value() || parseCharAbilitiesLine(text).has_value()
+        || parseWimpyLine(text).has_value()) {
+        return false;
+    }
+    static const QRegularExpression sentenceEnd{QStringLiteral(R"([.!?)]$)")};
+    if (sentenceEnd.match(text).hasMatch()) {
+        return false;
+    }
+    // A heading ends in its only colon ("Affected by:", "... temporary effects:"); `stat`'s
+    // "... Wimpy: 120. Mood:" is cut before its value.
+    return !(text.endsWith(QLatin1Char(':')) && text.count(QLatin1Char(':')) == 1);
+}
+
+CharReplies CharLinesTracker::receiveText(const QString &text)
+{
     CharReplies out;
     m_lastKind = CharLineKindEnum::NONE;
-    const QString text = cleaned(line);
 
     // MumeXmlParser takes the level line out before it gets here; should one arrive anyway it
     // belongs to no reply, and does not count against an open sheet.
-    if (text.startsWith(QStringLiteral("MMXP ")) && parseCharLevelLine(text).has_value()) {
+    if ((text.startsWith(QStringLiteral("MMXP ")) && parseCharLevelLine(text).has_value())
+        || (text.startsWith(QStringLiteral("MMAB ")) && parseCharAbilitiesLine(text).has_value())) {
         return out;
     }
 
@@ -742,17 +837,7 @@ bool CharLinesTracker::readSheetLine(const QString &text, CharReplies &out)
         return true;
     }
     if (g_abilities.match(text).hasMatch()) {
-        static const std::array<const char *, 7>
-            names{"Str", "Int", "Wis", "Dex", "Con", "Wil", "Per"};
-        auto it = g_ability.globalMatch(text);
-        while (it.hasNext()) {
-            const QRegularExpressionMatch m = it.next();
-            for (size_t i = 0; i < names.size(); ++i) {
-                if (m.captured(1) == QLatin1String(names[i])) {
-                    sheet.abilities[i] = toNumber(m.captured(2));
-                }
-            }
-        }
+        readAbilities(text, sheet.abilities);
         m_sheetHasFigure = true;
         return true;
     }
@@ -910,7 +995,11 @@ CharReplies CharLinesTracker::closeSheet()
 
 CharReplies CharLinesTracker::receivePrompt()
 {
-    CharReplies out = closeStat();
+    CharReplies out;
+    if (!m_wrapped.isEmpty()) {
+        out.append(receiveText(std::exchange(m_wrapped, QString{})));
+    }
+    out.append(closeStat());
     if (m_languages.has_value()) {
         out.languages.push_back(std::move(*m_languages));
         m_languages.reset();
@@ -942,4 +1031,5 @@ void CharLinesTracker::reset()
     m_sheetAfterPerception = false;
     m_sheetHasFigure = false;
     m_sheetStrangers = 0;
+    m_wrapped.clear();
 }

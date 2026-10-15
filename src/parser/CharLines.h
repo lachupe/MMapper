@@ -193,6 +193,31 @@ struct NODISCARD CharLevel final
 /// not one. The level must be a number; the other four are left unset when they are not.
 NODISCARD std::optional<CharLevel> parseCharLevelLine(const QString &line);
 
+/// The three sets of abilities `info`'s format keys give besides the current ones
+/// (https://mume.org/help/abilities): %b the unmodified abilities (before age, training and
+/// temporary effects), %G the unaffected ones (age and training, but no spell or wound) and %B
+/// the reference ones (as the character was created or last fully rerolled). MUME prints each as
+/// one line, "Str:18 Int:14 Wis:11 Dex:15 Con:18 Wil:11 Per:10" (the user's paste, 2026-10-16).
+/// A frontend sends a request as it is; MMapper publishes the reply, "MMAB unmodified Str:18
+/// ...", as MMapper.Char.Abilities and keeps it out of the terminal, as it does the MMXP line.
+inline constexpr const char *const CHAR_ABILITIES_UNMODIFIED_REQUEST = "info MMAB unmodified %b";
+inline constexpr const char *const CHAR_ABILITIES_UNAFFECTED_REQUEST = "info MMAB unaffected %G";
+inline constexpr const char *const CHAR_ABILITIES_REFERENCE_REQUEST = "info MMAB reference %B";
+
+/// A reply to one of the CHAR_ABILITIES_*_REQUESTs.
+struct NODISCARD CharAbilitySet final
+{
+    /// "unmodified", "unaffected" or "reference".
+    QString set;
+    /// Str, Int, Wis, Dex, Con, Wil, Per, as CharScore::abilities.
+    std::array<std::optional<int64_t>, 7> abilities{};
+    QString text;
+};
+
+/// The reply to a CHAR_ABILITIES_*_REQUEST, or nullopt when `line` is not one: the marker, a
+/// known set and at least one ability.
+NODISCARD std::optional<CharAbilitySet> parseCharAbilitiesLine(const QString &line);
+
 /// The hit points below which the character flees, as MUME last stated them: in its reply to
 /// `change wimpy N` ("Wimpy set to: 120", the powwow logs' wording; 0 turns it off), in `stat`
 /// ("Wimpy: 120.") or in `info` ("You will flee if your hit points go below 315.", 0 for "You
@@ -252,8 +277,8 @@ struct NODISCARD CharReplies final
 
     NODISCARD bool empty() const
     {
-        return stats.empty() && scores.empty() && burdens.empty() && wimpies.empty() && improved.empty()
-               && languages.empty();
+        return stats.empty() && scores.empty() && burdens.empty() && wimpies.empty()
+               && improved.empty() && languages.empty();
     }
     void append(CharReplies &&other);
 };
@@ -290,6 +315,9 @@ private:
     bool m_sheetAfterPerception = false;
     bool m_sheetHasFigure = false;
     int m_sheetStrangers = 0;
+    /// The first part of a sentence MUME wrapped over two lines inside an open reply, held
+    /// until its next line completes it (mume3d FIX.219).
+    QString m_wrapped;
 
 public:
     /// Reads one line of MUME's output, colour removed.
@@ -303,6 +331,10 @@ public:
     NODISCARD CharLineKindEnum lastLineKind() const { return m_lastKind; }
 
 private:
+    /// receiveLine() for a whole sentence, its wrapped lines joined.
+    NODISCARD CharReplies receiveText(const QString &text);
+    /// True when the line is the first part of a sentence wrapped inside an open reply.
+    NODISCARD bool isWrapped(const QString &text) const;
     NODISCARD CharReplies closeStat();
     NODISCARD CharReplies closeSheet();
     NODISCARD bool acceptStat(const QString &text);

@@ -407,6 +407,70 @@ void TestCharLines::infoSheetTest()
     QVERIFY(s.text.endsWith("- tiredness"));
 }
 
+void TestCharLines::infoWrappedTest()
+{
+    // mume3d FIX.219: MUME wraps long sentences of the sheet over two lines (the user's paste,
+    // 2026-10-16); each is read as one.
+    CharLinesTracker tracker;
+    CharReplies r;
+    const auto in = [&](const char *line) {
+        r.append(tracker.receiveLine(line));
+        return tracker.lastLineKind();
+    };
+    in("You are a male Dwarf.");
+    in("This ranks you as Ennor VI (level 58).");
+    in("Perception: vision 40, hearing 6, smell -21. Alertness: normal.");
+    QCOMPARE(in("You are welcome in Bree, Fornost, the Grey Havens, the Blue Mountains,"),
+             CharLineKindEnum::INFO);
+    QCOMPARE(in("Rivendell, and the Shire."), CharLineKindEnum::INFO);
+    in("Offensive Bonus: 93%, Dodging Bonus: 53%, Parrying Bonus: 93%.");
+    QCOMPARE(in("You have scored 76,308,853 experience points and you have 459,609 travel"),
+             CharLineKindEnum::INFO);
+    QCOMPARE(in("points."), CharLineKindEnum::INFO);
+    in("You need 1,813,903 exp. points and 10,000 travel points to reach the next");
+    in("level.");
+    in("You are speaking Westron.");
+    r.append(tracker.receivePrompt());
+    QCOMPARE(r.scores.size(), size_t{1});
+    const CharScore &s = r.scores.front();
+    QCOMPARE(s.welcome,
+             list({"Bree",
+                   "Fornost",
+                   "the Grey Havens",
+                   "the Blue Mountains",
+                   "Rivendell",
+                   "the Shire"}));
+    QCOMPARE(s.xp, std::optional<int64_t>{76308853});
+    QCOMPARE(s.tp, std::optional<int64_t>{459609});
+    QCOMPARE(s.neededXp, std::optional<int64_t>{1813903});
+    QCOMPARE(s.neededTp, std::optional<int64_t>{10000});
+    QCOMPARE(s.language, QString("Westron"));
+
+    // A sheet cut off on a wrapped sentence still reads it at the prompt.
+    CharLinesTracker cut;
+    CharReplies c = cut.receiveLine("You are a male Dwarf.");
+    c.append(cut.receiveLine("Offensive Bonus: 93%, Dodging Bonus: 53%, Parrying Bonus: 93%."));
+    c.append(cut.receiveLine(
+        "You have scored 76,308,853 experience points and you have 459,609 travel"));
+    c.append(cut.receivePrompt());
+    QCOMPARE(c.scores.size(), size_t{1});
+    QCOMPARE(c.scores.front().ob, std::optional<int64_t>{93});
+}
+
+void TestCharLines::statWrappedTest()
+{
+    // The first line of `stat`, wrapped before its mood.
+    const CharReplies r = feed({"OB: 60%, DB: 62%, PB: 60%, Armour: 66%. Wimpy: 120. Mood:",
+                                "wimpy.",
+                                "Needed: 1,136,776 xp, 0 tp. Gold: 519. Alert: normal.",
+                                "",
+                                PROMPT});
+    QCOMPARE(r.stats.size(), size_t{1});
+    QCOMPARE(r.stats.front().ob, std::optional<int64_t>{60});
+    QCOMPARE(r.stats.front().mood, QString("wimpy"));
+    QCOMPARE(r.stats.front().neededXp, std::optional<int64_t>{1136776});
+}
+
 void TestCharLines::infoNoArmourTest()
 {
     // powwow/logs/stolb.balrog.txt: no armour worn, copper only, no swim line, no effects list,
@@ -994,6 +1058,35 @@ void TestCharLines::notCharTest()
     QVERIFY(tracker.receiveLine("You will try to climb even under unsafe conditions.").empty());
     QCOMPARE(tracker.lastLineKind(), CharLineKindEnum::INFO);
     QVERIFY(!tracker.receivePrompt().empty());
+}
+
+void TestCharLines::abilitiesLineTest()
+{
+    // The replies MUME gave to `info %b`, `info %B` and `info %G` (the user's paste,
+    // 2026-10-16), behind MMapper's marker and set.
+    const std::optional<CharAbilitySet> unmodified = parseCharAbilitiesLine(
+        "MMAB unmodified Str:18 Int:14 Wis:11 Dex:15 Con:18 Wil:11 Per:10");
+    QVERIFY(unmodified.has_value());
+    QCOMPARE(unmodified->set, QString("unmodified"));
+    QCOMPARE(unmodified->abilities[0], std::optional<int64_t>{18});
+    QCOMPARE(unmodified->abilities[3], std::optional<int64_t>{15});
+    QCOMPARE(unmodified->abilities[6], std::optional<int64_t>{10});
+    const std::optional<CharAbilitySet> unaffected = parseCharAbilitiesLine(
+        "MMAB unaffected Str:16 Int:14 Wis:15 Dex:10 Con:16 Wil:11 Per:6");
+    QVERIFY(unaffected.has_value());
+    QCOMPARE(unaffected->abilities[2], std::optional<int64_t>{15});
+    QCOMPARE(unaffected->abilities[6], std::optional<int64_t>{6});
+    QVERIFY(parseCharAbilitiesLine("MMAB reference Str:18 Int:14 Wis:11 Dex:15 Con:18 Wil:11 Per:10")
+                .has_value());
+    QVERIFY(!parseCharAbilitiesLine("MMAB current Str:18").has_value());
+    QVERIFY(!parseCharAbilitiesLine("MMAB reference").has_value());
+    QVERIFY(!parseCharAbilitiesLine("Bob says 'MMAB reference Str:18'").has_value());
+
+    // Should one reach the tracker, it opens no sheet.
+    CharLinesTracker tracker;
+    const CharReplies r = tracker.receiveLine("MMAB unmodified Str:18 Int:14");
+    QVERIFY(r.scores.empty());
+    QCOMPARE(tracker.lastLineKind(), CharLineKindEnum::NONE);
 }
 
 void TestCharLines::levelLineTest()

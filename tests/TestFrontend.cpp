@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (C) 2026 The MMapper Authors
 
-#include "../src/frontend/ImportantLog.h"
 #include "TestFrontend.h"
 
 #include "../src/frontend/FrontendLoginMemory.h"
@@ -10,6 +9,7 @@
 #include "../src/frontend/FrontendRenderPause.h"
 #include "../src/frontend/FrontendReplayCache.h"
 #include "../src/frontend/FrontendSubscriptions.h"
+#include "../src/frontend/ImportantLog.h"
 #include "../src/global/HideQDebug.h"
 #include "../src/global/progresscounter.h"
 #include "../src/map/Change.h"
@@ -27,10 +27,10 @@
 #include "../src/parser/CharRefused.h"
 #include "../src/parser/CombatLines.h"
 #include "../src/parser/ContainerLines.h"
-#include "../src/parser/LoginLines.h"
 #include "../src/parser/ExitLooks.h"
 #include "../src/parser/GameStateLines.h"
 #include "../src/parser/ItemLines.h"
+#include "../src/parser/LoginLines.h"
 #include "../src/parser/RoomContents.h"
 #include "../src/parser/RoomDoors.h"
 #include "../src/parser/WeatherLines.h"
@@ -341,9 +341,9 @@ void TestFrontend::terminalFilterTest()
     QCOMPARE(textsFor(brief, on).size(), qsizetype{3});
 
     // The closing tag after the line's end, or before it: either way the line goes whole.
-    const std::vector<TerminalOutput> closed = chunksOf(QStringLiteral(
-        "<room><name>A Cave\n</name><description>Dark and damp.</description>\n"
-        "A bat hangs here.\n</room>"));
+    const std::vector<TerminalOutput> closed = chunksOf(
+        QStringLiteral("<room><name>A Cave\n</name><description>Dark and damp.</description>\n"
+                       "A bat hangs here.\n</room>"));
     QCOMPARE(textsFor(closed, on),
              (QStringList{QStringLiteral("A Cave\n"), QStringLiteral("A bat hangs here.\n")}));
     // And with MUME's line end as "\r\n", or colour left around the description.
@@ -525,13 +525,8 @@ void TestFrontend::sessionStateTest()
     asked.kind = LoginPromptKindEnum::PASSWORD;
     asked.text = QStringLiteral("Account pass phrase:");
     asked.serial = 3;
-    const QJsonObject first = payloadOf(frontend_messages::makeSessionState(true,
-                                                                            arda,
-                                                                            false,
-                                                                            true,
-                                                                            GameStateEnum::MENU,
-                                                                            QStringLiteral("unknown"),
-                                                                            asked))["login"]
+    const QJsonObject first = payloadOf(frontend_messages::makeSessionState(
+        true, arda, false, true, GameStateEnum::MENU, QStringLiteral("unknown"), asked))["login"]
                                   .toObject();
     QCOMPARE(first["kind"].toString(), QStringLiteral("password"));
     QCOMPARE(first["text"].toString(), QStringLiteral("Account pass phrase:"));
@@ -540,13 +535,8 @@ void TestFrontend::sessionStateTest()
     asked.refusedReason = QStringLiteral("wrong-password");
     asked.refusedText = QStringLiteral("Wrong password.");
     asked.serial = 4;
-    const QJsonObject again = payloadOf(frontend_messages::makeSessionState(true,
-                                                                            arda,
-                                                                            false,
-                                                                            true,
-                                                                            GameStateEnum::MENU,
-                                                                            QStringLiteral("unknown"),
-                                                                            asked))["login"]
+    const QJsonObject again = payloadOf(frontend_messages::makeSessionState(
+        true, arda, false, true, GameStateEnum::MENU, QStringLiteral("unknown"), asked))["login"]
                                   .toObject();
     QCOMPARE(again["serial"].toInt(), 4);
     QCOMPARE(again["refused"].toObject()["reason"].toString(), QStringLiteral("wrong-password"));
@@ -1574,9 +1564,21 @@ void TestFrontend::charSheetTest()
     QCOMPARE(h["war"].toString(), QStringLiteral("You are not known for any acts of war."));
     QCOMPARE(h["renown"].toString(), QStringLiteral("You are not known for any acts of war."));
     // The sheet above had no head, and a one-line `score` has none: neither sends its fields.
-    for (const char *const key : {"sex", "race", "age", "played", "session", "name", "title",
-                                  "level", "height", "weight", "perception", "alertness",
-                                  "alignment", "welcome", "war"}) {
+    for (const char *const key : {"sex",
+                                  "race",
+                                  "age",
+                                  "played",
+                                  "session",
+                                  "name",
+                                  "title",
+                                  "level",
+                                  "height",
+                                  "weight",
+                                  "perception",
+                                  "alertness",
+                                  "alignment",
+                                  "welcome",
+                                  "war"}) {
         QVERIFY2(!sc.contains(QString::fromUtf8(key)), key);
         QVERIFY2(!payloadOf(brief).contains(QString::fromUtf8(key)), key);
     }
@@ -1620,6 +1622,32 @@ void TestFrontend::charLevelTest()
     QVERIFY(!replay.contains("neededXp"));
     cache.clear();
     QVERIFY(replayed(cache, GmcpMessageTypeEnum::MMAPPER_CHAR_LEVEL).isNull());
+}
+
+void TestFrontend::charAbilitiesTest()
+{
+    const auto unmodified = parseCharAbilitiesLine(
+        QStringLiteral("MMAB unmodified Str:18 Int:14 Wis:11 Dex:15 Con:18 Wil:11 Per:10"));
+    QVERIFY(unmodified.has_value());
+    const GmcpMessage msg = frontend_messages::makeCharAbilities(*unmodified);
+    QCOMPARE(msg.getType(), GmcpMessageTypeEnum::MMAPPER_CHAR_ABILITIES);
+    QCOMPARE(msg.toRawBytes(),
+             QByteArray(R"(MMapper.Char.Abilities {"unmodified":{"con":18,"dex":15,"int":14,)"
+                        R"("per":10,"str":18,"wil":11,"wis":11}})"));
+
+    FrontendSubscriptions subs;
+    QVERIFY(subs.applySupports(parse(R"(Core.Supports.Set [ "MMapper.Char 1" ])")));
+    QVERIFY(subs.wants(msg));
+
+    // Each set is kept as last sent; another set leaves it alone.
+    const auto reference = parseCharAbilitiesLine(
+        QStringLiteral("MMAB reference Str:17 Int:14 Wis:11 Dex:15 Con:18 Wil:11 Per:10"));
+    FrontendReplayCache cache;
+    cache.remember(msg);
+    cache.remember(frontend_messages::makeCharAbilities(*reference));
+    const QJsonObject replay = replayed(cache, GmcpMessageTypeEnum::MMAPPER_CHAR_ABILITIES).object();
+    QCOMPARE(replay["unmodified"].toObject()["str"].toInteger(), 18);
+    QCOMPARE(replay["reference"].toObject()["str"].toInteger(), 17);
 }
 
 void TestFrontend::charWimpyTest()
@@ -2085,13 +2113,13 @@ void TestFrontend::charFollowersTest()
                         R"("result":"failed","who":"followers"}})"));
     // Replay: a frontend that attaches late is told the followers, not the answer to an
     // order that is over.
-    const QByteArray twoBound
-        = QByteArray(R"(MMapper.Char.Followers {"followers":[)"
-                     R"({"here":true,"kind":"charmie","label":"one","lastRefused":"assist",)"
-                     R"("name":"a mother eagle","since":1000,"state":"refusing"},)"
-                     R"({"here":true,"kind":"mount","label":"my","lastOrder":"assist",)"
-                     R"("name":"a trained horse","since":1005,"state":"following"}],)"
-                     R"("leader":{"you":true},"players":[]})");
+    const QByteArray twoBound = QByteArray(
+        R"(MMapper.Char.Followers {"followers":[)"
+        R"({"here":true,"kind":"charmie","label":"one","lastRefused":"assist",)"
+        R"("name":"a mother eagle","since":1000,"state":"refusing"},)"
+        R"({"here":true,"kind":"mount","label":"my","lastOrder":"assist",)"
+        R"("name":"a trained horse","since":1005,"state":"following"}],)"
+        R"("leader":{"you":true},"players":[]})");
     QCOMPARE(replay(), twoBound);
 
     // The other results, with the followers unchanged.
@@ -2164,10 +2192,10 @@ void TestFrontend::charFollowersTest()
              QByteArray(R"(MMapper.Char.Followers {"followers":[],"following":"Grayelf",)"
                         R"("leader":{"name":"Grayelf","you":false},"players":["Budach"]})"));
     QVERIFY(line("You will now try to protect Kazadoe (K).", 1082));
-    const QByteArray led
-        = QByteArray(R"(MMapper.Char.Followers {"followers":[],"following":"Grayelf",)"
-                     R"("leader":{"name":"Grayelf","you":false},"players":["Budach"],)"
-                     R"("protect":{"protecting":["Kazadoe"]}})");
+    const QByteArray led = QByteArray(
+        R"(MMapper.Char.Followers {"followers":[],"following":"Grayelf",)"
+        R"("leader":{"name":"Grayelf","you":false},"players":["Budach"],)"
+        R"("protect":{"protecting":["Kazadoe"]}})");
     QCOMPARE(sent.last(), led);
     QCOMPARE(replay(), led);
     QVERIFY(line("You stop following Grayelf.", 1083));
@@ -2617,8 +2645,9 @@ void TestFrontend::charRefusedTest()
     QCOMPARE(frontend_messages::makeCharRefused(
                  *parseRefusedLine(QStringLiteral("A pack horse doesn't want to follow you!")))
                  .toRawBytes(),
-             QByteArray(R"(MMapper.Char.Refused {"action":"lead","reason":"unwilling",)"
-                        R"("target":"A pack horse","text":"A pack horse doesn't want to follow you!"})"));
+             QByteArray(
+                 R"(MMapper.Char.Refused {"action":"lead","reason":"unwilling",)"
+                 R"("target":"A pack horse","text":"A pack horse doesn't want to follow you!"})"));
     // A ride refused, with the side the parser takes from the oldest move still unanswered:
     // log-2005.08.31-14.00.43.txt:1305.
     CharRefused ride = *parseRefusedLine(QStringLiteral("Oops! You cannot go there riding!"));
@@ -2727,10 +2756,11 @@ void TestFrontend::roomDoorTest()
 
     // The Backroom of the Unqalome crypt (log-2005.11.02-01.27.58.txt:23462-23494), with the
     // Room.Info MUME sends today (help gmcp_room).
-    QVERIFY(publish(tracker.receiveRoomInfo(
-        parseRoomInfoDoors(gmcp(R"(Room.Info {"id":5988992,"name":"Backroom","exits":)"
-                                R"({"w":{"id":12925987,"name":"door"}}})")),
-        1000)));
+    QVERIFY(
+        publish(tracker.receiveRoomInfo(parseRoomInfoDoors(gmcp(
+                                            R"(Room.Info {"id":5988992,"name":"Backroom","exits":)"
+                                            R"({"w":{"id":12925987,"name":"door"}}})")),
+                                        1000)));
     QCOMPARE(sent.last(),
              QByteArray(R"(MMapper.Room.Door {"doors":[)"
                         R"({"dir":"w","name":"door","since":1000,"state":"open"}],)"
@@ -2740,19 +2770,21 @@ void TestFrontend::roomDoorTest()
              QByteArray(R"(MMapper.Room.Door {"doors":[)"
                         R"({"dir":"w","name":"door","since":1010,"state":"iced"}],)"
                         R"("room":5988992})"));
-    QVERIFY(!publish(tracker.receiveUpdateExits(
-        parseExitsObject(gmcp(R"(Room.UpdateExits {"w":{"id":12925987,"name":"door",)"
-                              R"("flags":["closed"]}})")),
-        1010)));
+    QVERIFY(!publish(
+        tracker.receiveUpdateExits(parseExitsObject(
+                                       gmcp(R"(Room.UpdateExits {"w":{"id":12925987,"name":"door",)"
+                                            R"("flags":["closed"]}})")),
+                                   1010)));
     command("open exit w");
     QVERIFY(!line("The ice layer is too thick and prevents you from reaching it.", 1011));
     command("cast normal 'burning hands' door");
     QVERIFY(!line("You aim your spell at the ice layer.", 1015));
     QVERIFY(!line("Some of the ice melts down.", 1015));
     QVERIFY(line("The ice layer is completely molten!", 1020));
-    const QByteArray molten = QByteArray(R"(MMapper.Room.Door {"doors":[)"
-                                         R"({"dir":"w","name":"door","since":1020,"state":"molten"}],)"
-                                         R"("room":5988992})");
+    const QByteArray molten = QByteArray(
+        R"(MMapper.Room.Door {"doors":[)"
+        R"({"dir":"w","name":"door","since":1020,"state":"molten"}],)"
+        R"("room":5988992})");
     QCOMPARE(sent.last(), molten);
     // State: a frontend that connects now is told the doors as they are.
     QCOMPARE(replay(), molten);
@@ -2765,10 +2797,11 @@ void TestFrontend::roomDoorTest()
                         R"("room":5988992})"));
 
     // A door known by a line alone has no side, and one known by its side alone no name.
-    QVERIFY(publish(tracker.receiveRoomInfo(
-        parseRoomInfoDoors(gmcp(R"(Room.Info {"id":12925987,"exits":{"e":{"id":5988992,)"
-                                R"("flags":["closed"]}}})")),
-        1030)));
+    QVERIFY(publish(
+        tracker.receiveRoomInfo(parseRoomInfoDoors(
+                                    gmcp(R"(Room.Info {"id":12925987,"exits":{"e":{"id":5988992,)"
+                                         R"("flags":["closed"]}}})")),
+                                1030)));
     QVERIFY(line("The trapdoor gave away under the pressure.", 1031));
     QCOMPARE(sent.last(),
              QByteArray(R"(MMapper.Room.Door {"doors":[)"
@@ -2779,8 +2812,9 @@ void TestFrontend::roomDoorTest()
     QVERIFY(!line("Stolb opens the chest.", 1032));
 
     // A room without a door: one message that says so, which is also what is replayed.
-    QVERIFY(publish(tracker.receiveRoomInfo(
-        parseRoomInfoDoors(gmcp(R"(Room.Info {"id":77,"exits":{"n":{"id":78}}})")), 1040)));
+    QVERIFY(publish(tracker.receiveRoomInfo(parseRoomInfoDoors(gmcp(
+                                                R"(Room.Info {"id":77,"exits":{"n":{"id":78}}})")),
+                                            1040)));
     QCOMPARE(sent.last(), QByteArray(R"(MMapper.Room.Door {"doors":[],"room":77})"));
     QCOMPARE(replay(), sent.last());
 
@@ -2832,7 +2866,8 @@ void TestFrontend::mapPositionRidableTest()
     const QJsonObject obj = payloadOf(msg);
     QCOMPARE(obj["ridable"], QJsonValue{true});
     const QJsonObject exits = obj["exits"].toObject();
-    QCOMPARE(exits.keys(), (QStringList{QStringLiteral("d"), QStringLiteral("e"), QStringLiteral("n")}));
+    QCOMPARE(exits.keys(),
+             (QStringList{QStringLiteral("d"), QStringLiteral("e"), QStringLiteral("n")}));
     QCOMPARE(exits["n"].toObject()["ridable"], QJsonValue{true});
     QCOMPARE(exits["n"].toObject()["externalId"].toInteger(), 2);
     QCOMPARE(exits["n"].toObject()["serverId"].toInteger(), 222);

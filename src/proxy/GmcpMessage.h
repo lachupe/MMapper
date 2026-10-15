@@ -71,15 +71,9 @@ class ParseEvent;
       MMapperCharContainer, \
       "mmapper.char.container", \
       "MMapper.Char.Container") \
-    X(MMAPPER_ACCOUNT_CHARS, \
-      MMapperAccountChars, \
-      "mmapper.account.chars", \
-      "MMapper.Account.Chars") \
+    X(MMAPPER_ACCOUNT_CHARS, MMapperAccountChars, "mmapper.account.chars", "MMapper.Account.Chars") \
     X(MMAPPER_ACCOUNT_MENU, MMapperAccountMenu, "mmapper.account.menu", "MMapper.Account.Menu") \
-    X(MMAPPER_ACCOUNT_REPLY, \
-      MMapperAccountReply, \
-      "mmapper.account.reply", \
-      "MMapper.Account.Reply") \
+    X(MMAPPER_ACCOUNT_REPLY, MMapperAccountReply, "mmapper.account.reply", "MMapper.Account.Reply") \
     X(MMAPPER_CHAR_EQUIPMENT, \
       MMapperCharEquipment, \
       "mmapper.char.equipment", \
@@ -97,6 +91,10 @@ class ParseEvent;
       "mmapper.char.followers", \
       "MMapper.Char.Followers") \
     X(MMAPPER_CHAR_LEVEL, MMapperCharLevel, "mmapper.char.level", "MMapper.Char.Level") \
+    X(MMAPPER_CHAR_ABILITIES, \
+      MMapperCharAbilities, \
+      "mmapper.char.abilities", \
+      "MMapper.Char.Abilities") \
     X(MMAPPER_CHAR_REFUSED, MMapperCharRefused, "mmapper.char.refused", "MMapper.Char.Refused") \
     X(MMAPPER_CHAR_SCORE, MMapperCharScore, "mmapper.char.score", "MMapper.Char.Score") \
     X(MMAPPER_CHAR_SKILLS, MMapperCharSkills, "mmapper.char.skills", "MMapper.Char.Skills") \
@@ -104,7 +102,10 @@ class ParseEvent;
     X(MMAPPER_CHAR_TROPHIES, MMapperCharTrophies, "mmapper.char.trophies", "MMapper.Char.Trophies") \
     X(MMAPPER_CHAR_WIMPY, MMapperCharWimpy, "mmapper.char.wimpy", "MMapper.Char.Wimpy") \
     X(MMAPPER_CHAR_IMPROVED, MMapperCharImproved, "mmapper.char.improved", "MMapper.Char.Improved") \
-    X(MMAPPER_CHAR_LANGUAGES, MMapperCharLanguages, "mmapper.char.languages", "MMapper.Char.Languages") \
+    X(MMAPPER_CHAR_LANGUAGES, \
+      MMapperCharLanguages, \
+      "mmapper.char.languages", \
+      "MMapper.Char.Languages") \
     X(MMAPPER_COMBAT_EVENT, MMapperCombatEvent, "mmapper.combat.event", "MMapper.Combat.Event") \
     X(MMAPPER_GUILD_PRACTISED, \
       MMapperGuildPractised, \
@@ -186,7 +187,7 @@ enum class NODISCARD GmcpMessageTypeEnum {
 #define X_COUNT(...) +1
 static constexpr const size_t NUM_GMCP_MESSAGES = XFOREACH_GMCP_MESSAGE_TYPE(X_COUNT);
 #undef X_COUNT
-static_assert(NUM_GMCP_MESSAGES == 97);
+static_assert(NUM_GMCP_MESSAGES == 98);
 DEFINE_ENUM_COUNT(GmcpMessageTypeEnum, NUM_GMCP_MESSAGES)
 
 namespace tags {

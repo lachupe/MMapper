@@ -379,6 +379,12 @@ FrontendServer::FrontendServer(GameObserver &observer,
         m_replayCache.remember(msg);
         publish(msg);
     });
+    // State: each set of abilities as the last reply to its CHAR_ABILITIES_*_REQUEST gave it.
+    m_observer.sig2_charAbilities.connect(m_lifetime, [this](const CharAbilitySet &set) {
+        const GmcpMessage msg = frontend_messages::makeCharAbilities(set);
+        m_replayCache.remember(msg);
+        publish(msg);
+    });
 
     // MUME's replies at shops, guilds and inns, and to `trop`: events, except the general practice
     // table, which is the character's own skills and is replayed as last sent.
@@ -668,18 +674,19 @@ void FrontendServer::releaseSession()
 
 GmcpMessage FrontendServer::sessionStateFor(const Client &client) const
 {
-    return frontend_messages::makeSessionState(m_upstreamConnected,
-                                               m_mapIdentity.get(),
-                                               m_echo,
-                                               m_driver != nullptr && m_driver == client.socket,
-                                               m_observer.getGameState(),
-                                               m_trade.viewerState(),
-                                               m_loginPrompt,
-                                               rememberedAccountName(getConfig().account.accountName,
-                                                                     getConfig().account.accountPassword,
-                                                                     getConfig().account.rememberLogin,
-                                                                     m_loginMemory.keychainAvailable()),
-                                               m_loginMemory.unavailableReason());
+    return frontend_messages::makeSessionState(
+        m_upstreamConnected,
+        m_mapIdentity.get(),
+        m_echo,
+        m_driver != nullptr && m_driver == client.socket,
+        m_observer.getGameState(),
+        m_trade.viewerState(),
+        m_loginPrompt,
+        rememberedAccountName(getConfig().account.accountName,
+                              getConfig().account.accountPassword,
+                              getConfig().account.rememberLogin,
+                              m_loginMemory.keychainAvailable()),
+        m_loginMemory.unavailableReason());
 }
 
 void FrontendServer::handleInput(Client &client, const GmcpMessage &msg)

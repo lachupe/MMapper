@@ -10,16 +10,16 @@
 #include "../parser/AccountLines.h"
 #include "../parser/CharAffects.h"
 #include "../parser/CharFollowers.h"
-#include "../parser/CharRefused.h"
-#include "../parser/ExitLooks.h"
-#include "../parser/RoomDoors.h"
 #include "../parser/CharLines.h"
+#include "../parser/CharRefused.h"
 #include "../parser/CombatLines.h"
 #include "../parser/ContainerLines.h"
+#include "../parser/ExitLooks.h"
 #include "../parser/GameStateLines.h"
 #include "../parser/ItemLines.h"
 #include "../parser/LoginLines.h"
 #include "../parser/RoomContents.h"
+#include "../parser/RoomDoors.h"
 #include "../parser/SendToUserSourceEnum.h"
 #include "../parser/WeatherLines.h"
 #include "../parser/XmlElement.h"
@@ -352,6 +352,13 @@ NODISCARD GmcpMessage makeCharBurden(const CharBurden &burden);
 /// are met), and `text` the line as MUME sent it. A figure MUME did not print as a number is
 /// left out. The line is not shown in the terminal. State: replayed as last sent.
 NODISCARD GmcpMessage makeCharLevel(const CharLevel &level);
+
+/// MMapper.Char.Abilities -- the reply to a CHAR_ABILITIES_*_REQUEST (`info MMAB unmodified
+/// %b`, `... unaffected %G`, `... reference %B`), which a frontend sends itself: one key, the
+/// set, holding `str`, `int`, `wis`, `dex`, `con`, `wil` and `per`, e.g.
+/// {"unmodified":{"str":18,...}}. The line is not shown in the terminal. State: each set as
+/// last sent, merged.
+NODISCARD GmcpMessage makeCharAbilities(const CharAbilitySet &set);
 
 /// MMapper.Char.Wimpy -- the hit points below which the character flees, as MUME last stated
 /// them: `{"wimpy": 120}`, 0 for none. From the reply to `change wimpy` ("Wimpy set to: 120"),
