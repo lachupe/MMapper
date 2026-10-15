@@ -737,8 +737,8 @@ void TestCharLines::languagesTest()
     QVERIFY(l.rows[2].speaking);
     QVERIFY(r.scores.empty() && r.stats.empty());
     // Closed by the prompt as well, with no blank line.
-    const CharReplies cut = feed({"You have the following knowledge in these languages:",
-                                  "   60   Westron", PROMPT});
+    const CharReplies cut = feed(
+        {"You have the following knowledge in these languages:", "   60   Westron", PROMPT});
     QCOMPARE(cut.languages.size(), size_t{1});
     QCOMPARE(cut.languages.front().rows.size(), size_t{1});
 }
@@ -976,9 +976,24 @@ void TestCharLines::notCharTest()
                  .has_value());
     // A lone swim line is published, but claims nothing about the effects.
     QVERIFY(tracker.receiveLine("You will swim if necessary.").empty());
+    QCOMPARE(tracker.lastLineKind(), CharLineKindEnum::NONE);
     const CharReplies swim = tracker.receivePrompt();
     QCOMPARE(swim.scores.size(), size_t{1});
     QVERIFY(!swim.scores.front().effectsKnown);
+    // The reply to `climb` is the sheet's climb line alone (mume3d's live capture
+    // all-2026-10-14-230826.log 23:19:57): published, but not tagged `info`, so the Log keeps it
+    // like "You won't climb anymore." (mume3d FIX.143). Inside a sheet the same line is `info`'s.
+    QVERIFY(tracker.receiveLine("You will try to climb even under unsafe conditions.").empty());
+    QCOMPARE(tracker.lastLineKind(), CharLineKindEnum::NONE);
+    const CharReplies climb = tracker.receivePrompt();
+    QCOMPARE(climb.scores.size(), size_t{1});
+    QCOMPARE(climb.scores.front().climb,
+             QString("You will try to climb even under unsafe conditions."));
+    QVERIFY(tracker.receiveLine("You are speaking Westron.").empty());
+    QCOMPARE(tracker.lastLineKind(), CharLineKindEnum::INFO);
+    QVERIFY(tracker.receiveLine("You will try to climb even under unsafe conditions.").empty());
+    QCOMPARE(tracker.lastLineKind(), CharLineKindEnum::INFO);
+    QVERIFY(!tracker.receivePrompt().empty());
 }
 
 void TestCharLines::levelLineTest()
