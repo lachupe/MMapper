@@ -178,8 +178,7 @@ const std::array
                     QRegularExpression{QStringLiteral(R"(^You have reached the highest level\.)")}};
 
 // What those lines state. "You are a male Black Numenorean."
-const QRegularExpression g_sexRace{
-    QStringLiteral(R"(^You are an? (male|female|neuter) (.+)\.$)")};
+const QRegularExpression g_sexRace{QStringLiteral(R"(^You are an? (male|female|neuter) (.+)\.$)")};
 // "You are 19 years and 6 months old.", "You are 55 years, 11 months and 29 days old."
 const QRegularExpression g_age{QStringLiteral(R"(^You are ([\d,]+) years?\b)")};
 const QRegularExpression g_agePart{QStringLiteral(R"(\b([\d,]+) (month|day)s?\b)")};
@@ -195,8 +194,8 @@ const QRegularExpression g_heightWeight{
     QStringLiteral(R"(^You are ([a-z]+ feet\b[a-z -]*?) and weigh ([a-z -]+)\.$)")};
 // "Perception: vision 40, hearing -31, smell -60. Alertness: normal."; an old wording is
 // "Perception: vision 0 hearing -24 smelling -24."
-const QRegularExpression g_perception{QStringLiteral(
-    R"(^Perception: vision (-?\d+),? hearing (-?\d+),? smell(?:ing)? (-?\d+)\.)")};
+const QRegularExpression g_perception{
+    QStringLiteral(R"(^Perception: vision (-?\d+),? hearing (-?\d+),? smell(?:ing)? (-?\d+)\.)")};
 const QRegularExpression g_alertness{QStringLiteral(R"(\bAlertness: ([^.]+)\.)")};
 // "You are welcome in Bree, Fornost, the Grey Havens, Rivendell, and the Blue Mountains."
 const QRegularExpression g_welcome{QStringLiteral(R"(^You are welcome in (.+)\.$)")};
@@ -206,12 +205,12 @@ const QRegularExpression g_welcomeSeparator{QStringLiteral(R"(,? and |, )")};
 // person, always glad to help your friends." and the logs' two extremes (with "on Arda", "weigh
 // on it !" and "Morgoth !" in old ones). Any other wording is taken by its place, straight
 // after the perception line.
-const std::array
-    g_alignments{QRegularExpression{QStringLiteral(R"(^You are an? [A-Za-z' -]+ person[,.!])")},
-                 QRegularExpression{QStringLiteral(
-                     R"(^You are totally corrupted by the Evilness of Morgoth ?!$)")},
-                 QRegularExpression{QStringLiteral(
-                     R"(^You must have been sent (?:to|on) Arda to free it from the sorrows that weigh (?:up)?on it ?[.!]$)")}};
+const std::array g_alignments{
+    QRegularExpression{QStringLiteral(R"(^You are an? [A-Za-z' -]+ person[,.!])")},
+    QRegularExpression{
+        QStringLiteral(R"(^You are totally corrupted by the Evilness of Morgoth ?!$)")},
+    QRegularExpression{QStringLiteral(
+        R"(^You must have been sent (?:to|on) Arda to free it from the sorrows that weigh (?:up)?on it ?[.!]$)")}};
 // The renown line of a character without war points; `war` is this sentence only.
 const QRegularExpression g_war{QStringLiteral(R"(^You are not known for any acts of war\.$)")};
 
@@ -245,8 +244,7 @@ const QRegularExpression g_renownWp{QStringLiteral(R"(\s*\((-?[\d,]+) wps?\))")}
 
 // CHAR_LEVEL_REQUEST's reply: the marker and five figures, which MUME prints with thousand
 // separators when they are on ("34,567") and, at the highest level, perhaps not as numbers.
-const QRegularExpression g_levelLine{
-    QStringLiteral(R"(^MMXP (\d[\d,]*) (\S+) (\S+) (\S+) (\S+)$)")};
+const QRegularExpression g_levelLine{QStringLiteral(R"(^MMXP (\d[\d,]*) (\S+) (\S+) (\S+) (\S+)$)")};
 
 // -- wimpy ---------------------------------------------------------------------------------
 
@@ -641,7 +639,14 @@ CharReplies CharLinesTracker::receiveLine(const QString &line)
     m_sheetHasFigure = false;
     m_sheetStrangers = 0;
     if (readSheetLine(text, out)) {
-        m_lastKind = CharLineKindEnum::INFO;
+        // A swim or climb sentence that opens the sheet is the reply to `swim` or `climb`, not
+        // a line of `info`: `climb` answers "You will try to climb even under unsafe
+        // conditions.", the sheet's own words (mume3d's live capture all-2026-10-14-230826.log
+        // 23:19:57). It is still published, but left untagged so that the Log keeps it as it
+        // keeps "You won't climb anymore." (mume3d FIX.143); a sheet's own line comes after its
+        // language line and is read above.
+        const bool toggleReply = g_swim.match(text).hasMatch() || g_climb.match(text).hasMatch();
+        m_lastKind = toggleReply ? CharLineKindEnum::NONE : CharLineKindEnum::INFO;
         m_sheetLines.append(text);
     } else {
         m_sheet.reset();
