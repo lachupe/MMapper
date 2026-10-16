@@ -72,10 +72,11 @@ constexpr std::array<const char *, 19> NUMBERS{"two",
 const QRegularExpression g_twiddlers{QStringLiteral(R"(^[\\|/\-\x08]+(?=[A-Z*]))")};
 
 // "chest (here) : " heads the listing of a container in the room, "backpack (used) :" one the
-// player wears and "pouch (carried) :" one they carry. The word is the container's first
-// keyword, not the one typed: "exami chest" is answered "stonechest (here) :".
-const QRegularExpression g_header{
-    QStringLiteral(R"(^(?:In your )?([^()]+?) \((here|used|carried|worn(?: [^()]*)?)\) ?:$)")};
+// player wears and "pouch (carried) :" one they carry; "In your sable pouch (worn on belt):" and
+// "On your keyring with a set of lock picks (worn on wrist):" are the long forms. The word is the
+// container's first keyword, not the one typed: "exami chest" is answered "stonechest (here) :".
+const QRegularExpression g_header{QStringLiteral(
+    R"(^(?:(?:In|On) your )?([^()]+?) \((here|used|carried|worn(?: [^()]*)?)\) ?:$)")};
 const QRegularExpression g_contains{QStringLiteral(R"(^.+ contains nothing\.$)")};
 const QRegularExpression g_isClosed{QStringLiteral(R"(^(?:The|An?) (.+) is closed\.$)")};
 const QRegularExpression g_nothingIn{QStringLiteral(R"(^You can't find anything in the .+\.$)")};

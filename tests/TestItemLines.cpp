@@ -664,6 +664,69 @@ void TestItemLines::notItemEventTest()
     }
 }
 
+void TestItemLines::ownContainerHeadersTest()
+{
+    // A keyring answers "On your", not "In your" (the user's examine, mume3d FIX.220, 2026-10-16):
+    // its listing was not read, and its one line was taken for the look's failure.
+    ItemBlockTracker keyring;
+    keyring.receiveCommand(QStringLiteral("examine equipment.keyring"));
+    auto blocks = feed(keyring,
+                       {QStringLiteral("On your keyring with a set of lock picks (worn on wrist):"),
+                        QStringLiteral("a strange set of lock picks")});
+    QCOMPARE(blocks.size(), size_t{1});
+    QVERIFY(blocks.front().kind == ItemBlockKindEnum::CONTAINER);
+    QCOMPARE(blocks.front().keyword, QStringLiteral("keyring"));
+    QCOMPARE(blocks.front().where, QStringLiteral("used"));
+    QCOMPARE(blocks.front().target, QStringLiteral("equipment.keyring"));
+    QCOMPARE(blocks.front().items.size(), size_t{1});
+    QCOMPARE(blocks.front().items.front().name, QStringLiteral("a strange set of lock picks"));
+    ItemBlockTracker bare;
+    bare.receiveCommand(QStringLiteral("examine keyring"));
+    blocks = feed(bare,
+                  {QStringLiteral("On your keyring with a set of lock picks (worn on wrist):"),
+                   QStringLiteral("a strange set of lock picks")});
+    QCOMPARE(blocks.front().target, QStringLiteral("keyring"));
+    ItemCommandTracker commands;
+    std::ignore = commands.receiveCommand(QStringLiteral("examine keyring"));
+    commands.receiveBlock(blocks.front());
+    QCOMPARE(commands.finish(true).front().status, QStringLiteral("observed"));
+
+    // A sable pouch is a pouch: its header was read as a "sable", so a look into equipment.pouch
+    // was not given its listing (mume3d FIX.221).
+    const QStringList pouch{QStringLiteral("In your sable pouch (worn on belt):"),
+                            QStringLiteral("a golden topaz ring"),
+                            QStringLiteral("an ancient ruby ring"),
+                            QStringLiteral("a tiger's eye"),
+                            QStringLiteral("an amethyst"),
+                            QStringLiteral("a golden garnet ring"),
+                            QStringLiteral("an unfinished band of gold"),
+                            QStringLiteral("a flask of miruvor"),
+                            QStringLiteral("a stone"),
+                            QStringLiteral("a golden emerald ring"),
+                            QStringLiteral("a ticket for a mountain mule"),
+                            QStringLiteral("a ticket for a mountain mule"),
+                            QStringLiteral("an amethyst"),
+                            QStringLiteral("an amethyst")};
+    for (const auto &target : {QStringLiteral("equipment.pouch"),
+                               QStringLiteral("equipment.sable"),
+                               QStringLiteral("pouch")}) {
+        ItemBlockTracker tracker;
+        tracker.receiveCommand(QStringLiteral("examine ") + target);
+        blocks = feed(tracker, pouch);
+        QCOMPARE(blocks.size(), size_t{1});
+        QCOMPARE(blocks.front().keyword, QStringLiteral("pouch"));
+        QCOMPARE(blocks.front().where, QStringLiteral("used"));
+        QCOMPARE(blocks.front().target, target);
+        QCOMPARE(blocks.front().listingMode, QStringLiteral("separate"));
+        QCOMPARE(blocks.front().items.size(), size_t{13});
+    }
+    // A look at something else is not given the pouch's listing.
+    ItemBlockTracker other;
+    other.receiveCommand(QStringLiteral("examine equipment.backpack"));
+    blocks = feed(other, pouch);
+    QVERIFY(blocks.front().target.isEmpty());
+}
+
 QTEST_MAIN(TestItemLines)
 
 void TestItemLines::largeContainerTest()
