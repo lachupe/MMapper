@@ -117,7 +117,8 @@ void TestRoomContents::keywordTest()
     QVERIFY(containerKeyword(QStringLiteral("A large torch lies here among the dust.")).isEmpty());
     // mume3d's live test of 2026-10-03: a container's contents on a line of their own.
     QVERIFY(containerKeyword(QStringLiteral("In the rack is a cudgel.")).isEmpty());
-    QCOMPARE(containerKeyword(QStringLiteral("A weapons rack stands against the wall.")), QStringLiteral("rack"));
+    QCOMPARE(containerKeyword(QStringLiteral("A weapons rack stands against the wall.")),
+             QStringLiteral("rack"));
     QVERIFY(
         containerKeyword(
             QStringLiteral(
@@ -138,6 +139,119 @@ void TestRoomContents::namesContainerTest()
     QVERIFY(!namesContainer(QStringLiteral("corpse"), QStringLiteral("chest")));
     QVERIFY(!namesContainer(QStringLiteral("door")));
     QVERIFY(!namesContainer(QStringLiteral("exit")));
+}
+
+void TestRoomContents::objectKeywordTest()
+{
+    // The <object> texts of mume3d's live logs of 2026-10-03 and 2026-10-11.
+    QCOMPARE(objectKeyword(QStringLiteral("street-lamp")), QStringLiteral("street-lamp"));
+    QCOMPARE(objectKeyword(QStringLiteral("torch")), QStringLiteral("torch"));
+    QCOMPARE(objectKeyword(QStringLiteral("weapons rack")), QStringLiteral("rack"));
+    QCOMPARE(objectKeyword(QStringLiteral("bulletin board")), QStringLiteral("board"));
+    QCOMPARE(objectKeyword(QStringLiteral("white fountain")), QStringLiteral("fountain"));
+    QCOMPARE(objectKeyword(QStringLiteral("corpse of a rooster")), QStringLiteral("corpse"));
+    QCOMPARE(objectKeyword(QStringLiteral("water of a small stream")), QStringLiteral("water"));
+    // Articles, measures and what describes rather than names.
+    QCOMPARE(objectKeyword(QStringLiteral("A large stone chest")), QStringLiteral("chest"));
+    QCOMPARE(objectKeyword(QStringLiteral("a pair of leather boots")), QStringLiteral("boots"));
+    QCOMPARE(objectKeyword(QStringLiteral("a keyring with several keys")),
+             QStringLiteral("keyring"));
+    QVERIFY(objectKeyword(QString{}).isEmpty());
+}
+
+void TestRoomContents::objectNamesTest()
+{
+    // Fornost as mume3d's live log of 2026-10-11 shows it, with the <object> elements MUME put
+    // in the lines, in their order: a linkless player's weapon among them.
+    RoomContentsTracker tracker;
+    tracker.receiveChars(GmcpMessage::fromRawBytes(QByteArray{
+        R"(Room.Chars.Set [{"id":7,"name":"Cainmir","desc":"Cainmir the Dúnadan, wielding a backsword, is standing here."}])"}));
+    std::vector<XmlElement> marked;
+    for (const char *const name : {"torch",
+                                   "backsword",
+                                   "street-lamp",
+                                   "torch",
+                                   "weapons rack",
+                                   "cudgel",
+                                   "water of a small stream",
+                                   "small stream"}) {
+        marked.push_back(element(XmlTagEnum::OBJECT, QString::fromUtf8(name)));
+    }
+    const RoomContentsSnapshot snapshot
+        = shown(tracker,
+                room(QStringLiteral("Fornost Market"), marked),
+                QStringLiteral(
+                    "A large torch lies here among the dust.\n"
+                    "Cainmir the Dunadan, wielding a backsword, is standing here (linkless).\n"
+                    "There is an old street-lamp on the border of the street.\n"
+                    "A large torch lies here among the dust.\n"
+                    "A weapons rack stands against the wall.\n"
+                    "In the rack is a cudgel.\n"
+                    "The water of a small stream flows softly over the rocks here.\n"
+                    "A Dunadan soldier is here busily performing his duties.\n"));
+    // The player is a person; the soldier, of whom Room.Chars said nothing, is not known as one.
+    QCOMPARE(snapshot.objects.size(), size_t{7});
+
+    const RoomObject &torch = snapshot.objects.at(0);
+    QCOMPARE(torch.name, QStringLiteral("torch"));
+    QCOMPARE(torch.keyword, QStringLiteral("torch"));
+    QCOMPARE(torch.target, QStringLiteral("torch"));
+    QVERIFY(!torch.container);
+
+    // The backsword was the player's, and the lamp's name is not taken for it.
+    const RoomObject &lamp = snapshot.objects.at(1);
+    QCOMPARE(lamp.name, QStringLiteral("street-lamp"));
+    QCOMPARE(lamp.keyword, QStringLiteral("street-lamp"));
+
+    const RoomObject &second = snapshot.objects.at(2);
+    QCOMPARE(second.name, QStringLiteral("torch"));
+    QCOMPARE(second.target, QStringLiteral("2.torch"));
+
+    const RoomObject &rack = snapshot.objects.at(3);
+    QCOMPARE(rack.name, QStringLiteral("weapons rack"));
+    QVERIFY(rack.container);
+    QCOMPARE(rack.keyword, QStringLiteral("rack"));
+    QCOMPARE(rack.target, QStringLiteral("rack"));
+
+    // What lies in the rack is named, but reached only through the rack.
+    const RoomObject &cudgel = snapshot.objects.at(4);
+    QCOMPARE(cudgel.name, QStringLiteral("cudgel"));
+    QCOMPARE(cudgel.keyword, QStringLiteral("cudgel"));
+    QVERIFY(!cudgel.container);
+    QVERIFY(cudgel.target.isEmpty());
+
+    // Nested elements: the outer one names the line, and both are used up by it.
+    const RoomObject &stream = snapshot.objects.at(5);
+    QCOMPARE(stream.name, QStringLiteral("water of a small stream"));
+    QCOMPARE(stream.keyword, QStringLiteral("water"));
+
+    // A line without an <object> gets neither a name nor a guessed keyword.
+    const RoomObject &soldier = snapshot.objects.at(6);
+    QVERIFY(soldier.name.isEmpty());
+    QVERIFY(soldier.keyword.isEmpty());
+    QVERIFY(soldier.target.isEmpty());
+}
+
+void TestRoomContents::accentedCharactersLeftOutTest()
+{
+    // mume3d's live log of 2026-10-11: Room.Chars spells the soldier "Dúnadan", the room display
+    // "Dunadan", and every soldier and officer of Fornost was listed as loot for it.
+    RoomContentsTracker tracker;
+    tracker.receiveChars(GmcpMessage::fromRawBytes(QByteArray{
+        R"(Room.Chars.Set [{"id":4,"name":"Dúnadan soldier","desc":"A Dúnadan soldier is here busily performing his duties."},)"
+        R"({"id":5,"name":"Dúnadan officer","desc":"An experienced Dúnadan officer is standing here, keeping things under control."}])"}));
+    const RoomContentsSnapshot snapshot
+        = shown(tracker,
+                room(QStringLiteral("Fornost Gate"),
+                     {element(XmlTagEnum::OBJECT, QStringLiteral("street-lamp"))}),
+                QStringLiteral(
+                    "There is an old street-lamp on the border of the street.\n"
+                    "A Dunadan soldier is here busily performing his duties.\n"
+                    "A Dunadan soldier is here busily performing his duties.\n"
+                    "An experienced Dunadan officer is standing here, keeping things under "
+                    "control.\n"));
+    QCOMPARE(snapshot.objects.size(), size_t{1});
+    QCOMPARE(snapshot.objects.at(0).name, QStringLiteral("street-lamp"));
 }
 
 void TestRoomContents::objectsTest()

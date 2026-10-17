@@ -110,6 +110,73 @@ NODISCARD QString withoutFinalStop(const QString &line)
     return line.endsWith(QLatin1Char('.')) ? line.left(line.size() - 1) : line;
 }
 
+/// A person's line as it can be compared with Room.Chars: no final stop, no status MUME adds at
+/// the end of the room line ("(linkless)"), and no accents. Room.Chars spells a name the way
+/// the game does ("A Dúnadan soldier is here busily performing his duties.") while the room
+/// display may carry it in ASCII ("A Dunadan soldier ..."), as in mume3d's live log of
+/// 2026-10-11, where every soldier and officer of Fornost was left in the objects for that.
+NODISCARD QString comparable(const QString &line)
+{
+    static const QRegularExpression trailingStatus{QStringLiteral(R"(\s*\([^()]*\)$)")};
+    QString text = withoutFinalStop(line.trimmed());
+    for (;;) {
+        const QString shorter = QString{text}.remove(trailingStatus);
+        if (shorter == text) {
+            break;
+        }
+        text = withoutFinalStop(shorter.trimmed());
+    }
+    QString result;
+    for (const QChar c : text.normalized(QString::NormalizationForm_D)) {
+        if (c.category() != QChar::Mark_NonSpacing) {
+            result += c;
+        }
+    }
+    return result.toLower();
+}
+
+/// The words of a name as a command could say them, lowercased: "weapons rack" answers to
+/// "weapons" and "rack".
+NODISCARD QStringList nameWords(const QString &name)
+{
+    QStringList words;
+    for (const QString &part : name.toLower().split(QLatin1Char(' '), Qt::SkipEmptyParts)) {
+        QString word = part;
+        while (!word.isEmpty() && !word.front().isLetterOrNumber()) {
+            word.remove(0, 1);
+        }
+        while (!word.isEmpty() && !word.back().isLetterOrNumber()) {
+            word.chop(1);
+        }
+        if (!word.isEmpty()) {
+            words << word;
+        }
+    }
+    return words;
+}
+
+NODISCARD QString withoutArticle(const QString &phrase)
+{
+    static const QRegularExpression article{QStringLiteral(R"(^(?:(?:a|an|the|some)\s+)+)")};
+    return QString{phrase}.remove(article).trimmed();
+}
+
+/// Whether `object` is one a command saying `word` counts: its keyword, or a word of its name.
+NODISCARD bool answers(const RoomObject &object, const QString &word)
+{
+    return object.keyword == word || nameWords(object.name).contains(word);
+}
+
+/// "In the rack is a cudgel.": what lies in or on a container, shown on a line of its own.
+NODISCARD bool isContentsLine(const QString &text)
+{
+    static const QRegularExpression contentsLine{
+        QStringLiteral(
+            R"(^(?:In|On|Inside|Upon) (?:the|a|an|some) .+? (?:is|are|lies|lie|rests|rest|hangs|hang|stands|stand)\b)"),
+        QRegularExpression::CaseInsensitiveOption};
+    return contentsLine.match(text).hasMatch();
+}
+
 } // namespace
 
 QString containerKeyword(const QString &line)
@@ -118,10 +185,7 @@ QString containerKeyword(const QString &line)
     // What lies in or on a container, on a line of its own, is not the container: "In the rack is
     // a cudgel." (Fornost's Guild of Warriors, mume3d's live test of 2026-10-03, where the line was
     // taken for a second rack and `examine 2.rack` found none).
-    static const QRegularExpression contentsLine{QStringLiteral(
-        R"(^(?:In|On|Inside|Upon) (?:the|a|an|some) .+? (?:is|are|lies|lie|rests|rest|hangs|hang|stands|stand)\b)"),
-                                                 QRegularExpression::CaseInsensitiveOption};
-    if (contentsLine.match(text).hasMatch()) {
+    if (isContentsLine(text)) {
         return QString{};
     }
     auto it = nounPattern().globalMatch(text);
@@ -137,6 +201,52 @@ QString containerKeyword(const QString &line)
         return noun;
     }
     return QString{};
+}
+
+QString objectKeyword(const QString &name)
+{
+    // Words that measure out what the name is about: "a pair of boots" is boots.
+    static const QStringList measures{QStringLiteral("pair"),
+                                      QStringLiteral("set"),
+                                      QStringLiteral("suit"),
+                                      QStringLiteral("bunch"),
+                                      QStringLiteral("handful"),
+                                      QStringLiteral("piece"),
+                                      QStringLiteral("bundle"),
+                                      QStringLiteral("pile"),
+                                      QStringLiteral("heap"),
+                                      QStringLiteral("lump"),
+                                      QStringLiteral("sprig"),
+                                      QStringLiteral("coil"),
+                                      QStringLiteral("bit"),
+                                      QStringLiteral("chunk"),
+                                      QStringLiteral("slice"),
+                                      QStringLiteral("stack"),
+                                      QStringLiteral("roll")};
+    // What follows these describes the thing rather than names it: "a keyring with several keys".
+    static const QRegularExpression description{
+        QStringLiteral(R"((?:,|\s+(?:with|that|which|named|entitled)\s).*$)")};
+    QString phrase = withoutArticle(cleaned(name).toLower()).remove(description);
+    for (;;) {
+        const qsizetype of = phrase.indexOf(QStringLiteral(" of "));
+        if (of <= 0) {
+            break;
+        }
+        const QStringList before = nameWords(phrase.left(of));
+        if (before.isEmpty()) {
+            break;
+        }
+        QString head = before.back();
+        if (head.endsWith(QLatin1Char('s'))) {
+            head.chop(1);
+        }
+        if (!measures.contains(before.back()) && !measures.contains(head)) {
+            return before.back();
+        }
+        phrase = withoutArticle(phrase.mid(of + 4));
+    }
+    const QStringList words = nameWords(phrase);
+    return words.isEmpty() ? QString{} : words.back();
 }
 
 bool namesContainer(const QString &rawWord, const QString &keyword)
@@ -249,16 +359,16 @@ std::optional<RoomContentsSnapshot> RoomContentsTracker::receive(const XmlElemen
 
 bool RoomContentsTracker::isCharacterLine(const QString &line) const
 {
+    const QString bare = comparable(line);
     for (const QString &person : m_people) {
-        if (line.contains(person)) {
+        if (bare.contains(comparable(person))) {
             return true;
         }
     }
     // Room.Chars gives each character's line in the room as `desc`. Whether it always ends
     // with the same full stop as the display is not known, so that is not required.
-    const QString bare = withoutFinalStop(line);
     for (const auto &[id, desc] : m_chars) {
-        if (!desc.isEmpty() && withoutFinalStop(desc).compare(bare, Qt::CaseInsensitive) == 0) {
+        if (!desc.isEmpty() && comparable(desc) == bare) {
             return true;
         }
     }
@@ -275,10 +385,27 @@ RoomContentsSnapshot RoomContentsTracker::build() const
         return result;
     }
 
-    // How many of each container noun came before, so that the next one's target can say
-    // "2.chest" as MUME would count it.
-    std::map<QString, int> seenOfKeyword;
+    // MUME's <object> elements come in the order of the lines holding them, people's lines
+    // included ("Cainmir ..., wielding a <object>backsword</object>, is standing here."), so
+    // each line takes the next names it holds. A line can hold more than one when MUME nests
+    // them ("water of a small stream" around "small stream"); the first is the line's.
+    qsizetype nextName = 0;
+    const auto takeName = [this, &nextName](const QString &line) -> QString {
+        for (qsizetype j = nextName; j < m_objectNames.size(); ++j) {
+            if (!line.contains(m_objectNames.at(j))) {
+                continue;
+            }
+            nextName = j + 1;
+            while (nextName < m_objectNames.size() && line.contains(m_objectNames.at(nextName))) {
+                ++nextName;
+            }
+            return m_objectNames.at(j);
+        }
+        return QString{};
+    };
+
     for (const QString &raw : m_lines) {
+        const QString name = takeName(raw);
         if (m_scenery.contains(raw) || isCharacterLine(raw)) {
             continue;
         }
@@ -292,20 +419,24 @@ RoomContentsSnapshot RoomContentsTracker::build() const
             object.count = std::max(1, after.captured(2).toInt());
             object.line = after.captured(1);
         }
-        for (const QString &name : m_objectNames) {
-            if (object.line.contains(name)) {
-                object.name = name;
-                break;
+        object.name = name;
+        const QString noun = containerKeyword(object.line);
+        object.container = !noun.isEmpty();
+        object.keyword = object.container ? noun : objectKeyword(object.name);
+        // A thing in a container is named through the container ("get cudgel rack"), so it has
+        // no target of its own and no place in the room's count.
+        if (!object.keyword.isEmpty() && !isContentsLine(object.line)) {
+            // MUME counts every object answering to the word, in the list's order, so that the
+            // second torch is 2.torch whatever else lies between.
+            int before = 0;
+            for (const RoomObject &earlier : result.objects) {
+                if (!isContentsLine(earlier.line) && answers(earlier, object.keyword)) {
+                    before += earlier.count;
+                }
             }
-        }
-        object.keyword = containerKeyword(object.line);
-        object.container = !object.keyword.isEmpty();
-        if (object.container) {
-            int &before = seenOfKeyword[object.keyword];
             object.target = (before == 0)
                                 ? object.keyword
                                 : QStringLiteral("%1.%2").arg(before + 1).arg(object.keyword);
-            before += object.count;
         }
         result.objects.push_back(std::move(object));
     }

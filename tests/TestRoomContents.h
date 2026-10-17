@@ -18,6 +18,9 @@ private Q_SLOTS:
     static void refreshReplacesItemsTest();
     static void keywordTest();
     static void namesContainerTest();
+    static void objectKeywordTest();
+    static void objectNamesTest();
+    static void accentedCharactersLeftOutTest();
     static void objectsTest();
     static void charactersLeftOutTest();
     static void terrainLeftOutTest();

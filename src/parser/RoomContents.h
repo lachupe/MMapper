@@ -41,12 +41,16 @@ struct NODISCARD RoomObject final
     int count = 1;
     /// The line as MUME showed it, colour removed.
     QString line;
-    /// The text of an <object> element inside the line, when MUME marked one up.
+    /// The text of the <object> element MUME put inside the line ("street-lamp", "corpse of a
+    /// rooster"). MUME's live room displays of 2026-10 mark every object line this way; it is
+    /// empty only when the line carried none.
     QString name;
-    /// For a container, the noun a command can name it by ("chest", "corpse"); empty otherwise.
+    /// The word a command can name the object by: for a container, the container noun of its
+    /// line ("chest", "corpse"); for anything else, the head noun of `name` ("lamp" is not
+    /// assumed: "street-lamp" stays whole). Empty when there is neither.
     QString keyword;
-    /// For a container, what a command sent now would have to say to reach it: "chest" for the
-    /// first in the list, "2.chest" for the second.
+    /// What a command sent now would have to say to reach it: "chest" for the first object in
+    /// the list answering to "chest", "2.chest" for the second. Empty without a keyword.
     QString target;
     bool container = false;
     ContainerState state;
@@ -71,6 +75,12 @@ struct NODISCARD RoomContentsSnapshot final
 /// none. The first such noun in the line wins: "The corpse of a rooster is lying here." is a
 /// corpse.
 NODISCARD QString containerKeyword(const QString &line);
+
+/// The word a command names an object by, read from the name MUME marked up for it: the last
+/// word of its first phrase, lowercased ("rack" for "weapons rack", "corpse" for "corpse of a
+/// rooster"), or what follows " of " after a measure ("boots" for "a pair of boots"). Empty for
+/// an empty name.
+NODISCARD QString objectKeyword(const QString &name);
 
 /// True when `word`, as a command would say it ("chest", "che", "stonechest"), can name a
 /// container whose noun is `keyword`, or any container when `keyword` is empty.
