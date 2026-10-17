@@ -825,7 +825,10 @@ void TestItemLines::queryAndTimeoutTest()
                                 QStringLiteral("snuff"),
                                 QStringLiteral("fill"),
                                 QStringLiteral("lock"),
-                                QStringLiteral("unlock")}) {
+                                QStringLiteral("unlock"),
+                                QStringLiteral("empty"),
+                                QStringLiteral("recite"),
+                                QStringLiteral("whet")}) {
         ItemCommandTracker action;
         QVERIFY(action.receiveCommand(verb + QStringLiteral(" inventory.item")).has_value());
         action.receiveLine(QStringLiteral("Unrecognised server wording."));

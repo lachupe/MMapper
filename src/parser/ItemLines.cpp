@@ -752,7 +752,8 @@ std::optional<ItemCommandObservation> ItemCommandTracker::receiveCommand(const Q
                             QStringLiteral("consider"),  QStringLiteral("light"),
                             QStringLiteral("snuff"),     QStringLiteral("fill"),
                             QStringLiteral("lock"),      QStringLiteral("unlock"),
-                            QStringLiteral("pour")};
+                            QStringLiteral("pour"),      QStringLiteral("empty"),
+                            QStringLiteral("recite"),    QStringLiteral("whet")};
     if (!verbs.contains(verb) || m_pending.size() >= 64) {
         return std::nullopt;
     }

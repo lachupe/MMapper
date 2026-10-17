@@ -501,7 +501,7 @@ void TestFrontend::sessionStateTest()
     QCOMPARE(connected.getName().toQByteArray(), QByteArray("MMapper.Session.State"));
     QCOMPARE(payloadOf(connected)["upstream"].toString(), QStringLiteral("connected"));
     QCOMPARE(payloadOf(connected)["mapLoaded"].toBool(), true);
-    QCOMPARE(payloadOf(connected)["itemCommands"].toInt(), 6);
+    QCOMPARE(payloadOf(connected)["itemCommands"].toInt(), 7);
     // Trade operations are offered, and MUME's viewer setting is not known until MMapper or
     // the player sets it.
     QCOMPARE(payloadOf(connected)["trade"].toInt(), 1);

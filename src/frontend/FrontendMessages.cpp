@@ -304,7 +304,7 @@ GmcpMessage makeSessionState(const bool upstreamConnected,
                              const QString &rememberUnavailable)
 {
     QJsonObject obj;
-    obj["itemCommands"] = 6;
+    obj["itemCommands"] = 7;
     obj["trade"] = 1;
     obj["quiet"] = 1;
     obj["hidden"] = 1;
