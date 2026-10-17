@@ -2652,7 +2652,93 @@ void TestFrontend::charConsiderTest()
     QVERIFY(considerTarget(QStringLiteral("con")).isEmpty());
     QVERIFY(!parseConsiderLine(QStringLiteral("It is a longsword (used, new).")).has_value());
     QVERIFY(!parseConsiderLine(QStringLiteral("Easy.  Really?")).has_value());
-    QCOMPARE(considerVerdicts().size(), 11);
+    QCOMPARE(considerVerdicts().size(), 12);
+
+    // MUME's reply as the user saw it live (2026-10-17, mume3d FIX.235): the level sentence, then
+    // the advice wrapped over two lines.
+    {
+        ConsiderReader reader;
+        reader.receiveCommand(QStringLiteral("consider soldier"));
+        QVERIFY(!reader
+                     .receiveLine(
+                         QStringLiteral("A D\u00fanadan soldier is at a significantly higher level "
+                                        "than you."))
+                     .has_value());
+        QVERIFY(!reader
+                     .receiveLine(QStringLiteral(
+                         "You would need a lot of luck, great equipment, powerful spells, and "
+                         "supportive"))
+                     .has_value());
+        const auto soldier = reader.receiveLine(QStringLiteral("allies!"));
+        QVERIFY(soldier.has_value());
+        QCOMPARE(soldier->verdict, QStringLiteral("allies"));
+        QCOMPARE(soldier->grade, 8);
+        QCOMPARE(soldier->level, QStringLiteral("significantly-higher"));
+        QCOMPARE(soldier->target, QStringLiteral("soldier"));
+        QCOMPARE(frontend_messages::makeCharConsider(*soldier).toRawBytes(),
+                 QByteArray(R"(MMapper.Char.Consider {"grade":8,"level":"significantly-higher",)"
+                            "\"target\":\"soldier\",\"text\":\"A D\u00fanadan soldier is at a "
+                            R"(significantly higher level than you. You would need a lot of luck, )"
+                            R"(great equipment, powerful spells, and supportive allies!",)"
+                            R"("verdict":"allies"})"));
+        QVERIFY(!reader.receivePrompt().has_value());
+    }
+    // Narrower: the level sentence wrapped too, a pager pause (no prompt) and someone arriving
+    // before the reply; the logs' two-line form (mume-logs: "*an Orc* is at a slightly lower
+    // level than you." / "A perfect match!").
+    {
+        ConsiderReader reader;
+        reader.receiveCommand(QStringLiteral("con orc"));
+        QVERIFY(!reader.receiveLine(QStringLiteral("A hungry wolf arrives from the north.")));
+        QVERIFY(!reader.receiveLine(QStringLiteral("*an Orc* is at a slightly lower level")));
+        QVERIFY(!reader.receiveLine(QStringLiteral("than you.")));
+        const auto orc = reader.receiveLine(QStringLiteral("A perfect match!"));
+        QVERIFY(orc.has_value());
+        QCOMPARE(orc->verdict, QStringLiteral("even"));
+        QCOMPARE(orc->level, QStringLiteral("slightly-lower"));
+        QCOMPARE(orc->text,
+                 QStringLiteral("*an Orc* is at a slightly lower level than you. A perfect match!"));
+        QCOMPARE(orc->target, QStringLiteral("orc"));
+    }
+    // An earlier command's prompt before the reply ends nothing; the advice alone still counts;
+    // an advice sentence not on the ladder is reported ungraded with its words.
+    {
+        ConsiderReader reader;
+        reader.receiveCommand(QStringLiteral("con elf"));
+        QVERIFY(!reader.receivePrompt().has_value());
+        const auto elf = reader.receiveLine(QStringLiteral("The perfect match!"));
+        QVERIFY(elf.has_value());
+        QCOMPARE(elf->target, QStringLiteral("elf"));
+        QVERIFY(elf->level.isEmpty());
+
+        reader.receiveCommand(QStringLiteral("con troll"));
+        QVERIFY(
+            !reader.receiveLine(QStringLiteral("*a Troll* is at a much higher level than you.")));
+        const auto troll = reader.receiveLine(QStringLiteral("You would need a miracle!"));
+        QVERIFY(troll.has_value());
+        QCOMPARE(troll->verdict, QStringLiteral("unknown"));
+        QCOMPARE(troll->grade, -1);
+        QCOMPARE(troll->level, QStringLiteral("much-higher"));
+    }
+    // A level sentence and then the prompt: reported alone. An object's text: nothing. Out of a
+    // reply, a lone advice line, without target.
+    {
+        ConsiderReader reader;
+        reader.receiveCommand(QStringLiteral("con guard"));
+        QVERIFY(!reader.receiveLine(QStringLiteral("*a guard* is at the same level as you.")));
+        const auto guard = reader.receivePrompt();
+        QVERIFY(guard.has_value());
+        QCOMPARE(guard->level, QStringLiteral("same"));
+        QCOMPARE(guard->text, QStringLiteral("*a guard* is at the same level as you."));
+        QCOMPARE(guard->target, QStringLiteral("guard"));
+
+        reader.receiveCommand(QStringLiteral("con sword"));
+        QVERIFY(!reader.receiveLine(QStringLiteral("It is a longsword (used, new).")));
+        QVERIFY(!reader.receivePrompt().has_value());
+        const auto lone = reader.receiveLine(QStringLiteral("Easy."));
+        QVERIFY(lone.has_value());
+        QVERIFY(lone->target.isEmpty());
+    }
 }
 
 void TestFrontend::charRefusedTest()

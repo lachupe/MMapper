@@ -11,9 +11,9 @@
 #include "../map/PromptFlags.h"
 #include "../observer/gameobserver.h"
 #include "AccountLines.h"
+#include "CharConsider.h"
 #include "CharFollowers.h"
 #include "CharLines.h"
-#include "CharConsider.h"
 #include "CharRefused.h"
 #include "CombatLines.h"
 #include "ContainerLines.h"
@@ -102,8 +102,8 @@ private:
     /// See LoginLinesTracker.
     LoginLinesTracker m_loginTracker;
     ItemCommandTracker m_itemCommands;
-    /// What the last `consider` sent named, until its verdict comes (MMapper.Char.Consider).
-    QString m_considerTarget;
+    /// The reply to the last `consider` sent, until its verdict comes (MMapper.Char.Consider).
+    ConsiderReader m_considerReader;
     /// MUME's replies at shops, guilds and inns and to `trop`, and the pager, which is told
     /// from the real prompt here for every reader. See TradeReaders.
     TradeReaders m_tradeReaders;

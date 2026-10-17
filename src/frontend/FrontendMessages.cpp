@@ -1041,6 +1041,7 @@ GmcpMessage makeCharConsider(const CharConsider &consider)
     obj["verdict"] = consider.verdict;
     obj["grade"] = consider.grade;
     obj["text"] = consider.text;
+    putText(obj, "level", consider.level);
     putText(obj, "target", consider.target);
     return GmcpMessage{GmcpMessageTypeEnum::MMAPPER_CHAR_CONSIDER, toGmcpJson(obj)};
 }

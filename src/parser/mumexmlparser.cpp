@@ -89,9 +89,7 @@ MumeXmlParser::MumeXmlParser(MapData &md,
         if (!m_tradeReaders.receiveCommand(line)) {
             return;
         }
-        if (const QString target = considerTarget(line); !target.isEmpty()) {
-            m_considerTarget = target;
-        }
+        m_considerReader.receiveCommand(line);
         m_containerTracker.receiveCommand(line);
         // What a later line about a door that names none is about.
         m_doorTracker.receiveCommand(line);
@@ -433,8 +431,7 @@ void MumeXmlParser::parse(const TelnetData &data, const bool isGoAhead)
                     m_observer.observeRoomDoors(*doors);
                     facts.tags.insert(LineTagEnum::DOOR);
                 }
-                if (auto consider = parseConsiderLine(plain)) {
-                    consider->target = std::exchange(m_considerTarget, QString{});
+                if (const auto consider = m_considerReader.receiveLine(plain)) {
                     m_observer.observeCharConsider(*consider);
                 }
                 if (auto refused = parseRefusedLine(plain)) {
@@ -625,6 +622,10 @@ void MumeXmlParser::parse(const TelnetData &data, const bool isGoAhead)
         if (xml.tag == XmlTagEnum::PROMPT && !m_chunkIsPager) {
             publishContainerEvents(
                 m_containerTracker.receivePrompt(QDateTime::currentSecsSinceEpoch()));
+            // A consider's level sentence that came without its advice.
+            if (const auto consider = m_considerReader.receivePrompt()) {
+                m_observer.observeCharConsider(*consider);
+            }
             // The prompt coming back is the only sign the player's own spell went off.
             if (const auto done = m_ownCastTracker.receivePrompt()) {
                 m_observer.observeSentToUserCombat(*done);
