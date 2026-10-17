@@ -36,7 +36,11 @@ struct NODISCARD QuietWord final
 /// does not say). Not here: `practise` (the help has only `practice`), `affects` (MUME has no
 /// such command), and every command that was not asked for. To let another through, add it
 /// here; nothing else knows the list.
-constexpr std::array<QuietWord, 13> g_quietWords{{
+///
+/// `value <item>` (mume3d FEAT.32, 2026-10-17): the shops' help (sell.txt, value.txt) says it
+/// "lets you know how much a shopkeeper would pay for a certain item without actually selling
+/// it", so it reads. The help gives no shorter form, so only the whole word is let through.
+constexpr std::array<QuietWord, 14> g_quietWords{{
     {"equipment", 2, true},
     {"examine", 3, true},
     {"exits", 2, false},
@@ -49,6 +53,7 @@ constexpr std::array<QuietWord, 13> g_quietWords{{
     {"stat", 4, false},
     {"time", 2, false},
     {"trophy", 3, true},
+    {"value", 5, true},
     {"who", 2, true},
 }};
 

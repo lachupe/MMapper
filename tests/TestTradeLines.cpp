@@ -1300,6 +1300,8 @@ void TestTradeLines::quietCommandAllowedTest()
                                    "trophy -line orc",
                                    "who number",
                                    "eq all",
+                                   "value sword",
+                                   "VALUE 2.helm",
                                    "i  "}) {
         QVERIFY2(allowed(line), line);
     }
@@ -1370,7 +1372,9 @@ void TestTradeLines::quietCommandAllowedTest()
                                    "statx",
                                    "exb",
                                    "affects",
-                                   "aff"}) {
+                                   "aff",
+                                   "val",
+                                   "valu"}) {
         QVERIFY2(!allowed(word), word);
     }
 
