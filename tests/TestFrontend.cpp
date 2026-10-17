@@ -24,6 +24,7 @@
 #include "../src/observer/gameobserver.h"
 #include "../src/parser/AccountLines.h"
 #include "../src/parser/CharAffects.h"
+#include "../src/parser/CharConsider.h"
 #include "../src/parser/CharRefused.h"
 #include "../src/parser/CombatLines.h"
 #include "../src/parser/ContainerLines.h"
@@ -2623,6 +2624,35 @@ void TestFrontend::roomHandRaisedTest()
     QVERIFY(!parseHandRaised(QStringLiteral("Tipp raises his hand and waves.")).has_value());
     QVERIFY(!parseHandRaised(QStringLiteral("Kili raises his voice and calls great pain upon you."))
                  .has_value());
+}
+
+void TestFrontend::charConsiderTest()
+{
+    QCOMPARE(GmcpMessage::fromRawBytes(QByteArray{"MMapper.Char.Consider"}).getType(),
+             GmcpMessageTypeEnum::MMAPPER_CHAR_CONSIDER);
+
+    // The line in the user's logs (mume-logs elvenrunes 2023-2025), after `con elf`.
+    auto perfect = *parseConsiderLine(QStringLiteral("The perfect match!"));
+    QCOMPARE(perfect.verdict, QStringLiteral("even"));
+    QCOMPARE(perfect.grade, 4);
+    perfect.target = considerTarget(QStringLiteral("con elf"));
+    QCOMPARE(frontend_messages::makeCharConsider(perfect).toRawBytes(),
+             QByteArray(R"(MMapper.Char.Consider {"grade":4,"target":"elf",)"
+                        R"("text":"The perfect match!","verdict":"even"})"));
+    // Without the command seen, no target.
+    QCOMPARE(frontend_messages::makeCharConsider(
+                 *parseConsiderLine(QStringLiteral("You would need some luck!")))
+                 .toRawBytes(),
+             QByteArray(R"(MMapper.Char.Consider {"grade":5,"text":"You would need some luck!",)"
+                        R"("verdict":"some-luck"})"));
+    // The commands, and what is no consider.
+    QCOMPARE(considerTarget(QStringLiteral("consider 2.orc")), QStringLiteral("2.orc"));
+    QCOMPARE(considerTarget(QStringLiteral("cons troll ")), QStringLiteral("troll"));
+    QVERIFY(considerTarget(QStringLiteral("console")).isEmpty());
+    QVERIFY(considerTarget(QStringLiteral("con")).isEmpty());
+    QVERIFY(!parseConsiderLine(QStringLiteral("It is a longsword (used, new).")).has_value());
+    QVERIFY(!parseConsiderLine(QStringLiteral("Easy.  Really?")).has_value());
+    QCOMPARE(considerVerdicts().size(), 11);
 }
 
 void TestFrontend::charRefusedTest()

@@ -1035,6 +1035,16 @@ GmcpMessage makeCharFollowers(const CharFollowers &followers)
     return GmcpMessage{GmcpMessageTypeEnum::MMAPPER_CHAR_FOLLOWERS, toGmcpJson(obj)};
 }
 
+GmcpMessage makeCharConsider(const CharConsider &consider)
+{
+    QJsonObject obj;
+    obj["verdict"] = consider.verdict;
+    obj["grade"] = consider.grade;
+    obj["text"] = consider.text;
+    putText(obj, "target", consider.target);
+    return GmcpMessage{GmcpMessageTypeEnum::MMAPPER_CHAR_CONSIDER, toGmcpJson(obj)};
+}
+
 GmcpMessage makeCharRefused(const CharRefused &refused)
 {
     QJsonObject obj;

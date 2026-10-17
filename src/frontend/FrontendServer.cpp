@@ -351,6 +351,10 @@ FrontendServer::FrontendServer(GameObserver &observer,
         publish(frontend_messages::makeCharImproved(improved));
     });
 
+    // An event: MUME's verdict on one `consider`.
+    m_observer.sig2_charConsider.connect(m_lifetime, [this](const CharConsider &consider) {
+        publish(frontend_messages::makeCharConsider(consider));
+    });
     // An event: one sentence that refused one command.
     m_observer.sig2_charRefused.connect(m_lifetime, [this](const CharRefused &refused) {
         publish(frontend_messages::makeCharRefused(refused));

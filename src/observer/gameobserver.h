@@ -9,6 +9,7 @@
 #include "../parser/AccountLines.h"
 #include "../parser/CharFollowers.h"
 #include "../parser/CharLines.h"
+#include "../parser/CharConsider.h"
 #include "../parser/CharRefused.h"
 #include "../parser/CombatLines.h"
 #include "../parser/ContainerLines.h"
@@ -141,6 +142,8 @@ public:
     /// The followers of the player's character after a change -- a bond made or ended, one left
     /// behind or back, an order answered. See CharFollowersTracker.
     Signal2<CharFollowers> sig2_charFollowers;
+    /// MUME's verdict on `consider <character>`. An event. See CharConsider.
+    Signal2<CharConsider> sig2_charConsider;
     /// A command MUME refused, in a sentence no other reader takes. An event. See CharRefused.
     Signal2<CharRefused> sig2_charRefused;
     /// A player in the room raised a hand to be grouped. An event. See HandRaised.
@@ -267,6 +270,7 @@ public:
     {
         sig2_charFollowers.invoke(followers);
     }
+    void observeCharConsider(const CharConsider &consider) { sig2_charConsider.invoke(consider); }
     void observeCharRefused(const CharRefused &refused) { sig2_charRefused.invoke(refused); }
     void observeHandRaised(const HandRaised &hand) { sig2_handRaised.invoke(hand); }
     void observeRoomDoors(const RoomDoors &doors) { sig2_roomDoors.invoke(doors); }

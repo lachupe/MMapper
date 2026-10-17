@@ -13,6 +13,7 @@
 #include "AccountLines.h"
 #include "CharFollowers.h"
 #include "CharLines.h"
+#include "CharConsider.h"
 #include "CharRefused.h"
 #include "CombatLines.h"
 #include "ContainerLines.h"
@@ -101,6 +102,8 @@ private:
     /// See LoginLinesTracker.
     LoginLinesTracker m_loginTracker;
     ItemCommandTracker m_itemCommands;
+    /// What the last `consider` sent named, until its verdict comes (MMapper.Char.Consider).
+    QString m_considerTarget;
     /// MUME's replies at shops, guilds and inns and to `trop`, and the pager, which is told
     /// from the real prompt here for every reader. See TradeReaders.
     TradeReaders m_tradeReaders;

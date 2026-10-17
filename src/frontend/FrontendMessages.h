@@ -11,6 +11,7 @@
 #include "../parser/CharAffects.h"
 #include "../parser/CharFollowers.h"
 #include "../parser/CharLines.h"
+#include "../parser/CharConsider.h"
 #include "../parser/CharRefused.h"
 #include "../parser/CombatLines.h"
 #include "../parser/ContainerLines.h"
@@ -417,6 +418,13 @@ NODISCARD GmcpMessage makeCharAffects(const std::vector<CharAffect> &affects);
 /// replayed as lastingFollowers() of the last sent -- without `reply` and without those that
 /// left or died. See CharFollowersTracker.
 NODISCARD GmcpMessage makeCharFollowers(const CharFollowers &followers);
+
+/// MMapper.Char.Consider -- MUME's verdict on `consider <character>`: `verdict` (a stable code,
+/// easiest first: pushover, trivial, easy, fairly-easy, even, some-luck, lot-of-luck,
+/// great-equipment, deadly, mad, hopeless), `grade` (0-based place on that ladder), `text` (the
+/// line) and, where the command was seen, `target` (what the player typed after `consider`). An
+/// event: not replayed. See CharConsider.
+NODISCARD GmcpMessage makeCharConsider(const CharConsider &consider);
 
 /// MMapper.Char.Refused -- a command MUME refused, read off its sentence: `text` (the line),
 /// `reason` (a stable code: already, fighting, not-fighting, position, slept, self, queued, busy,

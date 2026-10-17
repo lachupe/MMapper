@@ -519,6 +519,8 @@ if(WITH_FRONTEND)
         ../src/parser/AccountLines.h
         ../src/parser/CharAffects.cpp
         ../src/parser/CharAffects.h
+        ../src/parser/CharConsider.cpp
+        ../src/parser/CharConsider.h
         ../src/parser/CharFollowers.cpp
         ../src/parser/CharFollowers.h
         ../src/parser/CharLines.cpp
