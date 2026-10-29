@@ -543,7 +543,12 @@ if(WITH_FRONTEND)
         ../src/frontend/FrontendLoginMemory.h
         ../src/frontend/FrontendMapIdentity.cpp
         ../src/frontend/FrontendMapIdentity.h
-        ../src/frontend/FrontendMessages.cpp
+        ../src/frontend/FrontendMessagesAccount.cpp
+        ../src/frontend/FrontendMessagesChar.cpp
+        ../src/frontend/FrontendMessagesRoom.cpp
+        ../src/frontend/FrontendMessagesSession.cpp
+        ../src/frontend/FrontendMessagesTime.cpp
+        ../src/frontend/FrontendMessagesXml.cpp
         ../src/frontend/FrontendMessages.h
         ../src/frontend/FrontendReplayCache.cpp
         ../src/frontend/FrontendReplayCache.h

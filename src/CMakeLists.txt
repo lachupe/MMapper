@@ -709,7 +709,12 @@ if(WITH_FRONTEND)
         frontend/FrontendLoginMemory.h
         frontend/FrontendMapIdentity.cpp
         frontend/FrontendMapIdentity.h
-        frontend/FrontendMessages.cpp
+        frontend/FrontendMessagesAccount.cpp
+        frontend/FrontendMessagesChar.cpp
+        frontend/FrontendMessagesRoom.cpp
+        frontend/FrontendMessagesSession.cpp
+        frontend/FrontendMessagesTime.cpp
+        frontend/FrontendMessagesXml.cpp
         frontend/FrontendMessages.h
         frontend/FrontendReplayCache.cpp
         frontend/FrontendReplayCache.h
