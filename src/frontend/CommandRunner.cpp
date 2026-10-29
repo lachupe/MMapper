@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (C) 2026 The MMapper Authors
 
-#include "TradeOperations.h"
+#include "CommandRunner.h"
 
 #include "../global/parserutils.h"
 #include "../observer/gameobserver.h"
@@ -42,7 +42,7 @@ NODISCARD std::optional<QString> argumentOf(const QJsonValue &value)
         return std::nullopt;
     }
     const QString text = value.toString().trimmed();
-    if (text.isEmpty() || text.size() > TradeOperations::MAX_ARGUMENT_CHARS) {
+    if (text.isEmpty() || text.size() > CommandRunner::MAX_ARGUMENT_CHARS) {
         return std::nullopt;
     }
     for (const QChar c : text) {
@@ -131,12 +131,7 @@ GmcpMessage makeQuietHidden(const QuietReplyState &state)
                        GmcpJson{QString::fromUtf8(json)}};
 }
 
-bool claimsViewer(const FrontendSubscriptions &subscriptions, const bool driving)
-{
-    return driving && subscriptions.subscribes("MMapper.View");
-}
-
-TradeOperations::TradeOperations(GameObserver &observer, SendFn send, PublishFn publish, NowFn now)
+CommandRunner::CommandRunner(GameObserver &observer, SendFn send, PublishFn publish, NowFn now)
     : m_observer{observer}
     , m_send{std::move(send)}
     , m_publish{std::move(publish)}
@@ -234,7 +229,7 @@ TradeOperations::TradeOperations(GameObserver &observer, SendFn send, PublishFn 
     m_observer.sig2_gameStateChanged.connect(m_lifetime, [this](const GameStateEnum state) {
         if (state != GameStateEnum::PLAYING) {
             // A new login sets the viewer again, unless the player set it in this connection.
-            m_viewerSent = false;
+            m_viewerClaim.newLogin();
         }
         if (!m_op.has_value()) {
             return;
@@ -251,7 +246,7 @@ TradeOperations::TradeOperations(GameObserver &observer, SendFn send, PublishFn 
     });
 }
 
-TradeOperations::~TradeOperations()
+CommandRunner::~CommandRunner()
 {
     if (quiet() && m_op->replying) {
         // Nobody is left to answer a pager the parser would hide.
@@ -259,12 +254,12 @@ TradeOperations::~TradeOperations()
     }
 }
 
-int64_t TradeOperations::now() const
+int64_t CommandRunner::now() const
 {
     return m_now ? m_now() : steadyNowMs();
 }
 
-void TradeOperations::setDriving(const bool driving)
+void CommandRunner::setDriving(const bool driving)
 {
     if (driving == m_driving) {
         return;
@@ -277,7 +272,7 @@ void TradeOperations::setDriving(const bool driving)
     }
 }
 
-void TradeOperations::resetConnection()
+void CommandRunner::resetConnection()
 {
     m_sent.clear();
     m_pagerOpen = false;
@@ -285,17 +280,10 @@ void TradeOperations::resetConnection()
     m_atPrompt = false;
     m_owed = 0;
     m_lastSessionsLeft.reset();
-    m_viewerSent = false;
-    m_viewerSetByPlayer = false;
-    if (m_viewer != QStringLiteral("unknown")) {
-        m_viewer = QStringLiteral("unknown");
-        if (m_viewerChanged) {
-            m_viewerChanged();
-        }
-    }
+    m_viewerClaim.reset();
 }
 
-void TradeOperations::refuse(const QString &id, const QString &action, const QString &reason)
+void CommandRunner::refuse(const QString &id, const QString &action, const QString &reason)
 {
     TradeOperationState state;
     state.id = id;
@@ -305,7 +293,7 @@ void TradeOperations::refuse(const QString &id, const QString &action, const QSt
     m_publish(makeTradeOperation(state));
 }
 
-void TradeOperations::request(const QJsonObject &payload, const Context &context)
+void CommandRunner::request(const QJsonObject &payload, const Context &context)
 {
     const QString id = payload.value("id").toString();
     const QString action = payload.value("action").toString();
@@ -418,7 +406,7 @@ void TradeOperations::request(const QJsonObject &payload, const Context &context
     startStep();
 }
 
-void TradeOperations::requestQuiet(const QJsonObject &payload, const Context &context)
+void CommandRunner::requestQuiet(const QJsonObject &payload, const Context &context)
 {
     QuietReplyState refused;
     refused.id = payload.value("id").toString();
@@ -472,7 +460,7 @@ void TradeOperations::requestQuiet(const QJsonObject &payload, const Context &co
     sendQuietWhenIdle();
 }
 
-bool TradeOperations::idle() const
+bool CommandRunner::idle() const
 {
     if (m_pagerOpen) {
         return false;
@@ -486,7 +474,7 @@ bool TradeOperations::idle() const
     return m_atPrompt && m_owed == 0 && at - m_lastSentAt >= QUIET_SETTLE_MS;
 }
 
-void TradeOperations::sendQuietWhenIdle()
+void CommandRunner::sendQuietWhenIdle()
 {
     if (!quiet() || !m_op->waiting || !idle()) {
         return;
@@ -496,13 +484,13 @@ void TradeOperations::sendQuietWhenIdle()
     submit(m_op->commands.front(), SentEnum::STEP);
 }
 
-void TradeOperations::submit(const QString &line, const SentEnum kind)
+void CommandRunner::submit(const QString &line, const SentEnum kind)
 {
     m_sent.push_back(Sent{line, kind, m_op.has_value() ? m_op->serial : 0});
     m_send(line);
 }
 
-void TradeOperations::startStep()
+void CommandRunner::startStep()
 {
     assert(m_op.has_value());
     Operation &op = *m_op;
@@ -533,16 +521,14 @@ void TradeOperations::startStep()
     submit(command, SentEnum::STEP);
 }
 
-void TradeOperations::publishState()
+void CommandRunner::publishState()
 {
     if (m_op.has_value()) {
         m_publish(makeTradeOperation(m_op->state));
     }
 }
 
-void TradeOperations::finish(const TradeStatusEnum status,
-                             const QString &reason,
-                             const bool withText)
+void CommandRunner::finish(const TradeStatusEnum status, const QString &reason, const bool withText)
 {
     if (!m_op.has_value()) {
         return;
@@ -586,12 +572,12 @@ void TradeOperations::finish(const TradeStatusEnum status,
     m_publish(makeTradeOperation(op.state));
 }
 
-void TradeOperations::abort(const QString &reason)
+void CommandRunner::abort(const QString &reason)
 {
     finish(TradeStatusEnum::STOPPED, reason, true);
 }
 
-void TradeOperations::cancel(const QString &id)
+void CommandRunner::cancel(const QString &id)
 {
     if (!m_op.has_value() || m_op->state.id != id || m_op->kind == KindEnum::QUIET) {
         return; // Not running: its last status has already gone out.
@@ -602,7 +588,7 @@ void TradeOperations::cancel(const QString &id)
     finish(TradeStatusEnum::CANCELLED, QStringLiteral("cancelled"), false);
 }
 
-void TradeOperations::beforePlayerLine(const QString & /*line*/)
+void CommandRunner::beforePlayerLine(const QString & /*line*/)
 {
     if (!m_op.has_value()) {
         return;
@@ -619,7 +605,7 @@ void TradeOperations::beforePlayerLine(const QString & /*line*/)
     abort(QStringLiteral("player input"));
 }
 
-void TradeOperations::expire()
+void CommandRunner::expire()
 {
     if (quiet() && m_op->waiting) {
         if (now() >= m_op->deadline) {
@@ -638,7 +624,7 @@ void TradeOperations::expire()
     finish(TradeStatusEnum::FAILED, QStringLiteral("timeout"), true);
 }
 
-void TradeOperations::onSentToMud(const QString &raw)
+void CommandRunner::onSentToMud(const QString &raw)
 {
     const QString line = chompLine(raw);
     // Whoever sent it, the first line after a pager is its answer, and has no prompt of its
@@ -677,7 +663,7 @@ void TradeOperations::onSentToMud(const QString &raw)
     }
 
     // Foreign: the player's, an alias's, a frontend's quiet refresh.
-    noteViewerLine(line);
+    m_viewerClaim.notePlayerLine(line);
     if (!m_op.has_value()) {
         return;
     }
@@ -691,7 +677,7 @@ void TradeOperations::onSentToMud(const QString &raw)
     }
 }
 
-void TradeOperations::onLine(const QString &chunk)
+void CommandRunner::onLine(const QString &chunk)
 {
     if (!m_op.has_value() || !m_op->replying) {
         return;
@@ -712,7 +698,7 @@ void TradeOperations::onLine(const QString &chunk)
     }
 }
 
-void TradeOperations::onQuietLine(const QString &raw)
+void CommandRunner::onQuietLine(const QString &raw)
 {
     Operation &op = *m_op;
     const QString line = chompLine(raw);
@@ -730,7 +716,7 @@ void TradeOperations::onQuietLine(const QString &raw)
     }
 }
 
-void TradeOperations::onPager(const PagerLine &pager)
+void CommandRunner::onPager(const PagerLine &pager)
 {
     m_pagerOpen = true;
     m_atPrompt = false;
@@ -764,7 +750,7 @@ void TradeOperations::onPager(const PagerLine &pager)
     submit(QString{}, SentEnum::PAGER);
 }
 
-TradeOperations::Outcome TradeOperations::judge() const
+CommandRunner::Outcome CommandRunner::judge() const
 {
     const Operation &op = *m_op;
     const auto dealRefusal = [](const ShopDeal &deal) -> QString {
@@ -875,7 +861,7 @@ TradeOperations::Outcome TradeOperations::judge() const
     return {OutcomeEnum::FAILED, QStringLiteral("no reply")};
 }
 
-void TradeOperations::onPrompt()
+void CommandRunner::onPrompt()
 {
     m_pagerOpen = false;
     m_pagerOwned = false;
@@ -926,49 +912,13 @@ void TradeOperations::onPrompt()
     sendQuietWhenIdle();
 }
 
-void TradeOperations::maybeSetViewer()
+void CommandRunner::maybeSetViewer()
 {
     // Once per login, at a prompt where nothing else is being said to MUME.
-    if (m_viewerSent || m_viewerSetByPlayer || m_op.has_value() || m_pagerOpen || !m_driving
-        || !m_echo || !m_observer.isViewerClaimed()
-        || m_observer.getGameState() != GameStateEnum::PLAYING) {
+    if (!m_viewerClaim.due() || m_op.has_value() || m_pagerOpen || !m_driving || !m_echo
+        || !m_observer.isViewerClaimed() || m_observer.getGameState() != GameStateEnum::PLAYING) {
         return;
     }
-    m_viewerSent = true;
     submit(QStringLiteral("change viewer external"), SentEnum::VIEWER);
-    if (m_viewer != QStringLiteral("external")) {
-        m_viewer = QStringLiteral("external");
-        if (m_viewerChanged) {
-            m_viewerChanged();
-        }
-    }
-}
-
-void TradeOperations::noteViewerLine(const QString &line)
-{
-    static const QRegularExpression re{QStringLiteral(R"(^\s*cha\w*\s+vie\w*\s+(\w+))"),
-                                       QRegularExpression::CaseInsensitiveOption};
-    const auto match = re.match(line);
-    if (!match.hasMatch()) {
-        return;
-    }
-    const QString value = match.captured(1).toLower();
-    QString viewer;
-    for (const char *const option : {"external", "simple", "off"}) {
-        if (QString::fromLatin1(option).startsWith(value)) {
-            viewer = QString::fromLatin1(option);
-            break;
-        }
-    }
-    if (viewer.isEmpty()) {
-        return; // Not a setting MUME knows; it answers with an error and changes nothing.
-    }
-    // The player's own choice, respected for the rest of this connection.
-    m_viewerSetByPlayer = true;
-    if (m_viewer != viewer) {
-        m_viewer = viewer;
-        if (m_viewerChanged) {
-            m_viewerChanged();
-        }
-    }
+    m_viewerClaim.sentExternal();
 }

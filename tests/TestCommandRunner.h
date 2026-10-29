@@ -6,13 +6,13 @@
 
 #include <QObject>
 
-class NODISCARD_QOBJECT TestTradeOperations final : public QObject
+class NODISCARD_QOBJECT TestCommandRunner final : public QObject
 {
     Q_OBJECT
 
 public:
-    TestTradeOperations() = default;
-    ~TestTradeOperations() override = default;
+    TestCommandRunner() = default;
+    ~TestCommandRunner() override = default;
 
 private Q_SLOTS:
     static void operationMessageTest();

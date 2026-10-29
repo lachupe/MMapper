@@ -56,9 +56,9 @@ FrontendServer::FrontendServer(GameObserver &observer,
     , m_observer{observer}
     , m_mapData{mapData}
     , m_listener{listener}
-    , m_trade{observer,
-              [this](const QString &line) { m_session.sendLine(line); },
-              [this](const GmcpMessage &msg) { publish(msg); }}
+    , m_runner{observer,
+               [this](const QString &line) { m_session.sendLine(line); },
+               [this](const GmcpMessage &msg) { publish(msg); }}
     , m_importantLog{[this](const GmcpMessage &msg) { publish(msg); }}
     , m_loginMemory{!NO_QTKEYCHAIN}
     , m_passwordConfig{std::make_unique<PasswordConfig>()}
@@ -113,12 +113,12 @@ FrontendServer::FrontendServer(GameObserver &observer,
                                   [this](const PagerLine &) { m_importantLog.receivePager(); });
 
     // The viewer setting is in MMapper.Session.State.
-    m_trade.setViewerChanged([this]() { publishSessionState(); });
-    m_tradeTimer.setInterval(250);
-    connect(&m_tradeTimer, &QTimer::timeout, this, [this]() {
-        m_trade.expire();
-        if (!m_trade.busy()) {
-            m_tradeTimer.stop();
+    m_runner.setViewerChanged([this]() { publishSessionState(); });
+    m_runnerTimer.setInterval(250);
+    connect(&m_runnerTimer, &QTimer::timeout, this, [this]() {
+        m_runner.expire();
+        if (!m_runner.busy()) {
+            m_runnerTimer.stop();
         }
     });
 
@@ -346,7 +346,7 @@ bool FrontendServer::tryTakeSession(const Client &client)
         return false; // A telnet or built-in client owns the session.
     }
     m_driver = client.socket;
-    m_trade.setDriving(true);
+    m_runner.setDriving(true);
     updateViewerClaim();
     log(QString("Frontend '%1' is driving the session").arg(client.name));
     return true;
@@ -361,7 +361,7 @@ void FrontendServer::releaseSession()
     // Whatever login was held for remembering was this frontend's.
     m_loginMemory.reset();
     // Nothing more can be sent for an operation; it stops where it is.
-    m_trade.setDriving(false);
+    m_runner.setDriving(false);
     updateViewerClaim();
     // Closing the session ends the MUME connection, exactly as closing a telnet client does.
     m_session.detach();
@@ -376,7 +376,7 @@ GmcpMessage FrontendServer::sessionStateFor(const Client &client) const
         m_echo,
         m_driver != nullptr && m_driver == client.socket,
         m_observer.getGameState(),
-        m_trade.viewerState(),
+        m_runner.viewerState(),
         m_loginPrompt,
         rememberedAccountName(getConfig().account.accountName,
                               getConfig().account.accountPassword,
@@ -415,7 +415,7 @@ void FrontendServer::handleInput(Client &client, const GmcpMessage &msg)
     //
     // The player's line always goes at once; a trade operation holding MUME's pager answers it
     // with `q` first, and stops.
-    m_trade.beforePlayerLine(optText.value());
+    m_runner.beforePlayerLine(optText.value());
     // At MUME's own login prompts, and only while the frontend asked for it, the answer is held
     // for remembering (LoginMemory); never logged, never published.
     m_loginMemory.noteSent(m_loginPrompt.kind, optText.value());
@@ -481,7 +481,7 @@ void FrontendServer::handleTrade(Client &client, const GmcpMessage &msg)
     const QJsonValue idValue = payload.value("id");
     const QString id = idValue.toString();
     if (!doc.isObject() || !idValue.isString() || id.isEmpty()
-        || id.size() > TradeOperations::MAX_ID_CHARS) {
+        || id.size() > CommandRunner::MAX_ID_CHARS) {
         sendTo(client,
                frontend_messages::makeError("invalid-trade",
                                             QString("'%1' needs an object payload with an 'id' "
@@ -510,19 +510,19 @@ void FrontendServer::handleTrade(Client &client, const GmcpMessage &msg)
     }
 
     if (msg.isMMapperTradeCancel()) {
-        m_trade.cancel(id);
+        m_runner.cancel(id);
         return;
     }
 
-    m_trade.request(payload, tradeContext());
-    if (m_trade.busy() && !m_tradeTimer.isActive()) {
-        m_tradeTimer.start();
+    m_runner.request(payload, tradeContext());
+    if (m_runner.busy() && !m_runnerTimer.isActive()) {
+        m_runnerTimer.start();
     }
 }
 
-TradeOperations::Context FrontendServer::tradeContext() const
+CommandRunner::Context FrontendServer::tradeContext() const
 {
-    TradeOperations::Context context;
+    CommandRunner::Context context;
     context.driving = true;
     context.connected = m_upstreamConnected;
     context.echo = m_echo;
@@ -539,7 +539,7 @@ void FrontendServer::handleQuiet(Client &client, const GmcpMessage &msg)
     const QJsonValue idValue = payload.value("id");
     const QString id = idValue.toString();
     if (!doc.isObject() || !idValue.isString() || id.isEmpty()
-        || id.size() > TradeOperations::MAX_ID_CHARS) {
+        || id.size() > CommandRunner::MAX_ID_CHARS) {
         sendTo(client,
                frontend_messages::makeError("invalid-quiet",
                                             "MMapper.Input.Quiet needs an object payload with "
@@ -552,7 +552,7 @@ void FrontendServer::handleQuiet(Client &client, const GmcpMessage &msg)
         // Told to the observer alone, like a trade request of its.
         QuietReplyState refused;
         refused.id = id;
-        refused.text = payload.value("text").toString().left(TradeOperations::MAX_ARGUMENT_CHARS);
+        refused.text = payload.value("text").toString().left(CommandRunner::MAX_ARGUMENT_CHARS);
         refused.status = TradeStatusEnum::REFUSED;
         refused.reason = QStringLiteral("observing");
         sendTo(client, makeQuietReply(refused));
@@ -560,9 +560,9 @@ void FrontendServer::handleQuiet(Client &client, const GmcpMessage &msg)
     }
 
     // The text itself is not logged here, as no input is.
-    m_trade.requestQuiet(payload, tradeContext());
-    if (m_trade.busy() && !m_tradeTimer.isActive()) {
-        m_tradeTimer.start();
+    m_runner.requestQuiet(payload, tradeContext());
+    if (m_runner.busy() && !m_runnerTimer.isActive()) {
+        m_runnerTimer.start();
     }
 }
 

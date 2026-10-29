@@ -9,6 +9,7 @@
 #include "../parser/CharAffects.h"
 #include "../parser/LoginLines.h"
 #include "../proxy/GmcpMessage.h"
+#include "CommandRunner.h"
 #include "FrontendLoginMemory.h"
 #include "FrontendMapIdentity.h"
 #include "FrontendMessages.h"
@@ -16,7 +17,6 @@
 #include "FrontendSession.h"
 #include "FrontendSubscriptions.h"
 #include "ImportantLog.h"
-#include "TradeOperations.h"
 
 #include <cstdint>
 #include <list>
@@ -63,7 +63,7 @@ class QWebSocketServer;
 /// MMapper.Session.RememberLogin and MMapper.Trade.Request and .Cancel, and only the driving
 /// frontend may send them. RememberLogin {"remember": bool} asks MMapper to keep the login it
 /// relays as its own auto-login (LoginMemory; the pass phrase goes only to the keychain). A trade
-/// request is run by TradeOperations, which holds the conversation with MUME and publishes
+/// request is run by CommandRunner, which holds the conversation with MUME and publishes
 /// MMapper.Trade.Operation; so is a quiet command, one line whose reply goes to the frontend as
 /// MMapper.Input.Reply and not to the terminal. MUME's viewer is claimed while the driving
 /// frontend subscribes to MMapper.View.
@@ -120,12 +120,12 @@ private:
     QWebSocket *m_driver = nullptr;
 
     /// Runs MMapper.Trade.Request through m_session, and keeps MUME's viewer setting.
-    TradeOperations m_trade;
+    CommandRunner m_runner;
     /// The prioritised Log (MMapper.Log): ranks MUME's lines and keeps the user's rules.
     ImportantLog m_importantLog;
     /// Four times a second while an operation runs: its step's time may be up, or MUME idle
     /// at last for a quiet command that waits.
-    QTimer m_tradeTimer;
+    QTimer m_runnerTimer;
 
     /// What a frontend that connects mid-session is told: the state MUME has described, with
     /// every change since folded in, and the snapshots built here (time, ground, room contents,
@@ -271,8 +271,8 @@ private:
     void rememberAccepted();
     /// MMapper.Terminal.Output, to each frontend as its filter has it.
     void publishTerminal(const TerminalOutput &out);
-    /// What TradeOperations is told of the session with a request.
-    NODISCARD TradeOperations::Context tradeContext() const;
+    /// What CommandRunner is told of the session with a request.
+    NODISCARD CommandRunner::Context tradeContext() const;
     /// Works out again whether the driving frontend claims MUME's viewer (claimsViewer()).
     void updateViewerClaim();
     void publishSessionState();

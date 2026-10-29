@@ -11,7 +11,7 @@
 #include <QString>
 
 /// The quiet command: a line MMapper sends to MUME for a frontend, which nobody typed
-/// (MMapper.Input.Quiet; TradeOperations runs it). Its reply is not the player's, so it is
+/// (MMapper.Input.Quiet; CommandRunner runs it). Its reply is not the player's, so it is
 /// kept out of the terminal and handed to the frontend instead. Every reader still reads it,
 /// so the packages made from it (MMapper.Char.Skills from a `prac`, MMapper.Char.Stat from a
 /// `stat`) come out as for a typed command.

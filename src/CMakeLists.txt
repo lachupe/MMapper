@@ -736,8 +736,10 @@ if(WITH_FRONTEND)
         frontend/LogRules.h
         frontend/TradeMessages.cpp
         frontend/TradeMessages.h
-        frontend/TradeOperations.cpp
-        frontend/TradeOperations.h
+        frontend/CommandRunner.cpp
+        frontend/CommandRunner.h
+        frontend/ViewerClaim.cpp
+        frontend/ViewerClaim.h
     )
 endif()
 
