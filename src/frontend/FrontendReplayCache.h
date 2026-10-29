@@ -24,10 +24,13 @@
 /// out. A change that arrives before any Set of its kind is dropped, since there is nothing
 /// it could be a change to.
 ///
-/// Room.UpdateExits is not folded into Room.Info yet, although mume3d reads it (door_state.gd
-/// takes each exit it names as restated whole, and false for one that has gone, as a secret door
-/// shut again): a replayed room has its exits, and so its doors, as they were on arrival, and a
-/// frontend that attaches late shows them so until the next change (mume3d TODO 6.2).
+/// Room.UpdateExits is not folded into Room.Info yet, although frontends read it (each exit it
+/// names is restated whole, and false for one that has gone, as a secret door shut again): a
+/// replayed room has its exits, and so its doors, as they were on arrival, and a frontend that
+/// attaches late shows them so until the next change.
+///
+/// The kind of replay each package gets (whole, merged fields, keyed set, none) is listed in
+/// protocol_vocab.json, which tools/protocol_vocab.py writes from the switches in the .cpp.
 ///
 /// Deliberately free of Qt networking types so it can be unit tested on its own.
 class NODISCARD FrontendReplayCache final

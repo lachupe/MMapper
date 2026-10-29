@@ -1,0 +1,10 @@
+{
+    "package": "MMapper.Weather.Event",
+    "payload": {
+        "changing": true,
+        "direction": "north",
+        "kind": "fog",
+        "level": "light",
+        "text": "You see some fog coming from the north."
+    }
+}

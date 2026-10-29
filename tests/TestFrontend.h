@@ -69,4 +69,5 @@ private Q_SLOTS:
     static void logLineTest();
     static void logRulesTest();
     static void logExplainTest();
+    static void goldenFramesTest();
 };

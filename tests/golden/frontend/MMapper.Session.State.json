@@ -1,0 +1,20 @@
+{
+    "package": "MMapper.Session.State",
+    "payload": {
+        "echo": true,
+        "game": "playing",
+        "hidden": 1,
+        "itemCommands": 7,
+        "log": 1,
+        "mapGeneration": 7,
+        "mapLoaded": true,
+        "mapName": "arda.mm2",
+        "mapRooms": 31000,
+        "quiet": 1,
+        "rememberedAccount": null,
+        "role": "driving",
+        "trade": 1,
+        "upstream": "connected",
+        "viewer": "external"
+    }
+}

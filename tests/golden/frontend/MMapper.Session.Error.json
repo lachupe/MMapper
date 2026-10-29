@@ -1,0 +1,7 @@
+{
+    "package": "MMapper.Session.Error",
+    "payload": {
+        "code": "read-only",
+        "message": "nope"
+    }
+}

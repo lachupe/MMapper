@@ -1,0 +1,1321 @@
+{
+ "generated_by": "tools/protocol_vocab.py",
+ "packages": [
+  {
+   "name": "Char.Login",
+   "id": "CHAR_LOGIN",
+   "replay": "event"
+  },
+  {
+   "name": "Char.Name",
+   "id": "CHAR_NAME",
+   "replay": "whole"
+  },
+  {
+   "name": "Char.StatusVars",
+   "id": "CHAR_STATUSVARS",
+   "replay": "merge-fields"
+  },
+  {
+   "name": "Char.Vitals",
+   "id": "CHAR_VITALS",
+   "replay": "merge-fields"
+  },
+  {
+   "name": "Client.GUI",
+   "id": "CLIENT_GUI",
+   "replay": "event"
+  },
+  {
+   "name": "Client.Map",
+   "id": "CLIENT_MAP",
+   "replay": "event"
+  },
+  {
+   "name": "Comm.Channel.Enable",
+   "id": "COMM_CHANNEL_ENABLE",
+   "replay": "event"
+  },
+  {
+   "name": "Comm.Channel.List",
+   "id": "COMM_CHANNEL_LIST",
+   "replay": "event"
+  },
+  {
+   "name": "Comm.Channel.Text",
+   "id": "COMM_CHANNEL_TEXT",
+   "replay": "event"
+  },
+  {
+   "name": "Core.Goodbye",
+   "id": "CORE_GOODBYE",
+   "replay": "event"
+  },
+  {
+   "name": "Core.Hello",
+   "id": "CORE_HELLO",
+   "replay": "event"
+  },
+  {
+   "name": "Core.KeepAlive",
+   "id": "CORE_KEEPALIVE",
+   "replay": "event"
+  },
+  {
+   "name": "Core.Ping",
+   "id": "CORE_PING",
+   "replay": "event"
+  },
+  {
+   "name": "Core.Supports.Add",
+   "id": "CORE_SUPPORTS_ADD",
+   "replay": "event"
+  },
+  {
+   "name": "Core.Supports.Remove",
+   "id": "CORE_SUPPORTS_REMOVE",
+   "replay": "event"
+  },
+  {
+   "name": "Core.Supports.Set",
+   "id": "CORE_SUPPORTS_SET",
+   "replay": "event"
+  },
+  {
+   "name": "Event.Achieved",
+   "id": "EVENT_ACHIEVED",
+   "replay": "event"
+  },
+  {
+   "name": "Event.Darkness",
+   "id": "EVENT_DARKNESS",
+   "replay": "whole"
+  },
+  {
+   "name": "Event.Moon",
+   "id": "EVENT_MOON",
+   "replay": "whole"
+  },
+  {
+   "name": "Event.Moved",
+   "id": "EVENT_MOVED",
+   "replay": "event"
+  },
+  {
+   "name": "Event.Sun",
+   "id": "EVENT_SUN",
+   "replay": "whole"
+  },
+  {
+   "name": "External.Discord.Hello",
+   "id": "EXTERNAL_DISCORD_HELLO",
+   "replay": "event"
+  },
+  {
+   "name": "Group.Add",
+   "id": "GROUP_ADD",
+   "replay": "set-change"
+  },
+  {
+   "name": "Group.Remove",
+   "id": "GROUP_REMOVE",
+   "replay": "set-change"
+  },
+  {
+   "name": "Group.Set",
+   "id": "GROUP_SET",
+   "replay": "keyed-set"
+  },
+  {
+   "name": "Group.Update",
+   "id": "GROUP_UPDATE",
+   "replay": "set-change"
+  },
+  {
+   "name": "MMapper.Account.Chars",
+   "id": "MMAPPER_ACCOUNT_CHARS",
+   "replay": "whole"
+  },
+  {
+   "name": "MMapper.Account.Menu",
+   "id": "MMAPPER_ACCOUNT_MENU",
+   "replay": "whole"
+  },
+  {
+   "name": "MMapper.Account.Reply",
+   "id": "MMAPPER_ACCOUNT_REPLY",
+   "replay": "event"
+  },
+  {
+   "name": "MMapper.Char.Abilities",
+   "id": "MMAPPER_CHAR_ABILITIES",
+   "replay": "merge-fields"
+  },
+  {
+   "name": "MMapper.Char.Affects",
+   "id": "MMAPPER_CHAR_AFFECTS",
+   "replay": "whole"
+  },
+  {
+   "name": "MMapper.Char.Burden",
+   "id": "MMAPPER_CHAR_BURDEN",
+   "replay": "whole"
+  },
+  {
+   "name": "MMapper.Char.Command",
+   "id": "MMAPPER_CHAR_COMMAND",
+   "replay": "event"
+  },
+  {
+   "name": "MMapper.Char.Consider",
+   "id": "MMAPPER_CHAR_CONSIDER",
+   "replay": "event"
+  },
+  {
+   "name": "MMapper.Char.Container",
+   "id": "MMAPPER_CHAR_CONTAINER",
+   "replay": "event"
+  },
+  {
+   "name": "MMapper.Char.Equipment",
+   "id": "MMAPPER_CHAR_EQUIPMENT",
+   "replay": "event"
+  },
+  {
+   "name": "MMapper.Char.Followers",
+   "id": "MMAPPER_CHAR_FOLLOWERS",
+   "replay": "whole"
+  },
+  {
+   "name": "MMapper.Char.Improved",
+   "id": "MMAPPER_CHAR_IMPROVED",
+   "replay": "event"
+  },
+  {
+   "name": "MMapper.Char.Inventory",
+   "id": "MMAPPER_CHAR_INVENTORY",
+   "replay": "event"
+  },
+  {
+   "name": "MMapper.Char.Item",
+   "id": "MMAPPER_CHAR_ITEM",
+   "replay": "event"
+  },
+  {
+   "name": "MMapper.Char.Languages",
+   "id": "MMAPPER_CHAR_LANGUAGES",
+   "replay": "whole"
+  },
+  {
+   "name": "MMapper.Char.Level",
+   "id": "MMAPPER_CHAR_LEVEL",
+   "replay": "whole"
+  },
+  {
+   "name": "MMapper.Char.Refused",
+   "id": "MMAPPER_CHAR_REFUSED",
+   "replay": "event"
+  },
+  {
+   "name": "MMapper.Char.Score",
+   "id": "MMAPPER_CHAR_SCORE",
+   "replay": "merge-fields"
+  },
+  {
+   "name": "MMapper.Char.Skills",
+   "id": "MMAPPER_CHAR_SKILLS",
+   "replay": "whole"
+  },
+  {
+   "name": "MMapper.Char.Stat",
+   "id": "MMAPPER_CHAR_STAT",
+   "replay": "whole"
+  },
+  {
+   "name": "MMapper.Char.Trophies",
+   "id": "MMAPPER_CHAR_TROPHIES",
+   "replay": "event"
+  },
+  {
+   "name": "MMapper.Char.Wimpy",
+   "id": "MMAPPER_CHAR_WIMPY",
+   "replay": "whole"
+  },
+  {
+   "name": "MMapper.Combat.Event",
+   "id": "MMAPPER_COMBAT_EVENT",
+   "replay": "event"
+  },
+  {
+   "name": "MMapper.Guild.Practised",
+   "id": "MMAPPER_GUILD_PRACTISED",
+   "replay": "event"
+  },
+  {
+   "name": "MMapper.Guild.Teacher",
+   "id": "MMAPPER_GUILD_TEACHER",
+   "replay": "event"
+  },
+  {
+   "name": "MMapper.Inn.Offer",
+   "id": "MMAPPER_INN_OFFER",
+   "replay": "event"
+  },
+  {
+   "name": "MMapper.Input.Command",
+   "id": "MMAPPER_INPUT_COMMAND",
+   "replay": "event"
+  },
+  {
+   "name": "MMapper.Input.Quiet",
+   "id": "MMAPPER_INPUT_QUIET",
+   "replay": "event"
+  },
+  {
+   "name": "MMapper.Input.Reply",
+   "id": "MMAPPER_INPUT_REPLY",
+   "replay": "event"
+  },
+  {
+   "name": "MMapper.Log.DeleteRule",
+   "id": "MMAPPER_LOG_DELETE_RULE",
+   "replay": "event"
+  },
+  {
+   "name": "MMapper.Log.Explain",
+   "id": "MMAPPER_LOG_EXPLAIN",
+   "replay": "event"
+  },
+  {
+   "name": "MMapper.Log.Explained",
+   "id": "MMAPPER_LOG_EXPLAINED",
+   "replay": "event"
+  },
+  {
+   "name": "MMapper.Log.Line",
+   "id": "MMAPPER_LOG_LINE",
+   "replay": "event"
+  },
+  {
+   "name": "MMapper.Log.RuleSaved",
+   "id": "MMAPPER_LOG_RULE_SAVED",
+   "replay": "event"
+  },
+  {
+   "name": "MMapper.Log.Rules",
+   "id": "MMAPPER_LOG_RULES",
+   "replay": "event"
+  },
+  {
+   "name": "MMapper.Log.SetRule",
+   "id": "MMAPPER_LOG_SET_RULE",
+   "replay": "event"
+  },
+  {
+   "name": "MMapper.Map.Position",
+   "id": "MMAPPER_MAP_POSITION",
+   "replay": "event"
+  },
+  {
+   "name": "MMapper.Room.Container",
+   "id": "MMAPPER_ROOM_CONTAINER",
+   "replay": "event"
+  },
+  {
+   "name": "MMapper.Room.Contents",
+   "id": "MMAPPER_ROOM_CONTENTS",
+   "replay": "event"
+  },
+  {
+   "name": "MMapper.Room.Door",
+   "id": "MMAPPER_ROOM_DOOR",
+   "replay": "whole"
+  },
+  {
+   "name": "MMapper.Room.HandRaised",
+   "id": "MMAPPER_ROOM_HAND_RAISED",
+   "replay": "event"
+  },
+  {
+   "name": "MMapper.Room.Look",
+   "id": "MMAPPER_ROOM_LOOK",
+   "replay": "event"
+  },
+  {
+   "name": "MMapper.Session.Error",
+   "id": "MMAPPER_SESSION_ERROR",
+   "replay": "event"
+  },
+  {
+   "name": "MMapper.Session.RememberLogin",
+   "id": "MMAPPER_SESSION_REMEMBER_LOGIN",
+   "replay": "event"
+  },
+  {
+   "name": "MMapper.Session.State",
+   "id": "MMAPPER_SESSION_STATE",
+   "replay": "event"
+  },
+  {
+   "name": "MMapper.Shop.Deal",
+   "id": "MMAPPER_SHOP_DEAL",
+   "replay": "event"
+  },
+  {
+   "name": "MMapper.Shop.List",
+   "id": "MMAPPER_SHOP_LIST",
+   "replay": "event"
+  },
+  {
+   "name": "MMapper.Terminal.Filter",
+   "id": "MMAPPER_TERMINAL_FILTER",
+   "replay": "event"
+  },
+  {
+   "name": "MMapper.Terminal.Hidden",
+   "id": "MMAPPER_TERMINAL_HIDDEN",
+   "replay": "event"
+  },
+  {
+   "name": "MMapper.Terminal.Output",
+   "id": "MMAPPER_TERMINAL_OUTPUT",
+   "replay": "event"
+  },
+  {
+   "name": "MMapper.Time.State",
+   "id": "MMAPPER_TIME_STATE",
+   "replay": "event"
+  },
+  {
+   "name": "MMapper.Trade.Cancel",
+   "id": "MMAPPER_TRADE_CANCEL",
+   "replay": "event"
+  },
+  {
+   "name": "MMapper.Trade.Operation",
+   "id": "MMAPPER_TRADE_OPERATION",
+   "replay": "event"
+  },
+  {
+   "name": "MMapper.Trade.Request",
+   "id": "MMAPPER_TRADE_REQUEST",
+   "replay": "event"
+  },
+  {
+   "name": "MMapper.View.Text",
+   "id": "MMAPPER_VIEW_TEXT",
+   "replay": "event"
+  },
+  {
+   "name": "MMapper.Weather.Event",
+   "id": "MMAPPER_WEATHER_EVENT",
+   "replay": "event"
+  },
+  {
+   "name": "MMapper.Weather.Ground",
+   "id": "MMAPPER_WEATHER_GROUND",
+   "replay": "event"
+  },
+  {
+   "name": "MMapper.Xml.Element",
+   "id": "MMAPPER_XML_ELEMENT",
+   "replay": "event"
+  },
+  {
+   "name": "MUME.Client.CancelEdit",
+   "id": "MUME_CLIENT_CANCEL_EDIT",
+   "replay": "event"
+  },
+  {
+   "name": "MUME.Client.Edit",
+   "id": "MUME_CLIENT_EDIT",
+   "replay": "event"
+  },
+  {
+   "name": "MUME.Client.Error",
+   "id": "MUME_CLIENT_ERROR",
+   "replay": "event"
+  },
+  {
+   "name": "MUME.Client.View",
+   "id": "MUME_CLIENT_VIEW",
+   "replay": "event"
+  },
+  {
+   "name": "MUME.Client.Write",
+   "id": "MUME_CLIENT_WRITE",
+   "replay": "event"
+  },
+  {
+   "name": "MUME.Client.XML",
+   "id": "MUME_CLIENT_XML",
+   "replay": "event"
+  },
+  {
+   "name": "Room.Chars.Add",
+   "id": "ROOM_CHARS_ADD",
+   "replay": "set-change"
+  },
+  {
+   "name": "Room.Chars.Remove",
+   "id": "ROOM_CHARS_REMOVE",
+   "replay": "set-change"
+  },
+  {
+   "name": "Room.Chars.Set",
+   "id": "ROOM_CHARS_SET",
+   "replay": "keyed-set"
+  },
+  {
+   "name": "Room.Chars.Update",
+   "id": "ROOM_CHARS_UPDATE",
+   "replay": "set-change"
+  },
+  {
+   "name": "Room.Info",
+   "id": "ROOM_INFO",
+   "replay": "whole"
+  },
+  {
+   "name": "Room.Known.Add",
+   "id": "ROOM_KNOWN_ADD",
+   "replay": "event"
+  },
+  {
+   "name": "Room.Known.List",
+   "id": "ROOM_KNOWN_LIST",
+   "replay": "event"
+  },
+  {
+   "name": "Room.Known.Updated",
+   "id": "ROOM_KNOWN_UPDATED",
+   "replay": "event"
+  },
+  {
+   "name": "Room.UpdateExits",
+   "id": "ROOM_UPDATE_EXITS",
+   "replay": "event"
+  }
+ ],
+ "modules": [
+  {
+   "name": "Char",
+   "id": "CHAR"
+  },
+  {
+   "name": "Client",
+   "id": "CLIENT"
+  },
+  {
+   "name": "Comm.Channel",
+   "id": "COMM_CHANNEL"
+  },
+  {
+   "name": "Event",
+   "id": "EVENT"
+  },
+  {
+   "name": "External.Discord",
+   "id": "EXTERNAL_DISCORD"
+  },
+  {
+   "name": "Group",
+   "id": "GROUP"
+  },
+  {
+   "name": "MMapper.Account",
+   "id": "MMAPPER_ACCOUNT"
+  },
+  {
+   "name": "MMapper.Char",
+   "id": "MMAPPER_CHAR"
+  },
+  {
+   "name": "MMapper.Combat",
+   "id": "MMAPPER_COMBAT"
+  },
+  {
+   "name": "MMapper.Guild",
+   "id": "MMAPPER_GUILD"
+  },
+  {
+   "name": "MMapper.Inn",
+   "id": "MMAPPER_INN"
+  },
+  {
+   "name": "MMapper.Input",
+   "id": "MMAPPER_INPUT"
+  },
+  {
+   "name": "MMapper.Log",
+   "id": "MMAPPER_LOG"
+  },
+  {
+   "name": "MMapper.Map",
+   "id": "MMAPPER_MAP"
+  },
+  {
+   "name": "MMapper.Room",
+   "id": "MMAPPER_ROOM"
+  },
+  {
+   "name": "MMapper.Session",
+   "id": "MMAPPER_SESSION"
+  },
+  {
+   "name": "MMapper.Shop",
+   "id": "MMAPPER_SHOP"
+  },
+  {
+   "name": "MMapper.Terminal",
+   "id": "MMAPPER_TERMINAL"
+  },
+  {
+   "name": "MMapper.Time",
+   "id": "MMAPPER_TIME"
+  },
+  {
+   "name": "MMapper.Trade",
+   "id": "MMAPPER_TRADE"
+  },
+  {
+   "name": "MMapper.View",
+   "id": "MMAPPER_VIEW"
+  },
+  {
+   "name": "MMapper.Weather",
+   "id": "MMAPPER_WEATHER"
+  },
+  {
+   "name": "MMapper.Xml",
+   "id": "MMAPPER_XML"
+  },
+  {
+   "name": "MUME.Client",
+   "id": "MUME_CLIENT"
+  },
+  {
+   "name": "Room",
+   "id": "ROOM"
+  },
+  {
+   "name": "Room.Chars",
+   "id": "ROOM_CHARS"
+  },
+  {
+   "name": "Room.Known",
+   "id": "ROOM_KNOWN"
+  }
+ ],
+ "enums": {
+  "BlowOutcomeEnum": [
+   {
+    "name": "HIT",
+    "wire": "hit"
+   },
+   {
+    "name": "PARRY",
+    "wire": "parry"
+   },
+   {
+    "name": "DODGE",
+    "wire": "dodge"
+   },
+   {
+    "name": "MISS",
+    "wire": "miss"
+   }
+  ],
+  "CombatKindEnum": [
+   {
+    "name": "BLOW",
+    "wire": "blow"
+   },
+   {
+    "name": "FLEE",
+    "wire": "flee"
+   },
+   {
+    "name": "REFUSED",
+    "wire": "refused"
+   },
+   {
+    "name": "BASH",
+    "wire": "bash"
+   },
+   {
+    "name": "BACKSTAB",
+    "wire": "backstab"
+   },
+   {
+    "name": "CONDITION",
+    "wire": "condition"
+   },
+   {
+    "name": "DEATH",
+    "wire": "death"
+   },
+   {
+    "name": "CAST",
+    "wire": "cast"
+   },
+   {
+    "name": "SELF",
+    "wire": "self"
+   },
+   {
+    "name": "AFFECT",
+    "wire": "affect"
+   },
+   {
+    "name": "RESCUE",
+    "wire": "rescue"
+   },
+   {
+    "name": "ASSIST",
+    "wire": "assist"
+   }
+  ],
+  "CombatPhaseEnum": [
+   {
+    "name": "NONE",
+    "wire": ""
+   },
+   {
+    "name": "ATTEMPT",
+    "wire": "attempt"
+   },
+   {
+    "name": "FAILED",
+    "wire": "failed"
+   },
+   {
+    "name": "ESCAPED",
+    "wire": "escaped"
+   },
+   {
+    "name": "STARTED",
+    "wire": "started"
+   },
+   {
+    "name": "DONE",
+    "wire": "done"
+   },
+   {
+    "name": "BROKEN",
+    "wire": "broken"
+   },
+   {
+    "name": "STUNNED",
+    "wire": "stunned"
+   },
+   {
+    "name": "SLEEPY",
+    "wire": "sleepy"
+   },
+   {
+    "name": "STOOD",
+    "wire": "stood"
+   },
+   {
+    "name": "REFUSED",
+    "wire": "refused"
+   },
+   {
+    "name": "DODGED",
+    "wire": "dodged"
+   },
+   {
+    "name": "RECOVERED",
+    "wire": "recovered"
+   },
+   {
+    "name": "FELL",
+    "wire": "fell"
+   },
+   {
+    "name": "UP",
+    "wire": "up"
+   },
+   {
+    "name": "DOWN",
+    "wire": "down"
+   },
+   {
+    "name": "REFRESH",
+    "wire": "refresh"
+   },
+   {
+    "name": "DISENGAGED",
+    "wire": "disengaged"
+   },
+   {
+    "name": "STEP",
+    "wire": "step"
+   }
+  ],
+  "ContainerActionEnum": [
+   {
+    "name": "OPEN",
+    "wire": "open"
+   },
+   {
+    "name": "CLOSE",
+    "wire": "close"
+   },
+   {
+    "name": "UNLOCK",
+    "wire": "unlock"
+   },
+   {
+    "name": "LOCK",
+    "wire": "lock"
+   },
+   {
+    "name": "PICK",
+    "wire": "pick"
+   },
+   {
+    "name": "LOOK",
+    "wire": "look"
+   },
+   {
+    "name": "GET",
+    "wire": "get"
+   },
+   {
+    "name": "PUT",
+    "wire": "put"
+   }
+  ],
+  "ContainerResultEnum": [
+   {
+    "name": "OPENED",
+    "wire": "opened"
+   },
+   {
+    "name": "CLOSED",
+    "wire": "closed"
+   },
+   {
+    "name": "ALREADY_OPEN",
+    "wire": "already-open"
+   },
+   {
+    "name": "ALREADY_CLOSED",
+    "wire": "already-closed"
+   },
+   {
+    "name": "LOCKED",
+    "wire": "locked"
+   },
+   {
+    "name": "UNLOCKED",
+    "wire": "unlocked"
+   },
+   {
+    "name": "NO_KEY",
+    "wire": "no-key"
+   },
+   {
+    "name": "KEY_BROKE",
+    "wire": "key-broke"
+   },
+   {
+    "name": "PICKING",
+    "wire": "picking"
+   },
+   {
+    "name": "PICKED",
+    "wire": "picked"
+   },
+   {
+    "name": "PICK_FAILED",
+    "wire": "pick-failed"
+   },
+   {
+    "name": "PICK_STOPPED",
+    "wire": "pick-stopped"
+   },
+   {
+    "name": "PICKPROOF",
+    "wire": "pickproof"
+   },
+   {
+    "name": "EMPTY",
+    "wire": "empty"
+   },
+   {
+    "name": "CONTENTS",
+    "wire": "contents"
+   },
+   {
+    "name": "NOT_FOUND",
+    "wire": "not-found"
+   },
+   {
+    "name": "CANNOT",
+    "wire": "cannot"
+   }
+  ],
+  "DoorStateEnum": [
+   {
+    "name": "OPEN",
+    "wire": "open"
+   },
+   {
+    "name": "CLOSED",
+    "wire": "closed"
+   },
+   {
+    "name": "LOCKED",
+    "wire": "locked"
+   },
+   {
+    "name": "ICED",
+    "wire": "iced"
+   },
+   {
+    "name": "BLOCKED",
+    "wire": "blocked"
+   },
+   {
+    "name": "BROKEN",
+    "wire": "broken"
+   },
+   {
+    "name": "MOLTEN",
+    "wire": "molten"
+   },
+   {
+    "name": "UNKNOWN",
+    "wire": "unknown"
+   }
+  ],
+  "ExitLookKindEnum": [
+   {
+    "name": "DESCRIPTION",
+    "wire": "description"
+   },
+   {
+    "name": "NOTHING",
+    "wire": "nothing"
+   },
+   {
+    "name": "DOOR",
+    "wire": "door"
+   },
+   {
+    "name": "DARK",
+    "wire": "dark"
+   },
+   {
+    "name": "NO_EXIT",
+    "wire": "no-exit"
+   },
+   {
+    "name": "EMPTY",
+    "wire": "empty"
+   },
+   {
+    "name": "OTHER",
+    "wire": "other"
+   }
+  ],
+  "FollowerKindEnum": [
+   {
+    "name": "CHARMIE",
+    "wire": "charmie"
+   },
+   {
+    "name": "MOUNT",
+    "wire": "mount"
+   },
+   {
+    "name": "SUMMONED",
+    "wire": "summoned"
+   },
+   {
+    "name": "UNKNOWN",
+    "wire": "unknown"
+   }
+  ],
+  "FollowerReplyEnum": [
+   {
+    "name": "OK",
+    "wire": "ok"
+   },
+   {
+    "name": "FAILED",
+    "wire": "failed"
+   },
+   {
+    "name": "NONE_HERE",
+    "wire": "none-here"
+   },
+   {
+    "name": "SYNTAX",
+    "wire": "syntax"
+   },
+   {
+    "name": "ASLEEP",
+    "wire": "asleep"
+   }
+  ],
+  "FollowerStateEnum": [
+   {
+    "name": "FOLLOWING",
+    "wire": "following"
+   },
+   {
+    "name": "REFUSING",
+    "wire": "refusing"
+   },
+   {
+    "name": "LOST",
+    "wire": "lost"
+   },
+   {
+    "name": "LEFT",
+    "wire": "left"
+   },
+   {
+    "name": "DEAD",
+    "wire": "dead"
+   }
+  ],
+  "ItemActionEnum": [
+   {
+    "name": "WEAR",
+    "wire": "wear"
+   },
+   {
+    "name": "REMOVE",
+    "wire": "remove"
+   },
+   {
+    "name": "WIELD",
+    "wire": "wield"
+   },
+   {
+    "name": "HOLD",
+    "wire": "hold"
+   },
+   {
+    "name": "LIGHT",
+    "wire": "light"
+   },
+   {
+    "name": "GET",
+    "wire": "get"
+   },
+   {
+    "name": "PUT",
+    "wire": "put"
+   },
+   {
+    "name": "DROP",
+    "wire": "drop"
+   },
+   {
+    "name": "GIVE",
+    "wire": "give"
+   },
+   {
+    "name": "RECEIVE",
+    "wire": "receive"
+   },
+   {
+    "name": "REFUSED",
+    "wire": "refused"
+   }
+  ],
+  "ItemBlockKindEnum": [
+   {
+    "name": "EQUIPMENT",
+    "wire": "equipment"
+   },
+   {
+    "name": "INVENTORY",
+    "wire": "inventory"
+   },
+   {
+    "name": "CONTAINER",
+    "wire": "container"
+   }
+  ],
+  "WeatherLineKindEnum": [
+   {
+    "name": "UNKNOWN",
+    "wire": "unknown"
+   },
+   {
+    "name": "SNOW",
+    "wire": "snow"
+   },
+   {
+    "name": "FROST",
+    "wire": "frost"
+   },
+   {
+    "name": "ICE",
+    "wire": "ice"
+   },
+   {
+    "name": "LIGHTNING",
+    "wire": "lightning"
+   },
+   {
+    "name": "THUNDER",
+    "wire": "thunder"
+   },
+   {
+    "name": "FOG",
+    "wire": "fog"
+   },
+   {
+    "name": "STORM",
+    "wire": "storm"
+   },
+   {
+    "name": "DARKNESS",
+    "wire": "darkness"
+   }
+  ],
+  "XmlCategoryEnum": [
+   {
+    "name": "ROOM",
+    "wire": "room"
+   },
+   {
+    "name": "STATUS",
+    "wire": "status"
+   },
+   {
+    "name": "COMBAT",
+    "wire": "combat"
+   },
+   {
+    "name": "MAGIC",
+    "wire": "magic"
+   },
+   {
+    "name": "ENTITY",
+    "wire": "entity"
+   },
+   {
+    "name": "MOVEMENT",
+    "wire": "movement"
+   },
+   {
+    "name": "COMMUNICATION",
+    "wire": "communication"
+   },
+   {
+    "name": "PROGRESS",
+    "wire": "progress"
+   },
+   {
+    "name": "FORMATTING",
+    "wire": "formatting"
+   }
+  ]
+ },
+ "xml_tags": [
+  {
+   "name": "ROOM",
+   "wire": "room",
+   "category": "room"
+  },
+  {
+   "name": "NAME",
+   "wire": "name",
+   "category": "room"
+  },
+  {
+   "name": "DESCRIPTION",
+   "wire": "description",
+   "category": "room"
+  },
+  {
+   "name": "TERRAIN",
+   "wire": "terrain",
+   "category": "room"
+  },
+  {
+   "name": "EXITS",
+   "wire": "exits",
+   "category": "room"
+  },
+  {
+   "name": "EXIT",
+   "wire": "exit",
+   "category": "room"
+  },
+  {
+   "name": "HEADER",
+   "wire": "header",
+   "category": "room"
+  },
+  {
+   "name": "PROMPT",
+   "wire": "prompt",
+   "category": "status"
+  },
+  {
+   "name": "STATUS",
+   "wire": "status",
+   "category": "status"
+  },
+  {
+   "name": "WEATHER",
+   "wire": "weather",
+   "category": "status"
+  },
+  {
+   "name": "HIT",
+   "wire": "hit",
+   "category": "combat"
+  },
+  {
+   "name": "DAMAGE",
+   "wire": "damage",
+   "category": "combat"
+  },
+  {
+   "name": "AVOID_DAMAGE",
+   "wire": "avoid_damage",
+   "category": "combat"
+  },
+  {
+   "name": "MISS",
+   "wire": "miss",
+   "category": "combat"
+  },
+  {
+   "name": "MAGIC",
+   "wire": "magic",
+   "category": "magic"
+  },
+  {
+   "name": "CHARACTER",
+   "wire": "character",
+   "category": "entity"
+  },
+  {
+   "name": "PLAYER",
+   "wire": "player",
+   "category": "entity"
+  },
+  {
+   "name": "ENEMY",
+   "wire": "enemy",
+   "category": "entity"
+  },
+  {
+   "name": "FAMILIAR",
+   "wire": "familiar",
+   "category": "entity"
+  },
+  {
+   "name": "OBJECT",
+   "wire": "object",
+   "category": "entity"
+  },
+  {
+   "name": "MOVEMENT",
+   "wire": "movement",
+   "category": "movement"
+  },
+  {
+   "name": "MOVE_IN",
+   "wire": "move_in",
+   "category": "movement"
+  },
+  {
+   "name": "MOVE_OUT",
+   "wire": "move_out",
+   "category": "movement"
+  },
+  {
+   "name": "SAY",
+   "wire": "say",
+   "category": "communication"
+  },
+  {
+   "name": "TELL",
+   "wire": "tell",
+   "category": "communication"
+  },
+  {
+   "name": "NARRATE",
+   "wire": "narrate",
+   "category": "communication"
+  },
+  {
+   "name": "SHOUT",
+   "wire": "shout",
+   "category": "communication"
+  },
+  {
+   "name": "YELL",
+   "wire": "yell",
+   "category": "communication"
+  },
+  {
+   "name": "SONG",
+   "wire": "song",
+   "category": "communication"
+  },
+  {
+   "name": "PRAY",
+   "wire": "pray",
+   "category": "communication"
+  },
+  {
+   "name": "EMOTE",
+   "wire": "emote",
+   "category": "communication"
+  },
+  {
+   "name": "SOCIAL",
+   "wire": "social",
+   "category": "communication"
+  },
+  {
+   "name": "ACHIEVEMENT",
+   "wire": "achievement",
+   "category": "progress"
+  },
+  {
+   "name": "SNOOP",
+   "wire": "snoop",
+   "category": "formatting"
+  },
+  {
+   "name": "CODE",
+   "wire": "code",
+   "category": "formatting"
+  },
+  {
+   "name": "EM",
+   "wire": "em",
+   "category": "formatting"
+  },
+  {
+   "name": "HIGHLIGHT",
+   "wire": "highlight",
+   "category": "formatting"
+  },
+  {
+   "name": "XML",
+   "wire": "xml",
+   "category": "formatting"
+  },
+  {
+   "name": "GRATUITOUS",
+   "wire": "gratuitous",
+   "category": "formatting"
+  }
+ ]
+}

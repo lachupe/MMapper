@@ -1,0 +1,18 @@
+{
+    "package": "MMapper.Xml.Element",
+    "payload": {
+        "attributes": {
+            "dir": "north"
+        },
+        "category": "combat",
+        "children": [
+            {
+                "category": "entity",
+                "tag": "character",
+                "text": "A dirty uruk"
+            }
+        ],
+        "tag": "hit",
+        "text": "A dirty uruk barely slashes your body."
+    }
+}

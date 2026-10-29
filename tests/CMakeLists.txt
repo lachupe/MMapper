@@ -580,7 +580,17 @@ if(WITH_FRONTEND)
       CXX_EXTENSIONS OFF
       COMPILE_FLAGS "${WARNING_FLAGS}"
     )
+    # The frames TestFrontend::goldenFramesTest compares with what the builders make now.
+    target_compile_definitions(TestFrontend PRIVATE
+        MM_FRONTEND_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/golden/frontend")
     add_test(NAME TestFrontend COMMAND TestFrontend)
+
+    # The vocabulary file mume3d copies must match the sources it is read from.
+    find_package(Python3 QUIET COMPONENTS Interpreter)
+    if(Python3_Interpreter_FOUND)
+        add_test(NAME ProtocolVocab
+                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/../tools/protocol_vocab.py --check)
+    endif()
 
     # The prioritised Log: its rules, its situation, and the tags the parser's readers give
     set(TestLogRules_SRCS

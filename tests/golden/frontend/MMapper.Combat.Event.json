@@ -1,0 +1,14 @@
+{
+    "package": "MMapper.Combat.Event",
+    "payload": {
+        "actor": "you",
+        "effect": "shatter",
+        "kind": "blow",
+        "outcome": "hit",
+        "part": "left arm",
+        "severity": "extremely hard",
+        "target": "the one-eyed orc",
+        "text": "You pound the one-eyed orc's left arm extremely hard and shatter it.",
+        "verb": "pound"
+    }
+}

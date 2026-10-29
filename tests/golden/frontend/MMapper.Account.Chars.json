@@ -1,0 +1,13 @@
+{
+    "package": "MMapper.Account.Chars",
+    "payload": {
+        "account": "dmitry",
+        "chars": [
+            {
+                "lvl": "",
+                "name": "Porien",
+                "playing": false
+            }
+        ]
+    }
+}

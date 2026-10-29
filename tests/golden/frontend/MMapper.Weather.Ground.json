@@ -1,0 +1,13 @@
+{
+    "package": "MMapper.Weather.Ground",
+    "payload": {
+        "entered": true,
+        "frost": "very",
+        "ice": "none",
+        "room": {
+            "externalId": 1,
+            "serverId": 812345
+        },
+        "snow": "lot"
+    }
+}

@@ -39,6 +39,8 @@
 #include "../src/proxy/GmcpMessage.h"
 #include "../src/proxy/GmcpModule.h"
 
+#include <QDir>
+#include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -3310,4 +3312,140 @@ void TestFrontend::itemObservationMetadataTest()
     const auto end = payloadOf(frontend_messages::makeCharCommand(tracker.finish(true).front()));
     QCOMPARE(end["id"], start["id"]);
     QCOMPARE(end["status"].toString(), QStringLiteral("unknown"));
+}
+
+namespace {
+
+/// The one-line form a golden frame is kept in: the package and its payload, keys in the order
+/// QJsonObject keeps them (sorted), the way mume3d's PackageRouter is handed a frame.
+NODISCARD QByteArray goldenText(const GmcpMessage &msg)
+{
+    QJsonObject frame;
+    frame.insert(QStringLiteral("package"), msg.getName().toQString());
+    const auto &optJson = msg.getJson();
+    frame.insert(QStringLiteral("payload"),
+                 optJson.has_value()
+                     ? QJsonValue{QJsonDocument::fromJson(optJson->toQByteArray()).object()}
+                     : QJsonValue{QJsonObject{}});
+    return QJsonDocument{frame}.toJson(QJsonDocument::Indented);
+}
+
+} // namespace
+
+/// One frame per builder, as MMapper makes it today, kept in tests/golden/frontend/ and replayed
+/// by mume3d's tests/protocol_frames_smoke.gd into the readers. A builder that changes a field
+/// fails here until the folder is rewritten (MM_UPDATE_GOLDEN=1 ctest -R TestFrontend) and
+/// copied into mume3d's tests/fixtures/protocol_frames/, where the client test then shows what
+/// the reader makes of it.
+void TestFrontend::goldenFramesTest()
+{
+    const Map map = makeOneRoomMap(ServerRoomId{812345});
+    const RoomHandle room = map.findRoomHandle(ExternalRoomId{1});
+    QVERIFY(room.exists());
+
+    std::vector<GmcpMessage> frames;
+
+    frontend_messages::MapIdentity arda;
+    arda.name = QStringLiteral("arda.mm2");
+    arda.rooms = 31000;
+    arda.generation = 7;
+    frames.push_back(frontend_messages::makeSessionState(true,
+                                                         arda,
+                                                         true,
+                                                         true,
+                                                         GameStateEnum::PLAYING,
+                                                         QStringLiteral("external")));
+    frames.push_back(frontend_messages::makeError("read-only", "nope"));
+    frames.push_back(frontend_messages::makeMapPosition(room));
+
+    XmlElement character;
+    character.tag = XmlTagEnum::CHARACTER;
+    character.name = "character";
+    character.text = QStringLiteral("A dirty uruk");
+    XmlElement hit;
+    hit.tag = XmlTagEnum::HIT;
+    hit.name = "hit";
+    hit.text = QStringLiteral("A dirty uruk barely slashes your body.");
+    hit.attributes.emplace_back("dir", "north");
+    hit.children.emplace_back(character);
+    frames.push_back(frontend_messages::makeXmlElement(hit));
+
+    frames.push_back(frontend_messages::makeCombatEvent(*parseCombatLine(
+        QStringLiteral("You pound the one-eyed orc's left arm extremely hard and shatter it."))));
+    frames.push_back(frontend_messages::makeTimeState(MumeMoment{3030, 8, 17, 15, 12},
+                                                      MumeClockPrecisionEnum::MINUTE));
+    frames.push_back(frontend_messages::makeWeatherEvent(
+        parseWeatherLine(QStringLiteral("You see some fog coming from the north."))));
+
+    GroundState ground;
+    ground.snow = "lot";
+    ground.frost = "very";
+    ground.entered = true;
+    frames.push_back(frontend_messages::makeGroundState(ground, &room));
+
+    RoomContentsSnapshot contents;
+    contents.roomKey = QStringLiteral("812345");
+    RoomObject chest;
+    chest.index = 0;
+    chest.line = QStringLiteral("A wooden chest stands in the corner.");
+    chest.keyword = QStringLiteral("chest");
+    chest.target = QStringLiteral("chest");
+    chest.container = true;
+    chest.state.locked = true;
+    chest.state.open = false;
+    chest.state.known = 1790000000;
+    contents.objects.push_back(chest);
+    frames.push_back(frontend_messages::makeRoomContents(contents, &room));
+
+    frames.push_back(frontend_messages::makeCharLevel(
+        *parseCharLevelLine(QStringLiteral("MMXP 56 45,370,716 1,029,284 271,013 0"))));
+    frames.push_back(
+        frontend_messages::makeCharWimpy(*parseWimpyLine(QStringLiteral("Wimpy set to: 120"))));
+    frames.push_back(frontend_messages::makeCharRefused(
+        *parseRefusedLine(QStringLiteral("Rest while fighting? Are you MAD?"))));
+    frames.push_back(frontend_messages::makeRoomHandRaised(
+        *parseHandRaised(QStringLiteral("Tipp raises his hand."))));
+
+    ExitLookTracker looks;
+    looks.receiveRoom(1101);
+    looks.receiveCommand(QStringLiteral("l n"));
+    looks.receiveLine(QStringLiteral("The giant, thick wooden is open."), LineKindEnum::TEXT);
+    const auto doneLooks = looks.receivePrompt();
+    QCOMPARE(doneLooks.size(), size_t{1});
+    frames.push_back(frontend_messages::makeRoomLook(doneLooks[0]));
+
+    AccountChars list;
+    list.account = QStringLiteral("dmitry");
+    AccountChar porien;
+    porien.name = QStringLiteral("Porien");
+    list.chars.push_back(porien);
+    frames.push_back(frontend_messages::makeAccountChars(list));
+
+    const QDir dir{QStringLiteral(MM_FRONTEND_GOLDEN_DIR)};
+    const bool update = qEnvironmentVariableIsSet("MM_UPDATE_GOLDEN");
+    QStringList written;
+    for (const GmcpMessage &msg : frames) {
+        const QString file = msg.getName().toQString() + QStringLiteral(".json");
+        const QByteArray text = goldenText(msg);
+        written.append(file);
+        if (update) {
+            QVERIFY(dir.mkpath(QStringLiteral(".")));
+            QFile out{dir.filePath(file)};
+            QVERIFY2(out.open(QIODevice::WriteOnly | QIODevice::Truncate), qPrintable(file));
+            QCOMPARE(out.write(text), text.size());
+            continue;
+        }
+        QFile in{dir.filePath(file)};
+        QVERIFY2(in.open(QIODevice::ReadOnly), qPrintable("missing golden frame " + file));
+        QVERIFY2(in.readAll() == text,
+                 qPrintable("golden frame " + file + " differs from its builder"));
+    }
+
+    // No frame in the folder without a builder here.
+    if (!update) {
+        written.sort();
+        QStringList kept = dir.entryList({QStringLiteral("*.json")}, QDir::Files, QDir::Name);
+        kept.sort();
+        QCOMPARE(kept, written);
+    }
 }

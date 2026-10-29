@@ -1,0 +1,25 @@
+{
+    "package": "MMapper.Room.Look",
+    "payload": {
+        "command": "l n",
+        "dir": "north",
+        "door": {
+            "name": "giant, thick wooden",
+            "state": "open"
+        },
+        "dropped": [
+        ],
+        "kind": "door",
+        "lines": [
+            "The giant, thick wooden is open."
+        ],
+        "raw": [
+            "The giant, thick wooden is open."
+        ],
+        "reasons": [
+        ],
+        "room": 1101,
+        "text": "The giant, thick wooden is open.",
+        "uncertain": false
+    }
+}
