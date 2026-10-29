@@ -27,7 +27,7 @@ NODISCARD RefusedRow row(const char *const pattern,
     return RefusedRow{QRegularExpression{QString::fromUtf8(pattern)}, action, reason, target};
 }
 
-// Sources: the powwow logs under /home/aza/data/powwow/logs/archives, as file:line with the
+// Sources: the powwow logs under <powwow>/logs/archives, as file:line with the
 // directory left off, and the count of whole lines in all 364 logs (2005-2006); "M row" is
 // mume3d's docs/data/combat-help-matrix.tsv (2013-2026 logs). The command a line followed is
 // from mume3d's docs/action-rules.md, sections 1.2-1.4.

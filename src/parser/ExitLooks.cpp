@@ -7,7 +7,7 @@
 
 #include <QRegularExpression>
 
-// The answers are MUME's own, from the powwow logs under /home/aza/data/powwow/logs/archives (2005
+// The answers are MUME's own, from the powwow logs under <powwow>/logs/archives (2005
 // and 2006): 251 looks at a side. "You see nothing special there..." 82 times; a door's state
 // alone, "The giant, thick wooden is open." (log-2005.09.03-02.28.34.txt:11403-11406) or "A broken
 // gate." (log-2005.09.05-19.23.16.txt:29369); a description, with a door's line after it when

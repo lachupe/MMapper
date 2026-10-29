@@ -13,7 +13,7 @@
 #include <QJsonObject>
 #include <QtTest/QtTest>
 
-// The lines are MUME's own, from the powwow logs under /home/aza/data/powwow/logs/archives; each
+// The lines are MUME's own, from the powwow logs under <powwow>/logs/archives; each
 // row names where it was found, with that directory left off. "M row" is a row of mume3d's
 // docs/data/combat-help-matrix.tsv, for a wording of today that his logs do not have.
 

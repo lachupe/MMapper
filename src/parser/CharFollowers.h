@@ -22,7 +22,7 @@
 /// With them goes the other side of following: whom the player's character follows, which
 /// players follow it, who therefore leads, and whom it has said it will protect.
 ///
-/// The sentences are MUME's own, from the powwow logs and files under /home/aza/data/powwow
+/// The sentences are MUME's own, from the powwow logs and files under <powwow>
 /// (2005-2006, one player's configuration); the places are cited line by line in
 /// CharFollowers.cpp. None was seen live.
 

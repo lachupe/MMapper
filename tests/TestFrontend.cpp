@@ -728,7 +728,7 @@ void TestFrontend::mapIdentityTest()
     mmqt::HideQDebug forThisTest; // Map reports each change it applies.
     const Map map = makeOneRoomMap(ServerRoomId{812345});
     FrontendMapIdentity identity;
-    identity.loaded(map, QStringLiteral("/home/someone/maps/arda.mm2"));
+    identity.loaded(map, QStringLiteral("/maps/arda.mm2"));
     // The file's name, not where it is.
     QCOMPARE(identity.get().name, QStringLiteral("arda.mm2"));
     QCOMPARE(identity.get().rooms, static_cast<qint64>(1));
@@ -752,7 +752,7 @@ void TestFrontend::mapIdentityTest()
     QCOMPARE(identity.get().generation, static_cast<qint64>(2));
 
     // A save under another name renames the map, and is not a change to it.
-    QVERIFY(!identity.renamed(QStringLiteral("/home/someone/maps/arda.mm2")));
+    QVERIFY(!identity.renamed(QStringLiteral("/maps/arda.mm2")));
     QVERIFY(identity.renamed(QStringLiteral("/tmp/arda-copy.mm2")));
     QCOMPARE(identity.get().name, QStringLiteral("arda-copy.mm2"));
     QCOMPARE(identity.get().generation, static_cast<qint64>(2));

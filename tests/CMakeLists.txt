@@ -984,3 +984,7 @@ set_target_properties(
         COMPILE_FLAGS "${WARNING_FLAGS}"
 )
 add_test(NAME TestClient COMMAND TestClient)
+
+# No absolute /home/<user> paths in committed sources and tests (ARCH.19).
+add_test(NAME NoAbsoluteHomePaths
+    COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/.. -P ${CMAKE_CURRENT_SOURCE_DIR}/check_no_home_paths.cmake)

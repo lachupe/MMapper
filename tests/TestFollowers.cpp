@@ -9,7 +9,7 @@
 
 #include <QtTest/QtTest>
 
-// The lines are MUME's own, from the powwow logs under /home/aza/data/powwow; each row names
+// The lines are MUME's own, from the powwow logs under <powwow>; each row names
 // where it was found, with "logs/archives/" left off.
 
 namespace {

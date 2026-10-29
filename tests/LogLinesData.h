@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (C) 2026 The MMapper Authors
 
-// Generated 2026-10-04 from the user's powwow logs (/home/db/mume/powwow/logs, 940 MB), mume3d TODO G.15: every
+// Generated 2026-10-04 from the user's powwow logs (<powwow>/logs, 940 MB), mume3d TODO G.15: every
 // distinct line of each shape, colour removed (the actors' door lines: the 1,000 most frequent of 5,733). Left out:
 // door lines with a capital in the door's name (MMapper's own, printed with the map's door names: "The Oakendoor
 // is opened ...", 21 lines) and lines the player annotated in the log ("You are too exhausted.## HERE I THINK I

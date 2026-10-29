@@ -39,7 +39,7 @@ const QRegularExpression g_label{
 const QRegularExpression g_capitalArticle{QStringLiteral(R"(^(?:A|An|The) )")};
 const QRegularExpression g_article{QStringLiteral(R"(^(?:a|an|the) (?=\S))")};
 
-// All places below are under /home/aza/data/powwow; "logs/archives/" is left off the logs'
+// All places below are under <powwow>; "logs/archives/" is left off the logs'
 // names. The counts are of logs/archives/*.txt.
 //
 // The bond made, the follower's line (pow/tmp/follow.pow:19 "^&1 $2s following you."):

@@ -7,7 +7,7 @@
 
 #include <QtTest/QtTest>
 
-// The answers are MUME's own, from the powwow logs under /home/aza/data/powwow/logs/archives;
+// The answers are MUME's own, from the powwow logs under <powwow>/logs/archives;
 // each case names where it was found, with that directory left off.
 
 namespace {

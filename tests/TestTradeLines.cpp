@@ -854,7 +854,7 @@ void TestTradeLines::charSkillsTest()
 
 void TestTradeLines::charSkillsOwnLogTest()
 {
-    // /home/aza/data/powwow/logs/archives/log-2006.04.19-13.48.14.txt:110-133, the user's own
+    // <powwow>/logs/archives/log-2006.04.19-13.48.14.txt:110-133, the user's own
     // `prac` of 2006: one space between "Difficulty" and "Class" in the heading, the mana and the
     // casting time in one column with a comma ("30, Very short"), and the `*` of a skill that is
     // not being trained before the knowledge word, a space after it.

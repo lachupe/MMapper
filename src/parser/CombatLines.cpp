@@ -761,7 +761,7 @@ const QRegularExpression g_flash{
 /// "battle glory"), except "poisoned" and "blind", which `stat` calls "poison" and "blindness":
 /// CharAffects.cpp holds the one table that brings the two together.
 ///
-/// Where the later lines come from (/home/aza/data/powwow; "magic.pow" is pow/magic.pow, "tmp"
+/// Where the later lines come from (<powwow>; "magic.pow" is pow/magic.pow, "tmp"
 /// is pow/send/tmp/magic.pow, logs are under logs/):
 /// - "revitalized" beside "revitalised": pow/send/magic.pow:27,30; the logs have the z 3454
 ///   times and the s 88 (archives/log-2005.09.05-19.23.16.txt:1371);

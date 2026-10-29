@@ -13,7 +13,7 @@
 #include <QRegularExpression>
 #include <QStringList>
 
-// Sources: the powwow logs under /home/aza/data/powwow/logs/archives (2005-2006), cited as
+// Sources: the powwow logs under <powwow>/logs/archives (2005-2006), cited as
 // file:line with that directory left off; counts are whole lines in all 364 logs. MUME's help
 // pages `exits` and `gmcp_room` as read at https://mume.org/help/ on 2026-10-01.
 
@@ -118,7 +118,7 @@ const LinePattern g_doorLines[] = {
     // "The door seems to blur for a while." log-2005.10.04-03.05.23.txt:46527 (96).
     {QRegularExpression{QStringLiteral("^The " DOOR R"( seems? to blur for a while\.$)")},
      K::BLURRED},
-    // His alias `get rock backpack;use rock ${door};get rock` (/home/aza/data/powwow/m:84-85):
+    // His alias `get rock backpack;use rock ${door};get rock` (<powwow>/m:84-85):
     // "As you throw a twisted rock fragment at the door, there is an explosion."
     // log-2005.10.04-03.05.23.txt:46526; somebody else's, "As Kazadoe (K) throws a twisted rock
     // fragment at the gate, there is an explosion." log-2006.01.04-03.42.35.txt:11765.
