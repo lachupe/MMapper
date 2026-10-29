@@ -230,7 +230,7 @@ struct NODISCARD Game final
     /// The last message, when the last line or prompt caused one.
     std::optional<CharFollowers> last;
 
-    void send(const char *const command) { tracker.receiveCommand(QString::fromUtf8(command), now); }
+    void send(const char *const command) { tracker.receiveCommand(SentCommand{QString::fromUtf8(command), now * 1000}); }
     /// True when the line changed the followers.
     bool line(const char *const text)
     {

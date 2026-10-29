@@ -523,6 +523,8 @@ set(mmapper_SRCS
     parser/CharLines.h
     parser/CharRefused.cpp
     parser/CharRefused.h
+    parser/ChunkFrame.cpp
+    parser/ChunkFrame.h
     parser/CombatLines.cpp
     parser/CombatLines.h
     parser/CommandQueue.cpp
@@ -538,8 +540,12 @@ set(mmapper_SRCS
     parser/ItemLines.cpp
     parser/ItemLines.h
     parser/LineFlags.h
+    parser/LineReader.cpp
+    parser/LineReader.h
     parser/LineTags.cpp
     parser/LineTags.h
+    parser/LineText.cpp
+    parser/LineText.h
     parser/LoginLines.cpp
     parser/LoginLines.h
     parser/QuietCapture.cpp

@@ -3,6 +3,7 @@
 // Copyright (C) 2026 The MMapper Authors
 
 #include "../global/macros.h"
+#include "LineReader.h"
 
 #include <cstdint>
 #include <optional>
@@ -86,7 +87,7 @@ NODISCARD QString parseLoginRefusalLine(const QString &line);
 /// about a pass phrase, or a line that merely ends in "password:", are not taken for a login.
 /// The caller feeds it every chunk of MUME's output, prompts too, while no character is in the
 /// game, and resets it when MUME connects or disconnects and when a character enters the game.
-class NODISCARD LoginLinesTracker final
+class NODISCARD LoginLinesTracker final : public LineReader
 {
 private:
     LoginPrompt m_prompt;
@@ -102,7 +103,11 @@ public:
     NODISCARD std::optional<LoginPrompt> receiveLine(const QString &line);
 
     /// Forgets the login, and the refusal waiting for its prompt.
-    void reset();
+    NODISCARD ResetSet resetsOn() const override
+    {
+        return {ResetReason::DISCONNECTED, ResetReason::CONNECTED, ResetReason::ENTERED_GAME};
+    }
+    void reset() override;
 
     NODISCARD const LoginPrompt &prompt() const { return m_prompt; }
 };

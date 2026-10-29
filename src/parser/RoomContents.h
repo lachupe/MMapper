@@ -3,6 +3,7 @@
 // Copyright (C) 2026 The MMapper Authors
 
 #include "../global/macros.h"
+#include "LineReader.h"
 #include "XmlElement.h"
 
 #include <cstdint>
@@ -95,7 +96,7 @@ NODISCARD bool namesContainer(const QString &word, const QString &keyword = QStr
 /// or <familiar> element; they are left out, and what remains are the objects, in MUME's
 /// order. The list is complete at the prompt that ends the display, which comes after MMapper
 /// has moved the player, so it describes the room MMapper.Map.Position has just named.
-class NODISCARD RoomContentsTracker final
+class NODISCARD RoomContentsTracker final : public LineReader
 {
 private:
     /// Room.Chars, as id -> desc.
@@ -119,7 +120,11 @@ public:
                                                           const QString &roomLines,
                                                           const QString &roomKey);
     /// For a new session, or when XML mode goes away.
-    void reset();
+    NODISCARD ResetSet resetsOn() const override
+    {
+        return {ResetReason::DISCONNECTED, ResetReason::XML_LOST};
+    }
+    void reset() override;
 
 private:
     NODISCARD RoomContentsSnapshot build() const;

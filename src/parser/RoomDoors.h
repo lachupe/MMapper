@@ -4,6 +4,7 @@
 
 #include "../global/macros.h"
 #include "ContainerLines.h"
+#include "LineReader.h"
 
 #include <cstdint>
 #include <functional>
@@ -189,7 +190,7 @@ NODISCARD std::optional<DoorAim> parseDoorAim(const QString &input);
 /// Free of the map, of Qt's networking types and of the clock: the caller passes the time.
 /// Every method that can change the doors returns them whole when they did change, and nullopt
 /// otherwise.
-class NODISCARD RoomDoorTracker final
+class NODISCARD RoomDoorTracker final : public LineReader
 {
 public:
     /// True for a word that names a container ("chest"): "X opens the chest." is then no door.
@@ -222,7 +223,7 @@ public:
     /// The exits line of a room display.
     NODISCARD std::optional<RoomDoors> receiveExitsLine(const QString &line, int64_t now);
     /// A command on its way to MUME.
-    void receiveCommand(const QString &input);
+    void receiveCommand(const SentCommand &command) override;
     /// MUME's answer to a door command, paired by ContainerTracker.
     NODISCARD std::optional<RoomDoors> receiveDoorReply(const DoorReply &reply, int64_t now);
     /// One line of MUME's output, colour removed. `moveDir` is the side of the oldest move still
@@ -234,7 +235,11 @@ public:
     /// The doors as last returned; empty before the first.
     NODISCARD RoomDoors current() const { return m_state; }
     /// For a new session, or when the character leaves the game.
-    void reset();
+    NODISCARD ResetSet resetsOn() const override
+    {
+        return {ResetReason::DISCONNECTED, ResetReason::CONNECTED, ResetReason::LEFT_GAME};
+    }
+    void reset() override;
 
 private:
     NODISCARD int indexByDir(const QString &dir) const;

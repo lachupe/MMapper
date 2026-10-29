@@ -6,8 +6,10 @@
 #include "../src/frontend/TradeMessages.h"
 #include "../src/global/Signal2.h"
 #include "../src/observer/gameobserver.h"
+#include "../src/parser/ChunkFrame.h"
 #include "../src/parser/QuietCapture.h"
 #include "../src/parser/TradeLines.h"
+#include "TradeReaders.h"
 
 #include <QJsonArray>
 #include <QJsonDocument>

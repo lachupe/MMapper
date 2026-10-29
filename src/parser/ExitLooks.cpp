@@ -100,10 +100,15 @@ void ExitLookTracker::receiveRoom(const std::optional<int64_t> room)
     m_room = room;
 }
 
-void ExitLookTracker::receiveCommand(const QString &input)
+void ExitLookTracker::receiveCommand(const SentCommand &sent)
 {
+    // A look waits for its answer, and so does each line the player sent, empty or not: only
+    // a line with nothing in it is none.
+    if (sent.line.trimmed().isEmpty()) {
+        return;
+    }
     Pending pending;
-    pending.command = input.trimmed();
+    pending.command = sent.line.trimmed();
     pending.dir = lookedDirection(pending.command);
     pending.room = m_room;
     m_pending.push_back(std::move(pending));

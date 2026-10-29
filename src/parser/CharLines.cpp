@@ -3,7 +3,7 @@
 
 #include "CharLines.h"
 
-#include "../global/parserutils.h"
+#include "LineText.h"
 
 #include <algorithm>
 #include <array>
@@ -19,31 +19,12 @@ constexpr int MAX_REPLY_LINES = 200;
 /// an old sheet's "You are a citizen of: GoblinTown" is one.
 constexpr int MAX_SHEET_STRANGERS = 8;
 
-NODISCARD QString cleaned(const QString &line)
-{
-    QString text = line;
-    ParserUtils::removeAnsiMarksInPlace(text);
-    return text.simplified();
-}
-
-/// "1,136,776" or "-45" as a number; nullopt when it is not one.
-NODISCARD std::optional<int64_t> toNumber(QString digits)
-{
-    digits.remove(QLatin1Char(','));
-    bool ok = false;
-    const qlonglong value = digits.toLongLong(&ok);
-    if (!ok) {
-        return std::nullopt;
-    }
-    return static_cast<int64_t>(value);
-}
-
 NODISCARD std::optional<int64_t> captured(const QRegularExpressionMatch &match, const int group)
 {
     if (!match.hasCaptured(group)) {
         return std::nullopt;
     }
-    return toNumber(match.captured(group));
+    return line_text::toNumber(match.captured(group));
 }
 
 // -- stat ----------------------------------------------------------------------------------
@@ -113,7 +94,7 @@ void readStatFirst(const QString &text, CharStat &stat)
         } else if (key != QStringLiteral("Wimpy")) {
             continue; // "Armour: 3/8." is not a percentage
         }
-        const std::optional<int64_t> number = toNumber(value);
+        const std::optional<int64_t> number = line_text::toNumber(value);
         if (!number.has_value()) {
             continue;
         }
@@ -143,9 +124,9 @@ void readStatSecond(const QString &text, CharStat &stat)
         const QString key = m.captured(1);
         const QString value = m.captured(2).trimmed();
         if (key == QStringLiteral("Gold") || key == QStringLiteral("Lauren")) {
-            stat.gold = toNumber(value);
+            stat.gold = line_text::toNumber(value);
         } else if (key == QStringLiteral("Wp")) {
-            stat.wp = toNumber(value); // "Wp: involved in skirmishes." is no number
+            stat.wp = line_text::toNumber(value); // "Wp: involved in skirmishes." is no number
         } else if (key == QStringLiteral("Alert")) {
             stat.alert = value.toLower();
         } else if (key == QStringLiteral("Condition")) {
@@ -397,7 +378,7 @@ std::optional<int64_t> parseNumberWords(const QString &words)
 
 std::optional<CharBurden> parseBurdenLine(const QString &line)
 {
-    const QString text = cleaned(line);
+    const QString text = line_text::cleaned(line);
     CharBurden burden;
     if (const auto m = g_burden.match(text); m.hasMatch()) {
         const QString said = m.captured(1);
@@ -414,7 +395,7 @@ std::optional<CharBurden> parseBurdenLine(const QString &line)
         }
         burden.word = m.captured(2).trimmed();
     } else if (const auto old = g_burdenOld.match(text); old.hasMatch()) {
-        const std::optional<int64_t> pounds = toNumber(old.captured(1));
+        const std::optional<int64_t> pounds = line_text::toNumber(old.captured(1));
         if (!pounds.has_value()) {
             return std::nullopt;
         }
@@ -429,7 +410,7 @@ std::optional<CharBurden> parseBurdenLine(const QString &line)
 
 std::optional<CharScore> parseScoreLine(const QString &line)
 {
-    const QString text = cleaned(line);
+    const QString text = line_text::cleaned(line);
     const QRegularExpressionMatch m = g_scoreLine.match(text);
     if (!m.hasMatch()) {
         return std::nullopt;
@@ -456,7 +437,7 @@ void readAbilities(const QString &text, std::array<std::optional<int64_t>, 7> &a
         const QRegularExpressionMatch m = it.next();
         for (size_t i = 0; i < names.size(); ++i) {
             if (m.captured(1) == QLatin1String(names[i])) {
-                abilities[i] = toNumber(m.captured(2));
+                abilities[i] = line_text::toNumber(m.captured(2));
             }
         }
     }
@@ -467,7 +448,7 @@ std::optional<CharAbilitySet> parseCharAbilitiesLine(const QString &line)
 {
     static const QRegularExpression head{
         QStringLiteral(R"(^MMAB (unmodified|unaffected|reference) (.*)$)")};
-    const QString text = cleaned(line);
+    const QString text = line_text::cleaned(line);
     const QRegularExpressionMatch m = head.match(text);
     if (!m.hasMatch()) {
         return std::nullopt;
@@ -486,7 +467,7 @@ std::optional<CharAbilitySet> parseCharAbilitiesLine(const QString &line)
 
 std::optional<CharLevel> parseCharLevelLine(const QString &line)
 {
-    const QString text = cleaned(line);
+    const QString text = line_text::cleaned(line);
     if (!text.startsWith(QStringLiteral("MMXP "))) {
         return std::nullopt;
     }
@@ -510,7 +491,7 @@ std::optional<CharLevel> parseCharLevelLine(const QString &line)
 
 std::optional<CharWimpy> parseWimpyLine(const QString &line)
 {
-    const QString text = cleaned(line);
+    const QString text = line_text::cleaned(line);
     if (!text.startsWith(QStringLiteral("Wimpy set to: "))) {
         return std::nullopt;
     }
@@ -548,7 +529,7 @@ void CharReplies::append(CharReplies &&other)
 
 CharReplies CharLinesTracker::receiveLine(const QString &line)
 {
-    QString text = cleaned(line);
+    QString text = line_text::cleaned(line);
     // A line that begins a sentence of its own is no continuation: "You are a citizen of:
     // GoblinTown" (an old sheet) is followed by its burden line, not by the rest of it.
     static const QRegularExpression beginsSentence{QStringLiteral(
@@ -905,7 +886,7 @@ bool CharLinesTracker::readSheetLine(const QString &text, CharReplies &out)
         while (it.hasNext()) {
             const QRegularExpressionMatch m = it.next();
             const QString coin = m.captured(2);
-            const std::optional<int64_t> number = toNumber(m.captured(1));
+            const std::optional<int64_t> number = line_text::toNumber(m.captured(1));
             if (coin == QStringLiteral("gold")) {
                 sheet.gold = number;
             } else if (coin == QStringLiteral("silver")) {

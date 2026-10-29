@@ -15,11 +15,13 @@
 #include "CharFollowers.h"
 #include "CharLines.h"
 #include "CharRefused.h"
+#include "ChunkFrame.h"
 #include "CombatLines.h"
 #include "ContainerLines.h"
 #include "ExitLooks.h"
 #include "ItemLines.h"
 #include "LineFlags.h"
+#include "LineReader.h"
 #include "LineTags.h"
 #include "LoginLines.h"
 #include "RoomContents.h"
@@ -104,9 +106,14 @@ private:
     ItemCommandTracker m_itemCommands;
     /// The reply to the last `consider` sent, until its verdict comes (MMapper.Char.Consider).
     ConsiderReader m_considerReader;
-    /// MUME's replies at shops, guilds and inns and to `trop`, and the pager, which is told
-    /// from the real prompt here for every reader. See TradeReaders.
-    TradeReaders m_tradeReaders;
+    /// MUME's replies at shops, guilds and inns and to `trop`. See TradeLinesTracker.
+    TradeLinesTracker m_tradeLines;
+    /// What each chunk of MUME's output is (a line, the pager, the real prompt, a twiddler),
+    /// the pager, and the quiet command's window. See ChunkFrame.
+    ChunkFrame m_chunkFrame;
+    /// Every line reader above and below, in one list: the player's commands go to each, and a
+    /// ResetReason resets each that declares it.
+    LineReaders m_readers;
     /// Joins a message of communication over several lines into one record for the Log.
     LineTagger m_lineTagger;
     /// The chunk being parsed was the pager line, not a prompt.
@@ -146,6 +153,12 @@ public:
 
 private:
     void parseMudCommands(const QString &str);
+    /// A string on its way to MUME: one command for each line, to every reader.
+    void receiveSent(const QString &text);
+    /// Resets every reader that declares `reason`, in one place.
+    void resetReaders(ResetReason reason);
+    /// Tells the GameObserver of the item commands that began or ended.
+    void publishItemCommands();
     NODISCARD QString characters(QString &ch);
     /// Appends what characters() makes of `ch` to m_lineToUser, noting a room's description.
     void appendToLine(QString &ch);

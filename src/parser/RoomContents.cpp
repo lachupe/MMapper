@@ -3,8 +3,8 @@
 
 #include "RoomContents.h"
 
-#include "../global/parserutils.h"
 #include "../proxy/GmcpMessage.h"
+#include "LineText.h"
 
 #include <array>
 #include <utility>
@@ -49,18 +49,11 @@ NODISCARD const QRegularExpression &nounPattern()
 const QRegularExpression g_countBefore{QStringLiteral(R"(^\[\s*(\d+)\]\s*(.+)$)")};
 const QRegularExpression g_countAfter{QStringLiteral(R"(^(.+?)\s*\[\s*(\d+)\]$)")};
 
-NODISCARD QString cleaned(const QString &line)
-{
-    QString text = line;
-    ParserUtils::removeAnsiMarksInPlace(text);
-    return text.simplified();
-}
-
 NODISCARD QStringList linesOf(const QString &text)
 {
     QStringList result;
     for (const QString &part : text.split(QLatin1Char('\n'), Qt::SkipEmptyParts)) {
-        const QString line = cleaned(part);
+        const QString line = line_text::cleaned(part);
         if (!line.isEmpty()) {
             result << line;
         }
@@ -80,29 +73,13 @@ void collect(const XmlElement &element, Predicate &&wanted, QStringList &into)
 {
     for (const XmlElement &child : element.children) {
         if (wanted(child.tag)) {
-            const QString text = cleaned(child.text);
+            const QString text = line_text::cleaned(child.text);
             if (!text.isEmpty()) {
                 into << text;
             }
         }
         collect(child, wanted, into);
     }
-}
-
-NODISCARD bool seesTheRoom(const XmlElement &room)
-{
-    // In dense fog or darkness MUME puts a line saying so where the name would be, and what
-    // the rest of the display lists is then not the room's.
-    for (const XmlElement &child : room.children) {
-        if (child.tag != XmlTagEnum::NAME) {
-            continue;
-        }
-        const QString name = cleaned(child.text);
-        return !name.isEmpty() && !name.contains(QStringLiteral("fog around you"))
-               && !name.contains(QStringLiteral("pitch black"))
-               && !name.contains(QStringLiteral("too dark"));
-    }
-    return false;
 }
 
 NODISCARD QString withoutFinalStop(const QString &line)
@@ -181,7 +158,7 @@ NODISCARD bool isContentsLine(const QString &text)
 
 QString containerKeyword(const QString &line)
 {
-    const QString text = cleaned(line);
+    const QString text = line_text::cleaned(line);
     // What lies in or on a container, on a line of its own, is not the container: "In the rack is
     // a cudgel." (Fornost's Guild of Warriors, mume3d's live test of 2026-10-03, where the line was
     // taken for a second rack and `examine 2.rack` found none).
@@ -226,7 +203,7 @@ QString objectKeyword(const QString &name)
     // What follows these describes the thing rather than names it: "a keyring with several keys".
     static const QRegularExpression description{
         QStringLiteral(R"((?:,|\s+(?:with|that|which|named|entitled)\s).*$)")};
-    QString phrase = withoutArticle(cleaned(name).toLower()).remove(description);
+    QString phrase = withoutArticle(line_text::cleaned(name).toLower()).remove(description);
     for (;;) {
         const qsizetype of = phrase.indexOf(QStringLiteral(" of "));
         if (of <= 0) {
@@ -296,7 +273,7 @@ void RoomContentsTracker::receiveChars(const GmcpMessage &msg)
         }
         QString &desc = m_chars[static_cast<int64_t>(*optId)];
         if (const auto optDesc = obj.getString("desc")) {
-            desc = cleaned(*optDesc);
+            desc = line_text::cleaned(*optDesc);
         }
     };
     if (isSet) {
@@ -323,7 +300,7 @@ std::optional<RoomContentsSnapshot> RoomContentsTracker::receive(const XmlElemen
     case XmlTagEnum::ROOM:
         m_lines = linesOf(roomLines);
         m_roomKey = roomKey;
-        m_seen = seesTheRoom(element);
+        m_seen = line_text::seesTheRoom(element);
         m_objectNames.clear();
         m_people.clear();
         m_scenery.clear();

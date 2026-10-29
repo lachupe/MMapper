@@ -3,6 +3,8 @@
 
 #include "CharFollowers.h"
 
+#include "LineText.h"
+
 #include <algorithm>
 #include <tuple>
 #include <utility>
@@ -23,11 +25,6 @@ constexpr size_t FOLLOWERS_TO_KEEP = 16;
 constexpr int RIDDEN_TO_KEEP = 16;
 // The players that follow who are kept: one who left unseen is never said to be gone.
 constexpr int PLAYERS_TO_KEEP = 32;
-
-// The "twiddlers" prompt option draws \|/- while a delayed action runs, and they end up on the
-// front of whatever line comes next: "/-\|/-Ok." (logs/archives/log-2006.02.05-19.56.25.txt:
-// 169078, the charm going off). As in CombatLines.
-const QRegularExpression g_twiddlers{QStringLiteral(R"(^[\\|/\-\x08]+(?=[A-Z*]))")};
 
 // The label that trails a name: "a mother eagle (one)", "Kazadoe (K)", and one MUME port's
 // "*Stolb the Orc* [stolb]". As g_label in CombatLines, but kept.
@@ -348,8 +345,7 @@ FollowerKindEnum followerKindOf(const QString &name)
 
 std::optional<FollowerLine> parseFollowerLine(const QString &raw)
 {
-    QString line = raw.trimmed();
-    line.remove(g_twiddlers);
+    QString line = line_text::trimmedWithoutTwiddlers(raw);
     if (line.isEmpty()) {
         return std::nullopt;
     }
@@ -506,10 +502,11 @@ std::optional<FollowLeader> leaderOf(const CharFollowers &state)
     return std::nullopt;
 }
 
-void CharFollowersTracker::receiveCommand(const QString &input, const int64_t now)
+void CharFollowersTracker::receiveCommand(const SentCommand &sent)
 {
-    if (auto command = parseFollowerCommand(input)) {
-        m_pending.push_back(Pending{std::move(*command), now, 0, false, false, std::nullopt, {}});
+    if (auto command = parseFollowerCommand(sent.line)) {
+        m_pending.push_back(
+            Pending{std::move(*command), secondsOf(sent.nowMs), 0, false, false, std::nullopt, {}});
     }
 }
 
@@ -1041,8 +1038,7 @@ void CharFollowersTracker::reset()
 
 std::optional<HandRaised> parseHandRaised(const QString &raw)
 {
-    QString line = raw.trimmed();
-    line.remove(g_twiddlers);
+    QString line = line_text::trimmedWithoutTwiddlers(raw);
     const QRegularExpressionMatch match = g_handRaised.match(line);
     if (!match.hasMatch()) {
         return std::nullopt;

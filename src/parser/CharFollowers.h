@@ -3,6 +3,7 @@
 // Copyright (C) 2026 The MMapper Authors
 
 #include "../global/macros.h"
+#include "LineReader.h"
 
 #include <cstdint>
 #include <deque>
@@ -282,7 +283,7 @@ NODISCARD CharFollowers lastingFollowers(const CharFollowers &change);
 ///
 /// Free of Qt networking types and of the clock, so that it can be tested on its own: the
 /// caller passes the time.
-class NODISCARD CharFollowersTracker final
+class NODISCARD CharFollowersTracker final : public LineReader
 {
 private:
     struct NODISCARD Pending final
@@ -315,7 +316,7 @@ private:
 public:
     /// Notes a command on its way to MUME; `now` is unix seconds. Anything but `order` and
     /// `label` is ignored.
-    void receiveCommand(const QString &input, int64_t now);
+    void receiveCommand(const SentCommand &command) override;
     /// Reads one line of MUME's output, colour removed; `now` is unix seconds. Returns the
     /// followers when the line changed them, to be published.
     NODISCARD std::optional<CharFollowers> receiveLine(const QString &line, int64_t now);
@@ -327,7 +328,11 @@ public:
     NODISCARD const QStringList &players() const { return m_players; }
     NODISCARD const std::optional<QStringList> &protecting() const { return m_protecting; }
     /// For a new session, or when the character leaves the game.
-    void reset();
+    NODISCARD ResetSet resetsOn() const override
+    {
+        return {ResetReason::DISCONNECTED, ResetReason::CONNECTED, ResetReason::LEFT_GAME};
+    }
+    void reset() override;
 
 private:
     /// How sure a line is to mean a follower of the player's, which decides how far its name

@@ -3,6 +3,7 @@
 // Copyright (C) 2026 The MMapper Authors
 
 #include "../global/macros.h"
+#include "LineReader.h"
 
 #include <cstdint>
 #include <deque>
@@ -105,7 +106,7 @@ NODISCARD QString lookedDirection(const QString &input);
 
 /// Pairs the looks with MUME's answers. Free of the map, of Qt's networking types and of the
 /// clock.
-class NODISCARD ExitLookTracker final
+class NODISCARD ExitLookTracker final : public LineReader
 {
 private:
     struct NODISCARD Pending final
@@ -134,14 +135,18 @@ public:
     /// Room.Info's id: the room the next looks are sent in.
     void receiveRoom(std::optional<int64_t> room);
     /// A line on its way to MUME, whoever sent it.
-    void receiveCommand(const QString &input);
+    void receiveCommand(const SentCommand &command) override;
     /// One line of MUME's output, colour removed, and what the markup says it is.
     void receiveLine(const QString &line, LineKindEnum kind);
     /// MUME's prompt: the looks it answered.
     NODISCARD std::vector<ExitLook> receivePrompt();
     /// Whether any look waits for its answer.
     NODISCARD bool waiting() const;
-    void reset();
+    NODISCARD ResetSet resetsOn() const override
+    {
+        return {ResetReason::DISCONNECTED, ResetReason::CONNECTED, ResetReason::ECHO_OFF};
+    }
+    void reset() override;
 
 private:
     NODISCARD static ExitLook finish(const Pending &pending);

@@ -3,6 +3,7 @@
 // Copyright (C) 2026 The MMapper Authors
 
 #include "../global/macros.h"
+#include "LineReader.h"
 
 #include <array>
 #include <cstdint>
@@ -294,7 +295,7 @@ struct NODISCARD CharReplies final
 /// prioritised Log's tags.
 enum class NODISCARD CharLineKindEnum : uint8_t { NONE, STAT, SCORE, INFO };
 
-class NODISCARD CharLinesTracker final
+class NODISCARD CharLinesTracker final : public LineReader
 {
 private:
     CharLineKindEnum m_lastKind = CharLineKindEnum::NONE;
@@ -325,7 +326,11 @@ public:
     /// A prompt closes whatever is open.
     NODISCARD CharReplies receivePrompt();
     /// For a new session, or when XML mode goes away.
-    void reset();
+    NODISCARD ResetSet resetsOn() const override
+    {
+        return {ResetReason::DISCONNECTED, ResetReason::ECHO_OFF, ResetReason::XML_LOST};
+    }
+    void reset() override;
     /// Whose line the last one receiveLine() read was: `stat`'s block, `score`'s line, or the
     /// `info` sheet (the languages table with it); NONE for any other.
     NODISCARD CharLineKindEnum lastLineKind() const { return m_lastKind; }

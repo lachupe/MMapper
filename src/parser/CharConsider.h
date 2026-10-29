@@ -3,6 +3,7 @@
 // Copyright (C) 2026 The MMapper Authors
 
 #include "../global/macros.h"
+#include "LineReader.h"
 
 #include <optional>
 
@@ -51,7 +52,7 @@ NODISCARD QStringList considerVerdicts();
 /// verdict's last line, or to the prompt. A pager pause in between is no prompt and does not end
 /// it. A line that ends a sentence and is no part of a verdict (someone arriving) is passed over.
 /// Out of a reply, a lone advice line is still a verdict, without target.
-class NODISCARD ConsiderReader final
+class NODISCARD ConsiderReader final : public LineReader
 {
 private:
     QString m_target;
@@ -60,8 +61,10 @@ private:
     bool m_waiting = false;
 
 public:
+    NODISCARD ResetSet resetsOn() const override { return {ResetReason::DISCONNECTED}; }
+    void reset() override;
     /// A line on its way to MUME: a `consider` starts a reply.
-    void receiveCommand(const QString &sentLine);
+    void receiveCommand(const SentCommand &command) override;
     /// A line from MUME, colour removed; not a prompt or the pager. The verdict when this line
     /// completes one.
     NODISCARD std::optional<CharConsider> receiveLine(const QString &line);
