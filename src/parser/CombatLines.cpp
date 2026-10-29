@@ -3,6 +3,8 @@
 
 #include "CombatLines.h"
 
+#include "LineText.h"
+
 #include <QRegularExpression>
 
 namespace {
@@ -36,9 +38,6 @@ namespace {
 // "*an Orc*s'", so an s straight after the brackets or the stars comes off with them.
 const QRegularExpression g_label{
     QStringLiteral(R"((?:\s+(?:\([^()]{1,8}\)|\[[^\[\]]{1,12}\]s?)|(?<=\*)s)$)")};
-// The "twiddlers" prompt option draws \|/- while a delayed action runs, and they end up on the
-// front of whatever line comes next. Backspaces come with them when the terminal is live.
-const QRegularExpression g_twiddlers{QStringLiteral(R"(^[\\|/\-\x08]+(?=[A-Z*]))")};
 // Some players have MUME add a counter after the line's last full stop: "*Hazad* sends you
 // sprawling. [Damage:1]". It is not part of the sentence, and comes off before any pattern below
 // is tried.
@@ -1023,8 +1022,7 @@ NODISCARD CombatEvent blow(const BlowOutcomeEnum outcome,
 
 std::optional<CombatEvent> parseCombatLine(const QString &raw)
 {
-    QString line = raw.trimmed();
-    line.remove(g_twiddlers);
+    QString line = line_text::trimmedWithoutTwiddlers(raw);
     line.remove(g_annotation);
     if (line.isEmpty()) {
         return std::nullopt;

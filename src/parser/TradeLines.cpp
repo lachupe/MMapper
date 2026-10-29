@@ -3,9 +3,9 @@
 
 #include "TradeLines.h"
 
-#include "../global/parserutils.h"
 #include "../observer/gameobserver.h"
 #include "CharLines.h"
+#include "LineText.h"
 
 #include <array>
 #include <tuple>
@@ -25,30 +25,6 @@ constexpr int MAX_STRANGERS = 8;
 constexpr int MAX_CONTINUED_LINES = 6;
 /// The `list` and `prac <name>` commands remembered for the replies still to come.
 constexpr size_t MAX_QUEUED_COMMANDS = 32;
-
-/// The line with colour and the line ending removed, the spacing inside kept: the tables are
-/// laid out in columns.
-NODISCARD QString rawLine(const QString &line)
-{
-    QString text = line;
-    ParserUtils::removeAnsiMarksInPlace(text);
-    while (!text.isEmpty() && text.back().isSpace()) {
-        text.chop(1);
-    }
-    return text;
-}
-
-/// "1,136,776" or "-45" as a number; nullopt when it is not one.
-NODISCARD std::optional<int64_t> toNumber(QString digits)
-{
-    digits.remove(QLatin1Char(','));
-    bool ok = false;
-    const qlonglong value = digits.toLongLong(&ok);
-    if (!ok) {
-        return std::nullopt;
-    }
-    return static_cast<int64_t>(value);
-}
 
 NODISCARD bool isNumberWordPart(const QString &part)
 {
@@ -87,7 +63,7 @@ NODISCARD bool isNumberWord(const QString &token)
 NODISCARD std::optional<int64_t> parseCount(const QString &words)
 {
     const QString text = words.trimmed();
-    if (const std::optional<int64_t> number = toNumber(text)) {
+    if (const std::optional<int64_t> number = line_text::toNumber(text)) {
         return number;
     }
     static const QRegularExpression negative{QStringLiteral(R"(^(?:minus|negative)\s+)"),
@@ -118,20 +94,6 @@ NODISCARD std::optional<int64_t> parseCount(const QString &words)
 // "q:quit", and ", >: bottom" before the percentage.
 const QRegularExpression g_pager{
     QStringLiteral(R"(^\s*\*\*\* Return: continue,[^*]*?\bq: ?quit\b[^*(]*\((\d{1,3})%\) \*\*\*)")};
-
-/// The pager at the front of `text`, and how many characters it takes there.
-NODISCARD std::optional<PagerLine> matchPager(const QString &text, qsizetype &length)
-{
-    const QRegularExpressionMatch m = g_pager.match(text);
-    if (!m.hasMatch()) {
-        return std::nullopt;
-    }
-    PagerLine pager;
-    pager.percent = m.captured(1).toInt();
-    pager.text = m.captured(0).trimmed();
-    length = m.capturedEnd(0);
-    return pager;
-}
 
 // -- money ---------------------------------------------------------------------------------
 
@@ -194,7 +156,7 @@ NODISCARD std::optional<int64_t> readNumber(const std::vector<Token> &tokens, si
         if (first.back().isLetter()) {
             return std::nullopt; // "1g" is read with its coin
         }
-        const std::optional<int64_t> number = toNumber(first);
+        const std::optional<int64_t> number = line_text::toNumber(first);
         if (number.has_value()) {
             ++i;
         }
@@ -251,7 +213,7 @@ NODISCARD std::optional<int64_t> readAmount(const std::vector<Token> &tokens,
         const QString &word = tokens[k].word;
         if (word.front().isDigit() && word.back().isLetter()) {
             // "1g", "2s", "40c"
-            const std::optional<int64_t> number = toNumber(word.chopped(1));
+            const std::optional<int64_t> number = line_text::toNumber(word.chopped(1));
             value = coinValue(word.right(1));
             if (!number.has_value() || value == 0) {
                 break;
@@ -471,7 +433,7 @@ void readListItem(const QString &item, ShopRow &row)
     qsizetype taken = 0;
     std::optional<int64_t> count;
     if (!words.isEmpty()) {
-        if (const std::optional<int64_t> digits = toNumber(words.front())) {
+        if (const std::optional<int64_t> digits = line_text::toNumber(words.front())) {
             count = digits;
             taken = 1;
         } else if (words.front().compare(QStringLiteral("a"), Qt::CaseInsensitive) == 0
@@ -531,9 +493,22 @@ NODISCARD QString joined(QStringList lines)
 
 } // namespace
 
+std::optional<PagerLine> matchPager(const QString &text, qsizetype &length)
+{
+    const QRegularExpressionMatch m = g_pager.match(text);
+    if (!m.hasMatch()) {
+        return std::nullopt;
+    }
+    PagerLine pager;
+    pager.percent = m.captured(1).toInt();
+    pager.text = m.captured(0).trimmed();
+    length = m.capturedEnd(0);
+    return pager;
+}
+
 std::optional<PagerLine> parsePagerLine(const QString &plainChunk)
 {
-    const QString text = rawLine(plainChunk);
+    const QString text = line_text::rawLine(plainChunk);
     qsizetype length = 0;
     std::optional<PagerLine> pager = matchPager(text, length);
     if (!pager.has_value() || !text.mid(length).trimmed().isEmpty()) {
@@ -611,14 +586,14 @@ void TradeReplies::append(TradeReplies &&other)
 
 // -- the tracker ---------------------------------------------------------------------------
 
-void TradeLinesTracker::receiveCommand(const QString &line)
+void TradeLinesTracker::receiveCommand(const SentCommand &sent)
 {
     static const QRegularExpression list{QStringLiteral(R"(^lis?t?(?:\s+(.*))?$)"),
                                          QRegularExpression::CaseInsensitiveOption};
     static const QRegularExpression prac{QStringLiteral(
                                              R"(^pra(?:c(?:t(?:i(?:[cs]e?)?)?)?)?\s+(.+)$)"),
                                          QRegularExpression::CaseInsensitiveOption};
-    const QString command = line.simplified();
+    const QString command = sent.line.simplified();
     if (const auto m = list.match(command); m.hasMatch()) {
         m_listQueries.push_back(m.captured(1).trimmed());
         while (m_listQueries.size() > MAX_QUEUED_COMMANDS) {
@@ -762,7 +737,7 @@ bool TradeLinesTracker::readTableLine(const QString &raw, const QString &text)
             return false;
         }
         ShopRow row;
-        row.number = toNumber(plain.captured(1)).value_or(0);
+        row.number = line_text::toNumber(plain.captured(1)).value_or(0);
         readListItem(plain.captured(2), row);
         if (m.hasMatch()) {
             row.priceText = m.captured(3);
@@ -798,9 +773,9 @@ bool TradeLinesTracker::readTableLine(const QString &raw, const QString &text)
         }
         GuildRow row;
         row.name = m.captured(1).simplified();
-        row.used = toNumber(m.captured(2)).value_or(0);
-        row.most = toNumber(m.captured(3)).value_or(0);
-        row.knowledgePct = toNumber(m.captured(4));
+        row.used = line_text::toNumber(m.captured(2)).value_or(0);
+        row.most = line_text::toNumber(m.captured(3)).value_or(0);
+        row.knowledgePct = line_text::toNumber(m.captured(4));
         splitDifficulty(m.captured(5).trimmed(), row.difficulty, row.advice);
         m_teacher->rows.push_back(std::move(row));
         m_tableHasRow = true;
@@ -846,10 +821,10 @@ bool TradeLinesTracker::readTableLine(const QString &raw, const QString &text)
             // (logs/archives/log-2006.04.19-13.48.14.txt:118); today they are two.
             static const QRegularExpression manaAndCasting{QStringLiteral(R"(^(\d+),\s*(.+)$)")};
             if (const auto both = manaAndCasting.match(columns[4].simplified()); both.hasMatch()) {
-                row.mana = toNumber(both.captured(1));
+                row.mana = line_text::toNumber(both.captured(1));
                 row.casting = both.captured(2);
             } else {
-                row.mana = toNumber(columns[4]);
+                row.mana = line_text::toNumber(columns[4]);
                 row.casting = columns.size() >= 6 ? columns[5].simplified() : QString{};
                 if (!row.mana.has_value()) {
                     row.casting = columns[4].simplified();
@@ -868,8 +843,8 @@ bool TradeLinesTracker::readTableLine(const QString &raw, const QString &text)
             return true;
         }
         if (const auto t = g_trophyTotal.match(text); t.hasMatch()) {
-            m_trophies->totalKills = toNumber(t.captured(1));
-            m_trophies->distinct = toNumber(t.captured(2));
+            m_trophies->totalKills = line_text::toNumber(t.captured(1));
+            m_trophies->distinct = line_text::toNumber(t.captured(2));
             markOwnLine(raw);
             closeTable();
             return true;
@@ -886,8 +861,8 @@ bool TradeLinesTracker::readTableLine(const QString &raw, const QString &text)
                 continue;
             }
             TrophyRow row;
-            row.kills = toNumber(m.captured(1)).value_or(0);
-            row.knowledgePct = toNumber(m.captured(2)).value_or(0);
+            row.kills = line_text::toNumber(m.captured(1)).value_or(0);
+            row.knowledgePct = line_text::toNumber(m.captured(2)).value_or(0);
             if (name.startsWith(QLatin1Char('#'))) {
                 row.player = true;
                 name = name.mid(1);
@@ -1081,7 +1056,7 @@ TradeReplies TradeLinesTracker::receiveLine(const QString &line)
 {
     TradeReplies out;
     m_lastKind = TradeLineKindEnum::NONE;
-    const QString raw = rawLine(line);
+    const QString raw = line_text::rawLine(line);
     const QString text = raw.simplified();
 
     // The continuations of what wraps at MUME's line width come first: they are no reply's
@@ -1197,7 +1172,7 @@ TradeReplies TradeLinesTracker::receiveLine(const QString &line)
         GuildPractised practised;
         practised.used = parseCount(m.captured(1));
         practised.most = parseCount(m.captured(2));
-        practised.knowledgePct = toNumber(m.captured(3));
+        practised.knowledgePct = line_text::toNumber(m.captured(3));
         practised.text = text;
         if (!m_pracNames.empty()) {
             practised.name = m_pracNames.front();
@@ -1305,162 +1280,29 @@ void TradeLinesTracker::reset()
     m_pracNames.clear();
 }
 
-// -- the parser's side ---------------------------------------------------------------------
+// -- publishing ----------------------------------------------------------------------------
 
-MudChunk classifyMudChunk(const bool goAhead, const bool backspace, const QString &plain)
-{
-    MudChunk chunk;
-    chunk.plain = plain;
-    if (backspace) {
-        chunk.kind = MudChunkKindEnum::TWIDDLER;
-        return chunk;
-    }
-    if (goAhead) {
-        chunk.pager = parsePagerLine(plain);
-        chunk.kind = chunk.pager.has_value() ? MudChunkKindEnum::PAGER : MudChunkKindEnum::PROMPT;
-        return chunk;
-    }
-    chunk.kind = MudChunkKindEnum::LINE;
-    qsizetype length = 0;
-    if (std::optional<PagerLine> pager = matchPager(plain, length)) {
-        if (stripPagerPrefix(chunk.plain)) {
-            chunk.pager = std::move(pager);
-        }
-    }
-    return chunk;
-}
-
-TradeReaders::TradeReaders(GameObserver &observer)
-    : m_observer{observer}
-{}
-
-bool TradeReaders::receiveCommand(const QString &line)
-{
-    if (std::exchange(m_pagerOpen, false)) {
-        return false;
-    }
-    m_tracker.receiveCommand(line);
-    return true;
-}
-
-MudChunk TradeReaders::beginChunk(const bool goAhead,
-                                  const bool backspace,
-                                  const QString &plain,
-                                  const QuietTrafficEnum traffic)
-{
-    MudChunk chunk = classifyMudChunk(goAhead, backspace, plain);
-    m_chunk = chunk.kind;
-    m_quietEnded = false;
-    // Before the pager is published, which says whether it was hidden.
-    if (m_quiet.isOpen()) {
-        hideQuietChunk(chunk, traffic);
-    }
-    if (chunk.pager.has_value()) {
-        m_tracker.receivePager(*chunk.pager);
-        // A pager glued to a line was answered before the line came.
-        m_pagerOpen = chunk.kind == MudChunkKindEnum::PAGER;
-        m_observer.observePager(*chunk.pager);
-    } else if (chunk.kind == MudChunkKindEnum::PROMPT) {
-        m_pagerOpen = false;
-    }
-    return chunk;
-}
-
-void TradeReaders::hideQuietChunk(MudChunk &chunk, const QuietTrafficEnum traffic)
-{
-    switch (chunk.kind) {
-    case MudChunkKindEnum::LINE: {
-        // A chunk with nothing in it for the user (tags alone) is no line for any reader.
-        if (chunk.plain.isEmpty()) {
-            break;
-        }
-        // A pager glued to the front of the line came before it, and goes with it.
-        const bool pagerHidden = chunk.pager.has_value() && m_quiet.receivePager().hidden;
-        const QuietCapture::Verdict verdict = m_quiet.receiveLine(chunk.plain, traffic);
-        chunk.hidden = verdict.hidden;
-        chunk.captured = verdict.captured;
-        if (chunk.pager.has_value()) {
-            chunk.pager->hidden = pagerHidden && verdict.hidden;
-        }
-        break;
-    }
-    case MudChunkKindEnum::PAGER: {
-        const QuietCapture::Verdict verdict = m_quiet.receivePager();
-        chunk.hidden = verdict.hidden;
-        chunk.pager->hidden = verdict.hidden;
-        break;
-    }
-    case MudChunkKindEnum::PROMPT: {
-        const QuietCapture::Verdict verdict = m_quiet.receivePrompt();
-        chunk.hidden = verdict.hidden;
-        m_quietEnded = verdict.ended;
-        break;
-    }
-    case MudChunkKindEnum::TWIDDLER:
-        break;
-    }
-}
-
-bool TradeReaders::captureQuietLine(const QString &plain)
-{
-    return m_quiet.isOpen() && m_quiet.receiveLine(plain, QuietTrafficEnum::REPLY).captured;
-}
-
-void TradeReaders::receiveLine(const QString &plain)
-{
-    publish(m_tracker.receiveLine(plain));
-}
-
-void TradeReaders::receivePrompt()
-{
-    if (m_chunk == MudChunkKindEnum::PROMPT) {
-        publish(m_tracker.receivePrompt());
-    }
-}
-
-void TradeReaders::endChunk()
-{
-    const bool prompt = std::exchange(m_chunk, MudChunkKindEnum::LINE) == MudChunkKindEnum::PROMPT;
-    // After every reader's package of this prompt, so that whoever asked finds them published;
-    // and before sig2_realPrompt, at which the runner judges.
-    if (std::exchange(m_quietEnded, false)) {
-        m_observer.observeQuietEnded();
-    }
-    if (prompt) {
-        m_observer.observeRealPrompt();
-    }
-}
-
-void TradeReaders::reset()
-{
-    m_tracker.reset();
-    m_chunk = MudChunkKindEnum::LINE;
-    m_pagerOpen = false;
-    m_quiet.reset();
-    m_quietEnded = false;
-}
-
-void TradeReaders::publish(const TradeReplies &replies)
+void publishTradeReplies(GameObserver &observer, const TradeReplies &replies)
 {
     for (const ShopList &list : replies.lists) {
-        m_observer.observeShopList(list);
+        observer.observeShopList(list);
     }
     for (const ShopDeal &deal : replies.deals) {
-        m_observer.observeShopDeal(deal);
+        observer.observeShopDeal(deal);
     }
     for (const GuildTeacher &teacher : replies.teachers) {
-        m_observer.observeGuildTeacher(teacher);
+        observer.observeGuildTeacher(teacher);
     }
     for (const GuildPractised &practised : replies.practised) {
-        m_observer.observeGuildPractised(practised);
+        observer.observeGuildPractised(practised);
     }
     for (const CharSkills &skills : replies.skills) {
-        m_observer.observeCharSkills(skills);
+        observer.observeCharSkills(skills);
     }
     for (const InnOffer &offer : replies.inns) {
-        m_observer.observeInnOffer(offer);
+        observer.observeInnOffer(offer);
     }
     for (const CharTrophies &trophies : replies.trophies) {
-        m_observer.observeCharTrophies(trophies);
+        observer.observeCharTrophies(trophies);
     }
 }

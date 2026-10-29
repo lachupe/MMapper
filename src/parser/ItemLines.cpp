@@ -4,8 +4,8 @@
 #include "ItemLines.h"
 
 #include "../global/TextUtils.h"
-#include "../global/parserutils.h"
 #include "ContainerLines.h"
+#include "LineText.h"
 
 #include <algorithm>
 #include <array>
@@ -87,9 +87,6 @@ constexpr std::array PLACES{SlotName{"feet", "feet"},
                             SlotName{"across shoulder", "across_back"},
                             SlotName{"across back", "across_back"}};
 
-// The "twiddlers" prompt option draws \|/- while a delayed action runs, and they end up on the
-// front of the next line. Backspaces come with them when the terminal is live.
-const QRegularExpression g_twiddlers{QStringLiteral(R"(^[\\|/\-\x08]+(?=[A-Z*<a-z]))")};
 // A group label trails a name in parentheses: "Stolb (S)", "the sage (buh)".
 const QRegularExpression g_label{QStringLiteral(R"(\s+\([^()]{1,8}\)$)")};
 
@@ -144,15 +141,6 @@ const QRegularExpression g_cant{QStringLiteral(R"(^You can't (?:wear|wield|hold|
 const QRegularExpression g_dontHave{QStringLiteral(R"(^You don't have (?!the proper key)(.+)\.$)")};
 const QRegularExpression g_notWearing{
     QStringLiteral(R"(^You (?:aren't|are not) wearing (?:any )?(.+)\.$)")};
-
-NODISCARD QString cleaned(const QString &line)
-{
-    QString text = line;
-    ParserUtils::removeAnsiMarksInPlace(text);
-    text = text.simplified();
-    text.remove(g_twiddlers);
-    return text;
-}
 
 NODISCARD QString withoutLabel(QString name)
 {
@@ -210,18 +198,6 @@ NODISCARD ItemEvent refused(const QString &reason, const QString &text)
     ItemEvent result = event(A::REFUSED, QString{}, text);
     result.reason = reason;
     return result;
-}
-
-/// Lines that can be an item in an inventory or container listing: the first letter of an item
-/// is lowercase ("a gold ring", "two amethysts", "the scalp of Horiam"), while the lines that
-/// could break into a listing are sentences and start with a capital.
-NODISCARD bool isItemLine(const QString &text)
-{
-    if (text.isEmpty()) {
-        return false;
-    }
-    const QChar first = text.front();
-    return first.isLower() || first.isDigit() || text == QStringLiteral("Something.");
 }
 
 /// "It is closed.", or "The leather backpack is closed." for the container `word` names; not
@@ -340,7 +316,7 @@ QString equipmentSlot(const QString &label)
 
 std::optional<ItemEvent> parseItemEvent(const QString &line)
 {
-    const QString text = cleaned(line);
+    const QString text = line_text::cleanedForItems(line);
     if (text.size() < 8) {
         return std::nullopt;
     }
@@ -527,7 +503,7 @@ std::string_view to_string_view(const ItemActionEnum action)
     return "refused";
 }
 
-void ItemBlockTracker::receiveCommand(const QString &input)
+void ItemBlockTracker::receiveCommand(const SentCommand &sent)
 {
     m_commands = std::min(m_commands + 1, 2);
     m_look.reset();
@@ -535,7 +511,7 @@ void ItemBlockTracker::receiveCommand(const QString &input)
         m_open->block.target.clear();
         m_open->block.listingMode = QStringLiteral("unknown");
     }
-    const auto command = parseContainerCommand(input);
+    const auto command = parseContainerCommand(sent.line);
     if (m_commands == 1 && command.has_value() && command->action == ContainerActionEnum::LOOK) {
         QString word = command->target;
         // A location prefix is before the ordinal (equipment.2.pouch).
@@ -548,7 +524,7 @@ void ItemBlockTracker::receiveCommand(const QString &input)
         } else {
             word = command->word;
         }
-        const QString verb = input.simplified().section(QLatin1Char(' '), 0, 0).toLower();
+        const QString verb = sent.verb;
         m_look = Look{word,
                       command->target,
                       QStringLiteral("examine").startsWith(verb) ? QStringLiteral("separate")
@@ -561,7 +537,7 @@ std::vector<ItemBlock> ItemBlockTracker::receiveLine(const QString &line)
     std::vector<ItemBlock> blocks;
     m_lastClaimed = false;
     m_lastClaimedOwner = QStringLiteral("you");
-    const QString text = cleaned(line);
+    const QString text = line_text::cleanedForItems(line);
 
     if (m_open.has_value()) {
         if (text.isEmpty()) {
@@ -692,7 +668,7 @@ bool ItemBlockTracker::accept(const QString &text)
         }
         block.items.push_back(std::move(*item));
         open.lines << text;
-    } else if (isItemLine(text) && !g_container.match(text).hasMatch()) {
+    } else if (line_text::isItemLine(text) && !g_container.match(text).hasMatch()) {
         // The header of a container is lowercase too, and opens a listing of its own.
         block.items.push_back(parseListedItem(text));
         open.lines << text;
@@ -721,22 +697,41 @@ std::vector<ItemBlock> ItemBlockTracker::close()
     return blocks;
 }
 
-std::optional<ItemCommandObservation> ItemCommandTracker::receiveCommand(const QString &line,
-                                                                         const int64_t nowMs)
+void ItemCommandTracker::receiveCommand(const SentCommand &sent)
+{
+    if (auto observation = accept(sent)) {
+        m_ready.push_back(std::move(*observation));
+    }
+}
+
+void ItemCommandTracker::reset()
+{
+    // What was told of the commands still waiting is final: they ended without a prompt.
+    for (ItemCommandObservation &observation : finish(false)) {
+        m_ready.push_back(std::move(observation));
+    }
+}
+
+std::vector<ItemCommandObservation> ItemCommandTracker::takeReady()
+{
+    return std::exchange(m_ready, {});
+}
+
+std::optional<ItemCommandObservation> ItemCommandTracker::accept(const SentCommand &sent)
 {
     // Every command counts, including movement and commands we cannot interpret. Never let
     // a manual command's generic failure be mistaken for a frontend operation's reply.
     if (m_commands == 0) {
-        m_started = nowMs;
+        m_started = sent.nowMs;
     }
     m_commands = std::min(m_commands + 1, 2);
-    const QString trimmed = line.trimmed();
+    const QString trimmed = sent.line.trimmed();
     if (trimmed.contains(QLatin1Char('\n')) || trimmed.contains(QLatin1Char('\r'))) {
         m_commands = 2;
         return std::nullopt;
     }
     const QString command = trimmed.simplified();
-    const QString verb = command.section(QLatin1Char(' '), 0, 0).toLower();
+    const QString &verb = sent.verb;
     const QStringList verbs{QStringLiteral("get"),       QStringLiteral("put"),
                             QStringLiteral("drop"),      QStringLiteral("give"),
                             QStringLiteral("wear"),      QStringLiteral("remove"),
@@ -806,7 +801,7 @@ void ItemCommandTracker::receiveLine(const QString &line)
     if (m_pending.empty()) {
         return;
     }
-    const QString text = cleaned(line);
+    const QString text = line_text::cleanedForItems(line);
     if (text.isEmpty()) {
         return;
     }

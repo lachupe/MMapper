@@ -3,6 +3,8 @@
 
 #include "RoomDoors.h"
 
+#include "LineText.h"
+
 #include <algorithm>
 #include <array>
 #include <tuple>
@@ -150,10 +152,6 @@ const LinePattern g_doorLines[] = {
 
 #undef DOOR
 
-// The twiddlers a delayed command draws end up on the front of the line that ends it:
-// "\|You aim your spell at the ice layer." (log-2005.09.21-01.39.48.txt:26019).
-const QRegularExpression g_twiddlers{QStringLiteral(R"(^[\\|/\-\x08]+(?=[A-Z*]))")};
-
 /// Whether a state says more than "closed" does, so that a plain closed must not replace it.
 NODISCARD bool keepsOverClosed(const DoorStateEnum state)
 {
@@ -294,8 +292,7 @@ std::vector<DoorExit> parseExitsLine(const QString &line)
 
 std::optional<DoorLine> parseDoorLine(const QString &raw)
 {
-    QString line = raw.trimmed();
-    line.remove(g_twiddlers);
+    QString line = line_text::trimmedWithoutTwiddlers(raw);
     for (const LinePattern &row : g_doorLines) {
         const auto m = row.pattern.match(line);
         if (!m.hasMatch()) {
@@ -612,9 +609,9 @@ std::optional<RoomDoors> RoomDoorTracker::receiveExitsLine(const QString &line, 
     return changed(now);
 }
 
-void RoomDoorTracker::receiveCommand(const QString &input)
+void RoomDoorTracker::receiveCommand(const SentCommand &sent)
 {
-    const auto aim = parseDoorAim(input);
+    const auto aim = parseDoorAim(sent.line);
     if (!aim.has_value()) {
         return;
     }

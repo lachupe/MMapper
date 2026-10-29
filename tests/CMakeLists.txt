@@ -58,6 +58,8 @@ add_library(mm_test STATIC
     ../src/parser/GameStateLines.cpp
     ../src/parser/GameStateLines.h
     ../src/parser/LoginLines.cpp
+    ../src/parser/LineReader.cpp
+    ../src/parser/LineReader.h
     ../src/parser/LoginLines.h
     ../src/proxy/GmcpMessage.cpp
     ../src/proxy/GmcpMessage.h
@@ -72,6 +74,65 @@ target_link_libraries(mm_test
     mm_global
     Qt6::Core
     Qt6::Network
+    coverage_config
+)
+
+# The parser's line readers, MumeXmlParser's inputs: one library for every test that reads MUME's
+# lines, so that no file keeps a copy of a helper to avoid a link dependency (src/parser/LineText.h).
+# GameStateLines, LoginLines and LineReader are in mm_test, which the observer needs as well.
+add_library(mm_parser_lines STATIC
+    ../src/parser/AccountLines.cpp
+    ../src/parser/AccountLines.h
+    ../src/parser/CharAffects.cpp
+    ../src/parser/CharAffects.h
+    ../src/parser/CharConsider.cpp
+    ../src/parser/CharConsider.h
+    ../src/parser/CharFollowers.cpp
+    ../src/parser/CharFollowers.h
+    ../src/parser/CharLines.cpp
+    ../src/parser/CharLines.h
+    ../src/parser/CharRefused.cpp
+    ../src/parser/CharRefused.h
+    ../src/parser/ChunkFrame.cpp
+    ../src/parser/ChunkFrame.h
+    ../src/parser/CombatLines.cpp
+    ../src/parser/CombatLines.h
+    ../src/parser/ContainerLines.cpp
+    ../src/parser/ContainerLines.h
+    ../src/parser/ExitLooks.cpp
+    ../src/parser/ExitLooks.h
+    ../src/parser/ItemLines.cpp
+    ../src/parser/ItemLines.h
+    ../src/parser/LineTags.cpp
+    ../src/parser/LineTags.h
+    ../src/parser/LineText.cpp
+    ../src/parser/LineText.h
+    ../src/parser/QuietCapture.cpp
+    ../src/parser/QuietCapture.h
+    ../src/parser/RoomContents.cpp
+    ../src/parser/RoomContents.h
+    ../src/parser/RoomDoors.cpp
+    ../src/parser/RoomDoors.h
+    ../src/parser/TradeLines.cpp
+    ../src/parser/TradeLines.h
+    ../src/parser/WeatherLines.cpp
+    ../src/parser/WeatherLines.h
+    ../src/parser/XmlElement.cpp
+    ../src/parser/XmlElement.h
+    ../src/parser/XmlElementTracker.cpp
+    ../src/parser/XmlElementTracker.h
+)
+set_target_properties(mm_parser_lines PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF
+    COMPILE_FLAGS "${WARNING_FLAGS}"
+)
+target_link_libraries(mm_parser_lines
+    mm_test
+    mm_global
+    Qt6::Core
+    Qt6::Gui
     coverage_config
 )
 
@@ -174,10 +235,11 @@ set_target_properties(
 add_test(NAME TestProxy COMMAND TestProxy)
 
 # Combat lines
-set(TestCombatLines_SRCS TestCombatLines.cpp ../src/parser/CombatLines.cpp ../src/parser/CombatLines.h)
+set(TestCombatLines_SRCS TestCombatLines.cpp)
 add_executable(TestCombatLines ${TestCombatLines_SRCS})
 add_dependencies(TestCombatLines mm_test mm_global)
 target_link_libraries(TestCombatLines
+        mm_parser_lines
         mm_test
         mm_global
         Qt6::Test
@@ -194,12 +256,11 @@ add_test(NAME TestCombatLines COMMAND TestCombatLines)
 # The account menu and its list of characters
 set(TestAccountLines_SRCS
     TestAccountLines.cpp
-    ../src/parser/AccountLines.cpp
-    ../src/parser/AccountLines.h
     )
 add_executable(TestAccountLines ${TestAccountLines_SRCS})
 add_dependencies(TestAccountLines mm_test mm_global)
 target_link_libraries(TestAccountLines
+        mm_parser_lines
         mm_test
         mm_global
         Qt6::Test
@@ -232,10 +293,11 @@ set_target_properties(
 add_test(NAME TestLoginLines COMMAND TestLoginLines)
 
 # The character's figures: stat, score and info
-set(TestCharLines_SRCS TestCharLines.cpp ../src/parser/CharLines.cpp ../src/parser/CharLines.h)
+set(TestCharLines_SRCS TestCharLines.cpp)
 add_executable(TestCharLines ${TestCharLines_SRCS})
 add_dependencies(TestCharLines mm_test mm_global)
 target_link_libraries(TestCharLines
+        mm_parser_lines
         mm_test
         mm_global
         Qt6::Test
@@ -253,12 +315,11 @@ add_test(NAME TestCharLines COMMAND TestCharLines)
 set(TestFollowers_SRCS
     TestFollowers.cpp
     TestFollowers.h
-    ../src/parser/CharFollowers.cpp
-    ../src/parser/CharFollowers.h
     )
 add_executable(TestFollowers ${TestFollowers_SRCS})
 add_dependencies(TestFollowers mm_test mm_global)
 target_link_libraries(TestFollowers
+        mm_parser_lines
         mm_test
         mm_global
         Qt6::Test
@@ -276,16 +337,11 @@ add_test(NAME TestFollowers COMMAND TestFollowers)
 set(TestRefusedDoors_SRCS
     TestRefusedDoors.cpp
     TestRefusedDoors.h
-    ../src/parser/CharRefused.cpp
-    ../src/parser/CharRefused.h
-    ../src/parser/CombatLines.cpp
-    ../src/parser/CombatLines.h
-    ../src/parser/RoomDoors.cpp
-    ../src/parser/RoomDoors.h
     )
 add_executable(TestRefusedDoors ${TestRefusedDoors_SRCS})
 add_dependencies(TestRefusedDoors mm_test mm_global)
 target_link_libraries(TestRefusedDoors
+        mm_parser_lines
         mm_test
         mm_global
         Qt6::Test
@@ -304,18 +360,11 @@ set(TestLogLines_SRCS
     TestLogLines.cpp
     TestLogLines.h
     LogLinesData.h
-    ../src/parser/CharFollowers.cpp
-    ../src/parser/CharFollowers.h
-    ../src/parser/CharRefused.cpp
-    ../src/parser/CharRefused.h
-    ../src/parser/CombatLines.cpp
-    ../src/parser/CombatLines.h
-    ../src/parser/RoomDoors.cpp
-    ../src/parser/RoomDoors.h
     )
 add_executable(TestLogLines ${TestLogLines_SRCS})
 add_dependencies(TestLogLines mm_test mm_global)
 target_link_libraries(TestLogLines
+        mm_parser_lines
         mm_test
         mm_global
         Qt6::Test
@@ -333,14 +382,11 @@ add_test(NAME TestLogLines COMMAND TestLogLines)
 set(TestExitLooks_SRCS
     TestExitLooks.cpp
     TestExitLooks.h
-    ../src/parser/ExitLooks.cpp
-    ../src/parser/ExitLooks.h
-    ../src/parser/RoomDoors.cpp
-    ../src/parser/RoomDoors.h
     )
 add_executable(TestExitLooks ${TestExitLooks_SRCS})
 add_dependencies(TestExitLooks mm_test mm_global)
 target_link_libraries(TestExitLooks
+        mm_parser_lines
         mm_test
         mm_global
         Qt6::Test
@@ -354,24 +400,37 @@ set_target_properties(
 )
 add_test(NAME TestExitLooks COMMAND TestExitLooks)
 
+# One interface for the parser's line readers: the reasons that reset them, one command for each
+# line sent, and the helpers they share (LineText)
+set(TestLineReaders_SRCS TestLineReaders.cpp TestLineReaders.h)
+add_executable(TestLineReaders ${TestLineReaders_SRCS})
+add_dependencies(TestLineReaders mm_test mm_global)
+target_link_libraries(TestLineReaders
+        mm_parser_lines
+        mm_test
+        mm_global
+        Qt6::Test
+        coverage_config)
+set_target_properties(
+  TestLineReaders PROPERTIES
+  CXX_STANDARD 20
+  CXX_STANDARD_REQUIRED ON
+  CXX_EXTENSIONS OFF
+  COMPILE_FLAGS "${WARNING_FLAGS}"
+)
+add_test(NAME TestLineReaders COMMAND TestLineReaders)
+
 # Shops, guilds, inns and trophies, the money in them, MUME's pager, and the quiet command's
 # window
 set(TestTradeLines_SRCS
     TestTradeLines.cpp
     ../src/frontend/TradeMessages.cpp
     ../src/frontend/TradeMessages.h
-    ../src/parser/CharLines.cpp
-    ../src/parser/CharLines.h
-    ../src/parser/QuietCapture.cpp
-    ../src/parser/QuietCapture.h
-    ../src/parser/TradeLines.cpp
-    ../src/parser/TradeLines.h
-    ../src/parser/XmlElement.cpp
-    ../src/parser/XmlElement.h
     )
 add_executable(TestTradeLines ${TestTradeLines_SRCS})
 add_dependencies(TestTradeLines mm_test mm_global)
 target_link_libraries(TestTradeLines
+        mm_parser_lines
         mm_test
         mm_global
         Qt6::Test
@@ -388,16 +447,11 @@ add_test(NAME TestTradeLines COMMAND TestTradeLines)
 # Weather lines, and the ground they describe
 set(TestWeatherLines_SRCS
     TestWeatherLines.cpp
-    ../src/parser/WeatherLines.cpp
-    ../src/parser/WeatherLines.h
-    ../src/parser/XmlElement.cpp
-    ../src/parser/XmlElement.h
-    ../src/parser/XmlElementTracker.cpp
-    ../src/parser/XmlElementTracker.h
     )
 add_executable(TestWeatherLines ${TestWeatherLines_SRCS})
 add_dependencies(TestWeatherLines mm_test mm_global)
 target_link_libraries(TestWeatherLines
+        mm_parser_lines
         mm_test
         mm_global
         Qt6::Gui
@@ -416,16 +470,11 @@ add_test(NAME TestWeatherLines COMMAND TestWeatherLines)
 # The objects in the room, and the replies to container commands
 set(TestRoomContents_SRCS
     TestRoomContents.cpp
-    ../src/parser/ContainerLines.cpp
-    ../src/parser/ContainerLines.h
-    ../src/parser/RoomContents.cpp
-    ../src/parser/RoomContents.h
-    ../src/parser/XmlElement.cpp
-    ../src/parser/XmlElement.h
     )
 add_executable(TestRoomContents ${TestRoomContents_SRCS})
 add_dependencies(TestRoomContents mm_test mm_global)
 target_link_libraries(TestRoomContents
+        mm_parser_lines
         mm_test
         mm_global
         Qt6::Gui
@@ -444,18 +493,11 @@ add_test(NAME TestRoomContents COMMAND TestRoomContents)
 # What the player wears and carries, and the replies that change it
 set(TestItemLines_SRCS
     TestItemLines.cpp
-    ../src/parser/ContainerLines.cpp
-    ../src/parser/ContainerLines.h
-    ../src/parser/ItemLines.cpp
-    ../src/parser/ItemLines.h
-    ../src/parser/RoomContents.cpp
-    ../src/parser/RoomContents.h
-    ../src/parser/XmlElement.cpp
-    ../src/parser/XmlElement.h
     )
 add_executable(TestItemLines ${TestItemLines_SRCS})
 add_dependencies(TestItemLines mm_test mm_global)
 target_link_libraries(TestItemLines
+        mm_parser_lines
         mm_test
         mm_global
         Qt6::Gui
@@ -473,15 +515,12 @@ add_test(NAME TestItemLines COMMAND TestItemLines)
 
 # MUME's XML vocabulary
 set(xml_SRCS
-    ../src/parser/XmlElement.cpp
-    ../src/parser/XmlElement.h
-    ../src/parser/XmlElementTracker.cpp
-    ../src/parser/XmlElementTracker.h
     )
 set(TestXmlElements_SRCS TestXmlElements.cpp)
 add_executable(TestXmlElements ${TestXmlElements_SRCS} ${xml_SRCS})
 add_dependencies(TestXmlElements mm_test mm_global)
 target_link_libraries(TestXmlElements
+        mm_parser_lines
         mm_test
         mm_global
         Qt6::Gui
@@ -513,36 +552,6 @@ if(WITH_FRONTEND)
         ../src/frontend/ImportantLog.h
         ../src/frontend/LogRules.cpp
         ../src/frontend/LogRules.h
-        ../src/parser/LineTags.cpp
-        ../src/parser/LineTags.h
-        ../src/parser/AccountLines.cpp
-        ../src/parser/AccountLines.h
-        ../src/parser/CharAffects.cpp
-        ../src/parser/CharAffects.h
-        ../src/parser/CharConsider.cpp
-        ../src/parser/CharConsider.h
-        ../src/parser/CharFollowers.cpp
-        ../src/parser/CharFollowers.h
-        ../src/parser/CharLines.cpp
-        ../src/parser/CharLines.h
-        ../src/parser/CharRefused.cpp
-        ../src/parser/CharRefused.h
-        ../src/parser/CombatLines.cpp
-        ../src/parser/CombatLines.h
-        ../src/parser/ContainerLines.cpp
-        ../src/parser/ContainerLines.h
-        ../src/parser/ExitLooks.cpp
-        ../src/parser/ExitLooks.h
-        ../src/parser/ItemLines.cpp
-        ../src/parser/ItemLines.h
-        ../src/parser/RoomContents.cpp
-        ../src/parser/RoomContents.h
-        ../src/parser/RoomDoors.cpp
-        ../src/parser/RoomDoors.h
-        ../src/parser/WeatherLines.cpp
-        ../src/parser/WeatherLines.h
-        ../src/parser/XmlElement.cpp
-        ../src/parser/XmlElement.h
         ../src/frontend/FrontendSubscriptions.cpp
         ../src/frontend/FrontendSubscriptions.h
         ../src/proxy/GmcpModule.cpp
@@ -555,6 +564,7 @@ if(WITH_FRONTEND)
     add_executable(TestFrontend ${TestFrontend_SRCS} ${frontend_SRCS} ${clock_SRCS})
     add_dependencies(TestFrontend mm_test mm_global mm_map)
     target_link_libraries(TestFrontend
+            mm_parser_lines
             mm_map
             mm_test
             mm_global
@@ -576,14 +586,11 @@ if(WITH_FRONTEND)
     set(TestLogRules_SRCS
         TestLogRules.cpp
         TestLogRules.h
-        ../src/parser/QuietCapture.cpp
-        ../src/parser/QuietCapture.h
-        ../src/parser/TradeLines.cpp
-        ../src/parser/TradeLines.h
         )
     add_executable(TestLogRules ${TestLogRules_SRCS} ${frontend_SRCS} ${clock_SRCS})
     add_dependencies(TestLogRules mm_test mm_global mm_map)
     target_link_libraries(TestLogRules
+            mm_parser_lines
             mm_map
             mm_test
             mm_global
@@ -611,14 +618,6 @@ if(WITH_FRONTEND)
         ../src/frontend/FrontendSubscriptions.h
         ../src/frontend/TradeOperations.cpp
         ../src/frontend/TradeOperations.h
-        ../src/parser/CharLines.cpp
-        ../src/parser/CharLines.h
-        ../src/parser/QuietCapture.cpp
-        ../src/parser/QuietCapture.h
-        ../src/parser/TradeLines.cpp
-        ../src/parser/TradeLines.h
-        ../src/parser/XmlElement.cpp
-        ../src/parser/XmlElement.h
         ../src/proxy/GmcpModule.cpp
         ../src/proxy/GmcpModule.h
         ../src/proxy/GmcpUtils.cpp
@@ -627,6 +626,7 @@ if(WITH_FRONTEND)
     add_executable(TestTradeOperations ${TestTradeOperations_SRCS})
     add_dependencies(TestTradeOperations mm_test mm_global)
     target_link_libraries(TestTradeOperations
+            mm_parser_lines
             mm_test
             mm_global
             Qt6::Test

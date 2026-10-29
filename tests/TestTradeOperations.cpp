@@ -7,10 +7,12 @@
 #include "../src/frontend/TradeOperations.h"
 #include "../src/observer/gameobserver.h"
 #include "../src/parser/CharLines.h"
+#include "../src/parser/ChunkFrame.h"
 #include "../src/parser/GameStateLines.h"
 #include "../src/parser/QuietCapture.h"
 #include "../src/parser/TradeLines.h"
 #include "../src/proxy/GmcpMessage.h"
+#include "TradeReaders.h"
 
 #include <memory>
 #include <vector>

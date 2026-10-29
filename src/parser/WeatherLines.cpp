@@ -3,7 +3,7 @@
 
 #include "WeatherLines.h"
 
-#include "../global/parserutils.h"
+#include "LineText.h"
 
 #include <array>
 #include <utility>
@@ -69,13 +69,6 @@ constexpr std::array KNOWN{
     Known{"The evil power begins to regress...", K::DARKNESS, "end", false},
 };
 
-NODISCARD QString cleaned(const QString &line)
-{
-    QString text = line;
-    ParserUtils::removeAnsiMarksInPlace(text);
-    return text.simplified();
-}
-
 NODISCARD bool isMagic(const QString &text)
 {
     // "Lightning starts to show in the sky. Quite strange!", "The weather suddenly becomes
@@ -111,22 +104,6 @@ NODISCARD bool isGroundKind(const WeatherLineKindEnum kind)
     return kind == K::SNOW || kind == K::FROST || kind == K::ICE;
 }
 
-NODISCARD bool seesTheRoom(const XmlElement &room)
-{
-    // In dense fog or darkness MUME puts a line saying so where the name would be, and the
-    // rest of the display says nothing about the ground either.
-    for (const XmlElement &child : room.children) {
-        if (child.tag != XmlTagEnum::NAME) {
-            continue;
-        }
-        const QString name = cleaned(child.text);
-        return !name.isEmpty() && !name.contains(QStringLiteral("fog around you"))
-               && !name.contains(QStringLiteral("pitch black"))
-               && !name.contains(QStringLiteral("too dark"));
-    }
-    return false;
-}
-
 void apply(GroundState &state, const WeatherLine &line)
 {
     switch (line.kind) {
@@ -149,7 +126,7 @@ void apply(GroundState &state, const WeatherLine &line)
 WeatherLine parseWeatherLine(const QString &raw)
 {
     WeatherLine result;
-    result.text = cleaned(raw);
+    result.text = line_text::cleaned(raw);
     const QString &text = result.text;
     result.magic = isMagic(text);
 
@@ -261,7 +238,7 @@ std::optional<GroundState> GroundTracker::receive(const XmlElement &element,
         // nothing of that kind lies here.
         m_pending = GroundState{};
         m_pending.entered = true;
-        if (!seesTheRoom(element)) {
+        if (!line_text::seesTheRoom(element)) {
             m_pending.snow = m_pending.frost = m_pending.ice = "unknown";
         } else {
             for (const XmlElement &child : element.children) {

@@ -7,12 +7,14 @@
 #include "../src/frontend/LogRules.h"
 #include "../src/observer/gameobserver.h"
 #include "../src/parser/CharLines.h"
+#include "../src/parser/ChunkFrame.h"
 #include "../src/parser/CombatLines.h"
 #include "../src/parser/ItemLines.h"
 #include "../src/parser/LineTags.h"
 #include "../src/parser/TradeLines.h"
 #include "../src/parser/XmlElement.h"
 #include "../src/proxy/GmcpMessage.h"
+#include "TradeReaders.h"
 
 #include <QElapsedTimer>
 #include <QFile>

@@ -3,6 +3,7 @@
 // Copyright (C) 2026 The MMapper Authors
 
 #include "../global/macros.h"
+#include "LineReader.h"
 
 #include <cstdint>
 #include <optional>
@@ -177,7 +178,7 @@ struct NODISCARD AccountReplies final
 /// list whose header came (an account with no characters gives an empty list). A list MUME's
 /// pager interrupts is published again with `more` set, and once more, whole, when the rows
 /// after the pager have come; only the `Account> ` prompt or a new session ends that.
-class NODISCARD AccountLinesTracker final
+class NODISCARD AccountLinesTracker final : public LineReader
 {
 private:
     std::optional<AccountMenu> m_menu;
@@ -207,7 +208,8 @@ public:
     /// A prompt closes whatever is open.
     NODISCARD AccountReplies receivePrompt();
     /// For a new session.
-    void reset();
+    NODISCARD ResetSet resetsOn() const override { return {ResetReason::DISCONNECTED}; }
+    void reset() override;
     /// Whether the menu or a list of characters is being read: the lines in between are the
     /// account's.
     NODISCARD bool reading() const { return m_menu.has_value() || m_list.has_value(); }

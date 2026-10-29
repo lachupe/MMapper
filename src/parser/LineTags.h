@@ -4,6 +4,7 @@
 
 #include "../global/macros.h"
 #include "CombatLines.h"
+#include "LineReader.h"
 #include "XmlElement.h"
 
 #include <cstdint>
@@ -151,7 +152,7 @@ void tagElements(LineFacts &facts, const std::vector<XmlElement> &elements);
 /// finish() is called once per chunk that gets a record, after every reader, with the tags
 /// collected and the communication elements still open after the chunk: while one is open the
 /// line is held, and the record of the whole message comes with the line that closes it.
-class NODISCARD LineTagger final
+class NODISCARD LineTagger final : public LineReader
 {
 public:
     /// A message that never closes is let go after this many lines.
@@ -166,5 +167,6 @@ public:
     /// when it closes, and a held message first when something else interrupts it (a prompt).
     NODISCARD std::vector<LineFacts> finish(LineFacts facts, bool commOpen);
     /// For a new session.
-    void reset();
+    NODISCARD ResetSet resetsOn() const override { return {ResetReason::DISCONNECTED}; }
+    void reset() override;
 };

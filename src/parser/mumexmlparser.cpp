@@ -24,6 +24,7 @@
 #include "CombatLines.h"
 #include "GameStateLines.h"
 #include "LineTags.h"
+#include "LineText.h"
 #include "abstractparser.h"
 
 #include <cctype>
@@ -77,99 +78,100 @@ MumeXmlParser::MumeXmlParser(MapData &md,
                              AbstractParserOutputs &outputs,
                              ParserCommonData &parserCommonData)
     : MumeXmlParserBase{parent, mc, md, group, hm, proxyGmcp, outputs, parserCommonData}
-    , m_tradeReaders{observer}
+    , m_chunkFrame{observer}
     , m_observer{observer}
 {
     // Every line on its way to MUME, from MMapper's own client and from a frontend's
     // MMapper.Input.Command alike, so that MUME's replies to container commands can be paired
     // with the command that caused them. Lines typed while MUME has echo off, such as a
     // password, are not reported here.
-    m_observer.sig2_sentToMudString.connect(m_lifetime, [this](const QString &line) {
-        // The line after a pager answers it (Return, "q"), whoever sent it: no command.
-        if (!m_tradeReaders.receiveCommand(line)) {
-            return;
-        }
-        m_considerReader.receiveCommand(line);
-        m_containerTracker.receiveCommand(line);
-        // What a later line about a door that names none is about.
-        m_doorTracker.receiveCommand(line);
-        // Each line is one more prompt to come; a look at a side waits for its answer
-        // (MMapper.Room.Look). A string may hold several lines.
-        for (const QString &one : line.split(QLatin1Char('\n'), Qt::SkipEmptyParts)) {
-            if (!one.trimmed().isEmpty()) {
-                m_exitLooks.receiveCommand(one);
-            }
-        }
-        // `order` and `label`: what the next "Ok." answers.
-        m_followersTracker.receiveCommand(line, QDateTime::currentSecsSinceEpoch());
-        m_itemTracker.receiveCommand(line);
-        if (const auto command = m_itemCommands.receiveCommand(line,
-                                                               QDateTime::currentMSecsSinceEpoch())) {
-            m_observer.sig2_itemCommand.invoke(*command);
-        }
-    });
+    m_observer.sig2_sentToMudString.connect(m_lifetime,
+                                            [this](const QString &line) { receiveSent(line); });
     auto *timer = new QTimer(this);
     timer->setInterval(1000);
     connect(timer, &QTimer::timeout, this, [this]() {
         for (const auto &command : m_itemCommands.expire(QDateTime::currentMSecsSinceEpoch())) {
-            m_observer.sig2_itemCommand.invoke(command);
+            m_observer.observeItemCommand(command);
         }
     });
     timer->start();
     m_observer.sig2_toggledEchoMode.connect(m_lifetime, [this](const bool echo) {
+        // A line typed with echo off is not reported, but MUME answers it: what was waiting for
+        // an answer is let go, and the count of prompts to come starts again.
         if (!echo) {
-            for (const auto &command : m_itemCommands.finish(false)) {
-                m_observer.sig2_itemCommand.invoke(command);
-            }
-            m_itemTracker.reset();
-            m_charTracker.reset();
-            m_tradeReaders.reset();
-            // A line typed with echo off is not reported, but MUME answers it: the count of
-            // prompts to come starts again.
-            m_exitLooks.reset();
+            resetReaders(ResetReason::ECHO_OFF);
         }
     });
-    m_observer.sig2_disconnected.connect(m_lifetime, [this]() {
-        for (const auto &command : m_itemCommands.finish(false)) {
-            m_observer.sig2_itemCommand.invoke(command);
-        }
-        m_itemTracker.reset();
-        m_charTracker.reset();
-        m_accountTracker.reset();
-        m_loginTracker.reset();
-        m_tradeReaders.reset();
-        m_followersTracker.reset();
-        m_doorTracker.reset();
-        m_exitLooks.reset();
-        m_lineTagger.reset();
-    });
+    m_observer.sig2_disconnected.connect(m_lifetime,
+                                         [this]() { resetReaders(ResetReason::DISCONNECTED); });
     // The followers were this character's and this session's: forgotten, with nothing sent,
     // when MMapper connects again and when the character leaves the game (a rent, a quit,
     // MUME's menu). The frontend server drops what it would replay at the same signals.
     // The doors likewise: they are of the room the character stood in.
-    m_observer.sig2_connected.connect(m_lifetime, [this]() {
-        m_followersTracker.reset();
-        m_doorTracker.reset();
-        m_exitLooks.reset();
-        m_loginTracker.reset();
-    });
+    m_observer.sig2_connected.connect(m_lifetime,
+                                      [this]() { resetReaders(ResetReason::CONNECTED); });
     m_observer.sig2_gameStateChanged.connect(m_lifetime, [this](const GameStateEnum state) {
-        if (state != GameStateEnum::PLAYING) {
-            m_followersTracker.reset();
-            m_doorTracker.reset();
-        } else {
-            // In the game: no login prompt stands. The frontend server drops its own copy at
-            // the same signal.
-            m_loginTracker.reset();
-        }
+        // In the game no login prompt stands. The frontend server drops its own copy at the
+        // same signal.
+        resetReaders(state != GameStateEnum::PLAYING ? ResetReason::LEFT_GAME
+                                                     : ResetReason::ENTERED_GAME);
     });
     // A frontend's quiet command: the runner says when its command has reached MUME and when
     // the request is over; parse() keeps the reply between the two from the user.
     m_observer.sig2_quietCommand.connect(m_lifetime, [this](const QuietCommandEnum what) {
-        m_tradeReaders.receiveQuietCommand(what);
+        m_chunkFrame.receiveQuietCommand(what);
     });
     // "X opens the chest." is told in a door's words: a word that names a container is no door.
     m_doorTracker.setNotDoor([](const QString &word) { return namesContainer(word); });
+    // Every line reader, in one list: the commands go to each, and a reason resets each that
+    // declares it. The XmlElementTracker is no reader of lines and is reset by hand.
+    m_readers.add(m_chunkFrame);
+    m_readers.add(m_tradeLines);
+    m_readers.add(m_considerReader);
+    m_readers.add(m_containerTracker);
+    m_readers.add(m_doorTracker);
+    m_readers.add(m_exitLooks);
+    m_readers.add(m_followersTracker);
+    m_readers.add(m_itemTracker);
+    m_readers.add(m_itemCommands);
+    m_readers.add(m_charTracker);
+    m_readers.add(m_accountTracker);
+    m_readers.add(m_loginTracker);
+    m_readers.add(m_groundTracker);
+    m_readers.add(m_roomContentsTracker);
+    m_readers.add(m_ownCastTracker);
+    m_readers.add(m_lineTagger);
+}
+
+void MumeXmlParser::receiveSent(const QString &text)
+{
+    // One clock for the whole string, and one command for each line in it: an alias may send
+    // `open chest\nget all chest`, and every reader sees two commands.
+    for (const SentCommand &command : splitSentCommands(text, QDateTime::currentMSecsSinceEpoch())) {
+        // The line after a pager answers it (Return, "q"), whoever sent it: no command.
+        if (m_chunkFrame.takesPagerAnswer()) {
+            continue;
+        }
+        m_readers.receiveCommand(command);
+    }
+    publishItemCommands();
+}
+
+void MumeXmlParser::resetReaders(const ResetReason reason)
+{
+    if (reason == ResetReason::XML_LOST) {
+        m_xmlTracker.reset();
+    }
+    m_readers.reset(reason);
+    // The commands that were waiting ended without a prompt.
+    publishItemCommands();
+}
+
+void MumeXmlParser::publishItemCommands()
+{
+    for (const auto &command : m_itemCommands.takeReady()) {
+        m_observer.observeItemCommand(command);
+    }
 }
 
 MumeXmlParser::~MumeXmlParser() = default;
@@ -192,6 +194,8 @@ void MumeXmlParser::slot_parseNewMudInput(const TelnetData &data)
 
 void MumeXmlParser::parse(const TelnetData &data, const bool isGoAhead)
 {
+    // The clock, taken once for the chunk: every reader below counts from it.
+    const int64_t nowSecs = secondsOf(QDateTime::currentMSecsSinceEpoch());
     m_lineToUser.clear();
     m_descriptionSpans.clear();
     m_lineFlags.remove(LineFlagEnum::NONE);
@@ -240,8 +244,7 @@ void MumeXmlParser::parse(const TelnetData &data, const bool isGoAhead)
     if (!isGoAhead
         && (m_lineToUser.contains(QStringLiteral("MMXP "))
             || m_lineToUser.contains(QStringLiteral("MMAB ")))) {
-        QString plain = m_lineToUser;
-        ParserUtils::removeAnsiMarksInPlace(plain);
+        const QString plain = line_text::plainOf(m_lineToUser);
         const auto level = parseCharLevelLine(plain);
         const auto abilities = level.has_value() ? std::nullopt : parseCharAbilitiesLine(plain);
         if (level.has_value() || abilities.has_value()) {
@@ -252,7 +255,7 @@ void MumeXmlParser::parse(const TelnetData &data, const bool isGoAhead)
             }
             // Asked by a quiet command, it is a line of that reply like any other, though no
             // reader below is given it: without it the reply would seem never to have come.
-            const bool quiet = m_tradeReaders.captureQuietLine(plain);
+            const bool quiet = m_chunkFrame.captureQuietLine(plain);
             if (quiet) {
                 m_observer.observeQuietLine(plain);
             }
@@ -271,8 +274,7 @@ void MumeXmlParser::parse(const TelnetData &data, const bool isGoAhead)
     // What the chunk is, decided once for every reader: a line, MUME's pager line (on a GA, but
     // no prompt: it must not close replies or finish commands), the real prompt, or a twiddler.
     // A pager glued to the front of a line when no GA came is taken off the line here.
-    QString chunkText = m_lineToUser;
-    ParserUtils::removeAnsiMarksInPlace(chunkText);
+    const QString chunkText = line_text::plainOf(m_lineToUser);
     // The elements that closed on this chunk, taken here because a quiet command's window asks
     // what they say of the line before the line is sent anywhere; published further down.
     std::vector<XmlElement> elements = m_xmlTracker.take();
@@ -299,17 +301,20 @@ void MumeXmlParser::parse(const TelnetData &data, const bool isGoAhead)
         }
     }
     QuietTrafficEnum traffic = QuietTrafficEnum::REPLY;
-    if (m_tradeReaders.quietOpen() && !isGoAhead) {
+    if (m_chunkFrame.quietOpen() && !isGoAhead) {
         traffic = quietTrafficOf(inRoom,
                                  parseCombatLine(chunkText).has_value(),
                                  chunkText.trimmed(),
                                  elements,
                                  m_xmlTracker.openTags());
     }
-    const MudChunk chunk = m_tradeReaders.beginChunk(data.type == TelnetDataEnum::Prompt,
-                                                     data.type == TelnetDataEnum::Backspace,
-                                                     chunkText,
-                                                     traffic);
+    const MudChunk chunk = m_chunkFrame.begin(data.type == TelnetDataEnum::Prompt,
+                                              data.type == TelnetDataEnum::Backspace,
+                                              chunkText,
+                                              traffic);
+    if (chunk.pager.has_value()) {
+        m_tradeLines.receivePager(*chunk.pager);
+    }
     const bool isRealPrompt = chunk.kind == MudChunkKindEnum::PROMPT;
     m_chunkIsPager = chunk.kind == MudChunkKindEnum::PAGER;
     // What the readers below make of the chunk, for the prioritised Log (MMapper.Log): one
@@ -405,8 +410,8 @@ void MumeXmlParser::parse(const TelnetData &data, const bool isGoAhead)
         if (!isGoAhead) {
             m_itemCommands.receiveLine(plain);
             {
-                const std::vector<ContainerEvent> events
-                    = m_containerTracker.receiveLine(plain, QDateTime::currentSecsSinceEpoch());
+                const std::vector<ContainerEvent> events = m_containerTracker.receiveLine(plain,
+                                                                                          nowSecs);
                 if (!events.empty()) {
                     facts.tags.insert(LineTagEnum::CONTAINER);
                 }
@@ -416,7 +421,7 @@ void MumeXmlParser::parse(const TelnetData &data, const bool isGoAhead)
             // container tracker paired, and the lines that tell of a door by themselves. And
             // the refusals no other reader takes, a door's among them.
             {
-                const int64_t now = QDateTime::currentSecsSinceEpoch();
+                const int64_t now = nowSecs;
                 for (const DoorReply &reply : m_containerTracker.takeDoorReplies()) {
                     facts.tags.insert(LineTagEnum::DOOR);
                     if (const auto doors = m_doorTracker.receiveDoorReply(reply, now)) {
@@ -482,14 +487,13 @@ void MumeXmlParser::parse(const TelnetData &data, const bool isGoAhead)
             }
             // Who follows the player and takes its orders: a bond made or ended, one left
             // behind or back. The answer to an `order` goes out at the prompt that ends it.
-            if (const auto followers
-                = m_followersTracker.receiveLine(plain, QDateTime::currentSecsSinceEpoch())) {
+            if (const auto followers = m_followersTracker.receiveLine(plain, nowSecs)) {
                 m_observer.observeCharFollowers(*followers);
                 facts.tags.insert(LineTagEnum::FOLLOWERS);
             }
             // Shops, guilds, inns and trophies, read the same way.
-            m_tradeReaders.receiveLine(plain);
-            switch (m_tradeReaders.lastLineKind()) {
+            publishTradeReplies(m_observer, m_tradeLines.receiveLine(plain));
+            switch (m_tradeLines.lastLineKind()) {
             case TradeLineKindEnum::SHOP:
                 facts.tags.insert(LineTagEnum::SHOP);
                 break;
@@ -519,11 +523,10 @@ void MumeXmlParser::parse(const TelnetData &data, const bool isGoAhead)
         publishItemBlocks(m_itemTracker.receivePrompt());
         publishCharReplies(m_charTracker.receivePrompt());
         m_doorTracker.receivePrompt();
-        if (const auto followers = m_followersTracker.receivePrompt(
-                QDateTime::currentSecsSinceEpoch())) {
+        if (const auto followers = m_followersTracker.receivePrompt(nowSecs)) {
             m_observer.observeCharFollowers(*followers);
         }
-        m_tradeReaders.receivePrompt();
+        publishTradeReplies(m_observer, m_tradeLines.receivePrompt());
         publishAccountReplies(m_accountTracker.receivePrompt());
     }
 
@@ -582,8 +585,7 @@ void MumeXmlParser::parse(const TelnetData &data, const bool isGoAhead)
             if (description != nullptr) {
                 TerminalHidden hidden;
                 hidden.kind = TerminalHiddenEnum::ROOM_DESCRIPTION;
-                hidden.text = description->text;
-                ParserUtils::removeAnsiMarksInPlace(hidden.text);
+                hidden.text = line_text::plainOf(description->text);
                 hidden.text.remove(QLatin1Char('\r'));
                 while (hidden.text.endsWith(QLatin1Char('\n'))) {
                     hidden.text.chop(1);
@@ -598,8 +600,7 @@ void MumeXmlParser::parse(const TelnetData &data, const bool isGoAhead)
         }
         // The door marks of a room display's exits line: "[north]", "(east)", "#up#".
         if (xml.tag == XmlTagEnum::EXITS) {
-            if (const auto doors
-                = m_doorTracker.receiveExitsLine(xml.text, QDateTime::currentSecsSinceEpoch())) {
+            if (const auto doors = m_doorTracker.receiveExitsLine(xml.text, nowSecs)) {
                 m_observer.observeRoomDoors(*doors);
             }
         }
@@ -620,8 +621,7 @@ void MumeXmlParser::parse(const TelnetData &data, const bool isGoAhead)
         // ground above. A prompt also ends any container reply being gathered, which goes
         // first, so that what it said is in the room's objects.
         if (xml.tag == XmlTagEnum::PROMPT && !m_chunkIsPager) {
-            publishContainerEvents(
-                m_containerTracker.receivePrompt(QDateTime::currentSecsSinceEpoch()));
+            publishContainerEvents(m_containerTracker.receivePrompt(nowSecs));
             // A consider's level sentence that came without its advice.
             if (const auto consider = m_considerReader.receivePrompt()) {
                 m_observer.observeCharConsider(*consider);
@@ -660,7 +660,7 @@ void MumeXmlParser::parse(const TelnetData &data, const bool isGoAhead)
     if (isRealPrompt) {
         // Finish after all listings and room snapshots at this prompt have been published.
         for (const auto &command : m_itemCommands.finish(true)) {
-            m_observer.sig2_itemCommand.invoke(command);
+            m_observer.observeItemCommand(command);
         }
     }
     // The Log's record of the chunk, now that every reader has read it; a message of
@@ -678,7 +678,7 @@ void MumeXmlParser::parse(const TelnetData &data, const bool isGoAhead)
         }
     }
     // Last of all: sig2_realPrompt, once every reader of this prompt has published.
-    m_tradeReaders.endChunk();
+    m_chunkFrame.end();
 }
 
 QString MumeXmlParser::roomKey() const
@@ -778,17 +778,7 @@ bool MumeXmlParser::element(const QString &line)
                                "[MMapper] Mapper cannot function without XML mode\n");
                     getQueue().clear();
                     m_lineFlags.clear();
-                    m_xmlTracker.reset();
-                    m_groundTracker.reset();
-                    m_roomContentsTracker.reset();
-                    m_containerTracker.reset();
-                    m_itemTracker.reset();
-                    m_charTracker.reset();
-                    m_tradeReaders.reset();
-                    for (const auto &command : m_itemCommands.finish(false)) {
-                        m_observer.sig2_itemCommand.invoke(command);
-                    }
-                    m_ownCastTracker.reset();
+                    resetReaders(ResetReason::XML_LOST);
                 }
                 break;
             case 'p':

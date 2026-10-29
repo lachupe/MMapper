@@ -3,6 +3,8 @@
 
 #include "CharConsider.h"
 
+#include "LineText.h"
+
 #include <utility>
 
 #include <QRegularExpression>
@@ -37,7 +39,6 @@ const ConsiderRow g_rows[] = {
     {"You ARE mad!", "hopeless"},
 };
 
-const QRegularExpression g_twiddlers{QStringLiteral(R"(^[\\|/\-\x08]+(?=[A-Z*]))")};
 // "<name> is at a slightly higher level than you.", "... at the same level as you."; the logs show
 // "slightly higher", "slightly lower" and (live) "significantly higher".
 const QRegularExpression g_level{QStringLiteral(
@@ -49,9 +50,7 @@ constexpr int MAX_CONSIDER_LINES = 6;
 
 QString cleanLine(const QString &raw)
 {
-    QString line = raw.trimmed();
-    line.remove(g_twiddlers);
-    return line;
+    return line_text::trimmedWithoutTwiddlers(raw);
 }
 
 std::optional<CharConsider> matchAdvice(const QString &line)
@@ -92,9 +91,17 @@ std::optional<CharConsider> parseConsiderLine(const QString &raw)
     return matchAdvice(cleanLine(raw));
 }
 
-void ConsiderReader::receiveCommand(const QString &sentLine)
+void ConsiderReader::reset()
 {
-    const QString target = considerTarget(sentLine);
+    m_target.clear();
+    m_lines.clear();
+    m_received = 0;
+    m_waiting = false;
+}
+
+void ConsiderReader::receiveCommand(const SentCommand &command)
+{
+    const QString target = considerTarget(command.line);
     if (target.isEmpty()) {
         return;
     }

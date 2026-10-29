@@ -2096,10 +2096,10 @@ void TestFrontend::charFollowersTest()
     QVERIFY(line("A trained horse (my) starts following you.", 1005));
 
     // An order answered: the reply rides in the message its answer caused, and in none after.
-    tracker.receiveCommand(QStringLiteral("label eagle one"), 1010);
+    tracker.receiveCommand(SentCommand{QStringLiteral("label eagle one"), 1010000});
     QVERIFY(line("Ok.", 1010));
     QVERIFY(!publish(tracker.receivePrompt(1010)));
-    tracker.receiveCommand(QStringLiteral("order followers assist"), 1020);
+    tracker.receiveCommand(SentCommand{QStringLiteral("order followers assist"), 1020000});
     QVERIFY(!line("You failed to control a mother eagle (one).", 1020));
     QVERIFY(!line("Ok.", 1020));
     QVERIFY(publish(tracker.receivePrompt(1020)));
@@ -2124,7 +2124,7 @@ void TestFrontend::charFollowersTest()
     QCOMPARE(replay(), twoBound);
 
     // The other results, with the followers unchanged.
-    tracker.receiveCommand(QStringLiteral("order followers"), 1030);
+    tracker.receiveCommand(SentCommand{QStringLiteral("order followers"), 1030000});
     QVERIFY(!line("Order who to do what?", 1030));
     QVERIFY(publish(tracker.receivePrompt(1030)));
     QJsonObject reply = payloadOf(GmcpMessage::fromRawBytes(sent.last()))["reply"].toObject();
@@ -2132,17 +2132,17 @@ void TestFrontend::charFollowersTest()
     QCOMPARE(reply["order"].toString(), QString{});
     QVERIFY(reply["failed"].isArray());
     QVERIFY(reply["failed"].toArray().isEmpty());
-    tracker.receiveCommand(QStringLiteral("order followers hit orc"), 1031);
+    tracker.receiveCommand(SentCommand{QStringLiteral("order followers hit orc"), 1031000});
     QVERIFY(!line("You have no loyal subjects here.", 1031));
     QVERIFY(publish(tracker.receivePrompt(1031)));
     reply = payloadOf(GmcpMessage::fromRawBytes(sent.last()))["reply"].toObject();
     QCOMPARE(reply["result"].toString(), QStringLiteral("none-here"));
-    tracker.receiveCommand(QStringLiteral("order followers hit orc"), 1032);
+    tracker.receiveCommand(SentCommand{QStringLiteral("order followers hit orc"), 1032000});
     QVERIFY(!line("In your dreams, or what?", 1032));
     QVERIFY(publish(tracker.receivePrompt(1032)));
     reply = payloadOf(GmcpMessage::fromRawBytes(sent.last()))["reply"].toObject();
     QCOMPARE(reply["result"].toString(), QStringLiteral("asleep"));
-    tracker.receiveCommand(QStringLiteral("order one stand"), 1033);
+    tracker.receiveCommand(SentCommand{QStringLiteral("order one stand"), 1033000});
     QVERIFY(!line("Ok.", 1033));
     QVERIFY(publish(tracker.receivePrompt(1033)));
     reply = payloadOf(GmcpMessage::fromRawBytes(sent.last()))["reply"].toObject();
@@ -3303,7 +3303,7 @@ void TestFrontend::itemObservationMetadataTest()
     QVERIFY(object["selector"].isNull());
     QCOMPARE(object["targetEvidence"].toString(), QStringLiteral("display-order-unverified"));
     ItemCommandTracker tracker;
-    const auto pending = tracker.receiveCommand(QStringLiteral("get helmet"));
+    const auto pending = tracker.accept(QStringLiteral("get helmet"));
     QVERIFY(pending.has_value());
     const auto start = payloadOf(frontend_messages::makeCharCommand(*pending));
     QCOMPARE(start["status"].toString(), QStringLiteral("pending"));

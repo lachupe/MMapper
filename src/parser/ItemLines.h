@@ -3,6 +3,7 @@
 // Copyright (C) 2026 The MMapper Authors
 
 #include "../global/macros.h"
+#include "LineReader.h"
 
 #include <cstdint>
 #include <optional>
@@ -142,7 +143,7 @@ NODISCARD std::string_view to_string_view(ItemActionEnum action);
 /// A header line opens a listing, the lines after it are its items, and a blank line, a line
 /// that cannot be an item, or the prompt closes it. A listing that runs past 4096 lines
 /// without closing is dropped, not published.
-class NODISCARD ItemBlockTracker final
+class NODISCARD ItemBlockTracker final : public LineReader
 {
 private:
     struct NODISCARD Open final
@@ -171,13 +172,17 @@ private:
 
 public:
     /// Notes a command on its way to MUME: only a look into a container matters here.
-    void receiveCommand(const QString &input);
+    void receiveCommand(const SentCommand &command) override;
     /// Reads one line of MUME's output, colour removed, and returns the listings it completes.
     NODISCARD std::vector<ItemBlock> receiveLine(const QString &line);
     /// A prompt closes the listing being read.
     NODISCARD std::vector<ItemBlock> receivePrompt();
     /// For a new session, or when XML mode goes away.
-    void reset();
+    NODISCARD ResetSet resetsOn() const override
+    {
+        return {ResetReason::DISCONNECTED, ResetReason::ECHO_OFF, ResetReason::XML_LOST};
+    }
+    void reset() override;
     /// Whether the last line receiveLine() read was a listing's: its header, an item, or the
     /// "It is closed." that answers a look into a container.
     NODISCARD bool lastLineClaimed() const { return m_lastClaimed; }
@@ -206,15 +211,27 @@ struct NODISCARD ItemCommandObservation final
     QStringList text;
 };
 
-class NODISCARD ItemCommandTracker final
+class NODISCARD ItemCommandTracker final : public LineReader
 {
     std::vector<ItemCommandObservation> m_pending;
+    std::vector<ItemCommandObservation> m_ready;
     int m_commands = 0;
     int64_t m_started = 0;
 
 public:
-    NODISCARD std::optional<ItemCommandObservation> receiveCommand(const QString &line,
-                                                                   int64_t nowMs = 0);
+    NODISCARD ResetSet resetsOn() const override
+    {
+        return {ResetReason::DISCONNECTED, ResetReason::ECHO_OFF, ResetReason::XML_LOST};
+    }
+    void reset() override;
+    /// The player's command, kept for what MUME answers: the observation made of it, if it is
+    /// one the tracker follows, is waiting in takeReady().
+    void receiveCommand(const SentCommand &command) override;
+    /// What receiveCommand() does with a command; the observation is the one that began.
+    NODISCARD std::optional<ItemCommandObservation> accept(const SentCommand &command);
+    /// The observations that began or ended without a call that returned them: by
+    /// receiveCommand(), and by a reset. The parser publishes them.
+    NODISCARD std::vector<ItemCommandObservation> takeReady();
     void receiveLine(const QString &line);
     void receiveBlock(const ItemBlock &block);
     void receiveRoom(bool seen);

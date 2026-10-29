@@ -3,7 +3,7 @@
 
 #include "ContainerLines.h"
 
-#include "../global/parserutils.h"
+#include "LineText.h"
 
 #include <algorithm>
 #include <array>
@@ -66,11 +66,6 @@ constexpr std::array<const char *, 19> NUMBERS{"two",
                                                "nineteen",
                                                "twenty"};
 
-// The "twiddlers" prompt option draws \|/- while a delayed action such as picking a lock runs,
-// and they end up on the front of the line that ends it: "/-\|/The lock finally yields to your
-// skill." Backspaces come with them when the terminal is live.
-const QRegularExpression g_twiddlers{QStringLiteral(R"(^[\\|/\-\x08]+(?=[A-Z*]))")};
-
 // "chest (here) : " heads the listing of a container in the room, "backpack (used) :" one the
 // player wears and "pouch (carried) :" one they carry; "In your sable pouch (worn on belt):" and
 // "On your keyring with a set of lock picks (worn on wrist):" are the long forms. The word is the
@@ -91,15 +86,6 @@ const QRegularExpression g_picking{QStringLiteral(
 const QRegularExpression g_notFound{QStringLiteral(
     R"(^(?:You don't see (?:any|an?) \S+(?: (?:here|there|to get things from))?|You can't find an? \S+|You do not see that here)\.$)")};
 const QRegularExpression g_condition{QStringLiteral(R"(\s*\([^()]*\)$)")};
-
-NODISCARD QString cleaned(const QString &line)
-{
-    QString text = line;
-    ParserUtils::removeAnsiMarksInPlace(text);
-    text = text.simplified();
-    text.remove(g_twiddlers);
-    return text;
-}
 
 NODISCARD bool isDirection(const QString &word)
 {
@@ -127,17 +113,6 @@ NODISCARD constexpr Actions actions(const std::initializer_list<ContainerActionE
 
 constexpr Actions ANY_ACTION = actions(
     {A::OPEN, A::CLOSE, A::UNLOCK, A::LOCK, A::PICK, A::LOOK, A::GET, A::PUT});
-
-/// The first letter of an item in a listing is lowercase ("a gold ring", "two amethysts", "the
-/// scalp of Horiam"); lines that break into a listing are sentences, and start with a capital.
-NODISCARD bool isItemLine(const QString &line)
-{
-    if (line.isEmpty()) {
-        return false;
-    }
-    const QChar first = line.front();
-    return first.isLower() || first.isDigit() || line == QStringLiteral("Something.");
-}
 
 NODISCARD std::vector<ContainerItem> coinsOf(const QString &body, const QString &text)
 {
@@ -347,9 +322,9 @@ std::vector<DoorReply> ContainerTracker::takeDoorReplies()
     return std::exchange(m_doorReplies, {});
 }
 
-void ContainerTracker::receiveCommand(const QString &input)
+void ContainerTracker::receiveCommand(const SentCommand &sent)
 {
-    if (auto command = parseContainerCommand(input)) {
+    if (auto command = parseContainerCommand(sent.line)) {
         m_pending.push_back(Pending{std::move(*command), 0, false});
     }
 }
@@ -384,7 +359,7 @@ std::optional<ContainerTracker::Pending> ContainerTracker::take(Accepts &&accept
 std::vector<ContainerEvent> ContainerTracker::receiveLine(const QString &line, const int64_t now)
 {
     std::vector<ContainerEvent> events;
-    const QString text = cleaned(line);
+    const QString text = line_text::cleanedWithoutTwiddlers(line);
     const auto flushInto = [this, &events, now]() {
         for (ContainerEvent &event : flush(now)) {
             events.push_back(std::move(event));
@@ -397,7 +372,7 @@ std::vector<ContainerEvent> ContainerTracker::receiveLine(const QString &line, c
             m_gathering->lines << text;
             return events;
         }
-        if (isItemLine(text)) {
+        if (line_text::isItemLine(text)) {
             m_gathering->items.push_back(parseContainerItem(text));
             m_gathering->lines << text;
             return events;

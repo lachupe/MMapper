@@ -3,6 +3,7 @@
 // Copyright (C) 2026 The MMapper Authors
 
 #include "../global/macros.h"
+#include "LineReader.h"
 #include "XmlElement.h"
 
 #include <cstdint>
@@ -103,7 +104,7 @@ NODISCARD std::string_view to_string_view(WeatherLineKindEnum kind);
 /// own <terrain>, and frost and ice from the <weather> lines that follow it. The prompt that
 /// ends the display makes the state complete. A frost or ice line with no room display before
 /// it is a change where the character stands, and is folded into the state it changes.
-class NODISCARD GroundTracker final
+class NODISCARD GroundTracker final : public LineReader
 {
 private:
     GroundState m_state;
@@ -118,5 +119,9 @@ public:
                                                  const std::optional<WeatherLine> &line);
     NODISCARD const GroundState &state() const { return m_state; }
     /// For a new session, or when XML mode goes away.
-    void reset();
+    NODISCARD ResetSet resetsOn() const override
+    {
+        return {ResetReason::DISCONNECTED, ResetReason::XML_LOST};
+    }
+    void reset() override;
 };

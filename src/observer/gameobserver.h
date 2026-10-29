@@ -18,6 +18,7 @@
 #include "../parser/ItemLines.h"
 #include "../parser/LineTags.h"
 #include "../parser/LoginLines.h"
+#include "../parser/QuietCapture.h"
 #include "../parser/RoomContents.h"
 #include "../parser/RoomDoors.h"
 #include "../parser/SendToUserSourceEnum.h"
@@ -271,6 +272,10 @@ public:
         sig2_charFollowers.invoke(followers);
     }
     void observeCharConsider(const CharConsider &consider) { sig2_charConsider.invoke(consider); }
+    void observeItemCommand(const ItemCommandObservation &command)
+    {
+        sig2_itemCommand.invoke(command);
+    }
     void observeCharRefused(const CharRefused &refused) { sig2_charRefused.invoke(refused); }
     void observeHandRaised(const HandRaised &hand) { sig2_handRaised.invoke(hand); }
     void observeRoomDoors(const RoomDoors &doors) { sig2_roomDoors.invoke(doors); }

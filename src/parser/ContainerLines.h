@@ -3,6 +3,7 @@
 // Copyright (C) 2026 The MMapper Authors
 
 #include "../global/macros.h"
+#include "LineReader.h"
 #include "RoomContents.h"
 
 #include <cstdint>
@@ -126,7 +127,7 @@ NODISCARD std::string_view to_string_view(ContainerActionEnum action);
 NODISCARD std::string_view to_string_view(ContainerResultEnum result);
 
 /// Pairs container commands with MUME's replies, and keeps what they said about each container.
-class NODISCARD ContainerTracker final
+class NODISCARD ContainerTracker final : public LineReader
 {
 private:
     struct NODISCARD Pending final
@@ -168,7 +169,7 @@ public:
     /// The answers to the player's door commands read since the last call, oldest first.
     NODISCARD std::vector<DoorReply> takeDoorReplies();
     /// Notes a command on its way to MUME. Anything that is not a container command is ignored.
-    void receiveCommand(const QString &input);
+    void receiveCommand(const SentCommand &command) override;
     /// Reads one line of MUME's output, colour removed, and returns the events it completes.
     NODISCARD std::vector<ContainerEvent> receiveLine(const QString &line, int64_t now);
     /// A prompt ends every reply still being gathered.
@@ -181,7 +182,11 @@ public:
     /// True once after a reply changed what is known about a container in the current room.
     NODISCARD bool takeChanged();
     /// For a new session, or when XML mode goes away.
-    void reset();
+    NODISCARD ResetSet resetsOn() const override
+    {
+        return {ResetReason::DISCONNECTED, ResetReason::XML_LOST};
+    }
+    void reset() override;
 
 private:
     NODISCARD std::vector<ContainerEvent> flush(int64_t now);

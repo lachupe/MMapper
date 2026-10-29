@@ -3,6 +3,8 @@
 
 #include "CharRefused.h"
 
+#include "LineText.h"
+
 #include <QRegularExpression>
 #include <QStringList>
 
@@ -179,9 +181,6 @@ const RefusedRow g_rows[] = {
     row(R"(^You are unable to leave this place\.$)", "", "not-here"),
 };
 
-// The twiddlers a delayed command draws end up on the front of the line that ends it.
-const QRegularExpression g_twiddlers{QStringLiteral(R"(^[\\|/\-\x08]+(?=[A-Z*]))")};
-
 NODISCARD QString actionWord(const ContainerActionEnum action)
 {
     switch (action) {
@@ -207,8 +206,7 @@ NODISCARD QString actionWord(const ContainerActionEnum action)
 
 std::optional<CharRefused> parseRefusedLine(const QString &raw)
 {
-    QString line = raw.trimmed();
-    line.remove(g_twiddlers);
+    QString line = line_text::trimmedWithoutTwiddlers(raw);
     for (const RefusedRow &r : g_rows) {
         const auto m = r.pattern.match(line);
         if (!m.hasMatch()) {

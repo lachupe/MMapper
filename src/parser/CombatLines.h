@@ -3,6 +3,7 @@
 // Copyright (C) 2026 The MMapper Authors
 
 #include "../global/macros.h"
+#include "LineReader.h"
 
 #include <cstdint>
 #include <optional>
@@ -188,7 +189,7 @@ NODISCARD std::optional<CombatEvent> parseCombatLine(const QString &line);
 /// The same state says whose spell a line that names no caster is (CombatEvent::casterUnnamed):
 /// the player's while the player's own spell is being cast, and until the prompt after the one
 /// that ended it, since the spell's line may come either side of that prompt; nobody's otherwise.
-class NODISCARD OwnCastTracker final
+class NODISCARD OwnCastTracker final : public LineReader
 {
 private:
     bool m_casting = false;
@@ -206,7 +207,11 @@ public:
     /// A chunk MUME ended with a backspace (TelnetDataEnum::Backspace), as received.
     NODISCARD std::optional<CombatEvent> receiveTwiddler(const QByteArray &chunk) const;
     NODISCARD bool casting() const { return m_casting; }
-    void reset()
+    NODISCARD ResetSet resetsOn() const override
+    {
+        return {ResetReason::DISCONNECTED, ResetReason::XML_LOST};
+    }
+    void reset() override
     {
         m_casting = false;
         m_released = false;
