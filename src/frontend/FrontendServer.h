@@ -12,7 +12,7 @@
 #include "FrontendLoginMemory.h"
 #include "FrontendMapIdentity.h"
 #include "FrontendMessages.h"
-#include "FrontendReplayCache.h"
+#include "FrontendReplayState.h"
 #include "FrontendSession.h"
 #include "FrontendSubscriptions.h"
 #include "ImportantLog.h"
@@ -127,10 +127,10 @@ private:
     /// at last for a quiet command that waits.
     QTimer m_tradeTimer;
 
-    /// What MUME has said about the current state, with every change since folded in,
-    /// replayed to a frontend that connects mid-session so that it does not have to wait
-    /// for the next change to become usable.
-    FrontendReplayCache m_replayCache;
+    /// What a frontend that connects mid-session is told: the state MUME has described, with
+    /// every change since folded in, and the snapshots built here (time, ground, room contents,
+    /// items). One owner, one policy row per package (FrontendReplayPolicy.cpp).
+    FrontendReplayState m_replay;
     /// The effects on the player's character, published whole as MMapper.Char.Affects at
     /// each change and replayed through the cache; forgotten with it.
     CharAffectsTracker m_charAffects;
@@ -157,27 +157,12 @@ private:
     /// The game clock, for MMapper.Time.State. Null until setClock(); the moments themselves
     /// arrive on GameObserver::sig2_tick, but only the clock knows how far to trust them.
     MumeClock *m_clock = nullptr;
-    /// The last MMapper.Time.State sent, replayed to frontends that subscribe later, and what
-    /// it said: frontends run their own clock from it, so it is only sent again when theirs
-    /// would now be wrong.
-    std::optional<GmcpMessage> m_timeState;
+    /// What the last MMapper.Time.State said: frontends run their own clock from it, so it is
+    /// only sent again when theirs would now be wrong. The message itself is held by m_replay.
     int64_t m_timeStateMinutes = 0;
     int64_t m_timeStateSentAt = 0;
     int m_timeStateHour = -1;
     int m_timeStatePrecision = -2;
-    /// The last MMapper.Weather.Ground sent: the snow, frost and ice where the player stands,
-    /// which a frontend that subscribes later needs before the next room display.
-    std::optional<GmcpMessage> m_groundState;
-    /// The last MMapper.Room.Contents sent: what lies in the room where the player stands,
-    /// which a frontend that subscribes later needs before the next room display.
-    std::optional<GmcpMessage> m_roomContents;
-    /// The last MMapper.Char.Equipment and MMapper.Char.Inventory of the player's own, and the
-    /// last MMapper.Char.Container of each of the few containers most recently listed, oldest
-    /// first: a frontend that subscribes later can show them before the player lists them again.
-    std::optional<GmcpMessage> m_charEquipment;
-    std::optional<GmcpMessage> m_charInventory;
-    /// A list, since GmcpMessage cannot be assigned, which a deque needs to erase from the middle.
-    std::list<std::pair<QString, GmcpMessage>> m_charContainers;
 
     Signal2Lifetime m_lifetime;
 
@@ -251,7 +236,18 @@ private:
 
 private:
     NODISCARD Client *findClient(QWebSocket *socket);
+    /// Keeps `msg` for replay as its package's policy says, and sends it to every frontend that
+    /// subscribes to it.
     void publish(const GmcpMessage &msg);
+    /// Sends `msg` to every frontend that subscribes to it, keeping nothing.
+    void broadcast(const GmcpMessage &msg);
+    /// One registration per package that only needs its builder (FrontendPublishers.cpp).
+    template<typename Event>
+    void bindPublisher(Signal2<Event> &signal, GmcpMessage (*build)(const Event &));
+    /// Every GameObserver signal that becomes a package, and the few that do more.
+    void registerPublishers();
+    /// The connection, game and login state MMapper.Session.State and the replay follow.
+    void registerSessionHandlers();
     static void sendTo(Client &client, const GmcpMessage &msg);
     void replayTo(Client &client);
     /// Gives the session to `client` if nothing else owns it. Returns true if it now drives.

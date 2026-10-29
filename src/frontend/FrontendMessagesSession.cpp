@@ -1,10 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (C) 2026 The MMapper Authors
 
-#include "FrontendMessages.h"
-
-#include "FrontendJson.h"
-
 #include "../global/TextUtils.h"
 #include "../global/parserutils.h"
 #include "../map/ExitDirection.h"
@@ -12,6 +8,8 @@
 #include "../map/coordinate.h"
 #include "../map/mmapper2room.h"
 #include "../map/roomid.h"
+#include "FrontendJson.h"
+#include "FrontendMessages.h"
 
 #include <algorithm>
 #include <array>
@@ -36,7 +34,6 @@ NODISCARD QJsonValue idOrNull(const QString &id)
 {
     return id.isEmpty() ? QJsonValue{QJsonValue::Null} : QJsonValue{id};
 }
-
 
 } // namespace
 

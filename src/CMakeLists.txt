@@ -716,8 +716,13 @@ if(WITH_FRONTEND)
         frontend/FrontendMessagesTime.cpp
         frontend/FrontendMessagesXml.cpp
         frontend/FrontendMessages.h
+        frontend/FrontendPublishers.cpp
         frontend/FrontendReplayCache.cpp
         frontend/FrontendReplayCache.h
+        frontend/FrontendReplayPolicy.cpp
+        frontend/FrontendReplayPolicy.h
+        frontend/FrontendReplayState.cpp
+        frontend/FrontendReplayState.h
         frontend/FrontendRenderPause.h
         frontend/FrontendServer.cpp
         frontend/FrontendServer.h

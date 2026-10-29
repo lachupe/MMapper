@@ -552,6 +552,10 @@ if(WITH_FRONTEND)
         ../src/frontend/FrontendMessages.h
         ../src/frontend/FrontendReplayCache.cpp
         ../src/frontend/FrontendReplayCache.h
+        ../src/frontend/FrontendReplayPolicy.cpp
+        ../src/frontend/FrontendReplayPolicy.h
+        ../src/frontend/FrontendReplayState.cpp
+        ../src/frontend/FrontendReplayState.h
         ../src/frontend/FrontendRenderPause.h
         ../src/frontend/ImportantLog.cpp
         ../src/frontend/ImportantLog.h
