@@ -543,10 +543,19 @@ if(WITH_FRONTEND)
         ../src/frontend/FrontendLoginMemory.h
         ../src/frontend/FrontendMapIdentity.cpp
         ../src/frontend/FrontendMapIdentity.h
-        ../src/frontend/FrontendMessages.cpp
+        ../src/frontend/FrontendMessagesAccount.cpp
+        ../src/frontend/FrontendMessagesChar.cpp
+        ../src/frontend/FrontendMessagesRoom.cpp
+        ../src/frontend/FrontendMessagesSession.cpp
+        ../src/frontend/FrontendMessagesTime.cpp
+        ../src/frontend/FrontendMessagesXml.cpp
         ../src/frontend/FrontendMessages.h
         ../src/frontend/FrontendReplayCache.cpp
         ../src/frontend/FrontendReplayCache.h
+        ../src/frontend/FrontendReplayPolicy.cpp
+        ../src/frontend/FrontendReplayPolicy.h
+        ../src/frontend/FrontendReplayState.cpp
+        ../src/frontend/FrontendReplayState.h
         ../src/frontend/FrontendRenderPause.h
         ../src/frontend/ImportantLog.cpp
         ../src/frontend/ImportantLog.h
@@ -622,33 +631,35 @@ if(WITH_FRONTEND)
 
     # Trade operations: the steps, the pager answers and the viewer, against a scripted MUME;
     # and the quiet command, with the parser's readers beside the runner
-    set(TestTradeOperations_SRCS
-        TestTradeOperations.cpp
+    set(TestCommandRunner_SRCS
+        TestCommandRunner.cpp
         ../src/frontend/FrontendSubscriptions.cpp
         ../src/frontend/FrontendSubscriptions.h
-        ../src/frontend/TradeOperations.cpp
-        ../src/frontend/TradeOperations.h
+        ../src/frontend/CommandRunner.cpp
+        ../src/frontend/CommandRunner.h
+        ../src/frontend/ViewerClaim.cpp
+        ../src/frontend/ViewerClaim.h
         ../src/proxy/GmcpModule.cpp
         ../src/proxy/GmcpModule.h
         ../src/proxy/GmcpUtils.cpp
         ../src/proxy/GmcpUtils.h
         )
-    add_executable(TestTradeOperations ${TestTradeOperations_SRCS})
-    add_dependencies(TestTradeOperations mm_test mm_global)
-    target_link_libraries(TestTradeOperations
+    add_executable(TestCommandRunner ${TestCommandRunner_SRCS})
+    add_dependencies(TestCommandRunner mm_test mm_global)
+    target_link_libraries(TestCommandRunner
             mm_parser_lines
             mm_test
             mm_global
             Qt6::Test
             coverage_config)
     set_target_properties(
-      TestTradeOperations PROPERTIES
+      TestCommandRunner PROPERTIES
       CXX_STANDARD 20
       CXX_STANDARD_REQUIRED ON
       CXX_EXTENSIONS OFF
       COMPILE_FLAGS "${WARNING_FLAGS}"
     )
-    add_test(NAME TestTradeOperations COMMAND TestTradeOperations)
+    add_test(NAME TestCommandRunner COMMAND TestCommandRunner)
 endif()
 
 # MapScroller is a plain, rendering-independent QObject (see

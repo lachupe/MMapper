@@ -5,7 +5,7 @@
 
 Read from the sources, never typed twice:
   * the package and module names: the X-macros in src/proxy/GmcpMessage.h and GmcpModule.h;
-  * each package's replay kind: the three switches in src/frontend/FrontendReplayCache.cpp;
+  * each package's replay kind: the policy table in src/frontend/FrontendReplayPolicy.cpp;
   * each wire enum's strings: the to_string_view() tables in the parser sources.
 
 mume3d keeps a copy under data/protocol/ and tests its Protocol constants against it.
@@ -47,19 +47,22 @@ def x_macro(rel, table):
     return re.findall(r'X\(\s*(\w+),\s*(\w+),\s*"([^"]*)",\s*"([^"]*)"\s*\)', body)
 
 
+# Rows of the table in FrontendReplayPolicy.cpp, and what each kind is called in the vocabulary.
+# SNAPSHOT and CONTAINER_LRU packages (the clock, ground, room contents, items) are held by
+# FrontendReplayState and replayed, but the vocabulary has called them "event" since it began and
+# mume3d keeps a copy of it: changing that is a separate step.
+REPLAY_NAMES = {"EVENT": "event", "WHOLE": "whole", "MERGE_FIELDS": "merge-fields",
+                "KEYED_SET": "keyed-set", "SET_CHANGE": "set-change",
+                "SNAPSHOT": "event", "CONTAINER_LRU": "event"}
+
+
 def replay_kinds():
-    text = read("src/frontend/FrontendReplayCache.cpp")
+    text = read("src/frontend/FrontendReplayPolicy.cpp")
+    start = text.index("POLICIES[] = {")
+    body = text[start:text.index("\n};\n", start)]
     kinds = {}
-    for func, kind in (("isWholeState", "whole"),
-                       ("carriesChangedFields", "merge-fields"),
-                       ("setChangedBy", "set-change")):
-        start = text.index("(const GmcpMessageTypeEnum type)", text.index(func))
-        body = text[start:text.index("\n}\n", start)]
-        for upper in re.findall(r"case GmcpMessageTypeEnum::(\w+):", body):
-            kinds.setdefault(upper, kind)
-    # The two keyed Sets are stored whole and changed member by member.
-    for upper in ("GROUP_SET", "ROOM_CHARS_SET"):
-        kinds[upper] = "keyed-set"
+    for upper, kind in re.findall(r"\{\s*GmcpMessageTypeEnum::(\w+),\s*ReplayKindEnum::(\w+)", body):
+        kinds[upper] = REPLAY_NAMES[kind]
     return kinds
 
 

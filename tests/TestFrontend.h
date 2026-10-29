@@ -69,5 +69,9 @@ private Q_SLOTS:
     static void logLineTest();
     static void logRulesTest();
     static void logExplainTest();
+    static void replayPolicyCoverageTest();
+    static void replayOrderTest();
+    static void replayDisconnectedTest();
+    static void replayScopesTest();
     static void goldenFramesTest();
 };

@@ -39,10 +39,6 @@ namespace {
 /// anything larger is either a bug or an attempt to exhaust memory.
 constexpr const qint64 MAX_FRAME_BYTES = 64 * 1024;
 
-/// How many containers' MMapper.Char.Container are kept for replay: a backpack, a pouch or two,
-/// a keyring, and the corpse or chest last looked into.
-constexpr const size_t CONTAINERS_KEPT = 8;
-
 /// Milliseconds on a clock that only moves forward, for spacing out announcements.
 NODISCARD int64_t steadyNowMs()
 {
@@ -60,9 +56,9 @@ FrontendServer::FrontendServer(GameObserver &observer,
     , m_observer{observer}
     , m_mapData{mapData}
     , m_listener{listener}
-    , m_trade{observer,
-              [this](const QString &line) { m_session.sendLine(line); },
-              [this](const GmcpMessage &msg) { publish(msg); }}
+    , m_runner{observer,
+               [this](const QString &line) { m_session.sendLine(line); },
+               [this](const GmcpMessage &msg) { publish(msg); }}
     , m_importantLog{[this](const GmcpMessage &msg) { publish(msg); }}
     , m_loginMemory{!NO_QTKEYCHAIN}
     , m_passwordConfig{std::make_unique<PasswordConfig>()}
@@ -117,12 +113,12 @@ FrontendServer::FrontendServer(GameObserver &observer,
                                   [this](const PagerLine &) { m_importantLog.receivePager(); });
 
     // The viewer setting is in MMapper.Session.State.
-    m_trade.setViewerChanged([this]() { publishSessionState(); });
-    m_tradeTimer.setInterval(250);
-    connect(&m_tradeTimer, &QTimer::timeout, this, [this]() {
-        m_trade.expire();
-        if (!m_trade.busy()) {
-            m_tradeTimer.stop();
+    m_runner.setViewerChanged([this]() { publishSessionState(); });
+    m_runnerTimer.setInterval(250);
+    connect(&m_runnerTimer, &QTimer::timeout, this, [this]() {
+        m_runner.expire();
+        if (!m_runner.busy()) {
+            m_runnerTimer.stop();
         }
     });
 
@@ -140,82 +136,8 @@ FrontendServer::FrontendServer(GameObserver &observer,
     });
     connect(&m_mapData, &MapData::sig_onDataChanged, this, &FrontendServer::onMapChanged);
 
-    m_observer.sig2_connected.connect(m_lifetime, [this]() {
-        m_upstreamConnected = true;
-        m_loginPrompt = LoginPrompt{};
-        // A login held for remembering was the last connection's.
-        m_loginMemory.reset();
-        // A new game session invalidates everything we cached from the previous one.
-        m_replayCache.clear();
-        m_importantLog.reset();
-        m_charAffects.reset();
-        m_groundState.reset();
-        m_roomContents.reset();
-        m_charEquipment.reset();
-        m_charInventory.reset();
-        m_charContainers.clear();
-        publishSessionState();
-    });
-
-    m_observer.sig2_disconnected.connect(m_lifetime, [this]() {
-        m_upstreamConnected = false;
-        m_loginPrompt = LoginPrompt{};
-        m_loginMemory.reset();
-        m_charEquipment.reset();
-        m_charInventory.reset();
-        m_charContainers.clear();
-        m_roomContents.reset();
-        publishSessionState();
-    });
-
-    m_observer.sig2_gameStateChanged.connect(m_lifetime, [this](const GameStateEnum state) {
-        if (state != GameStateEnum::PLAYING) {
-            // Rented, quit or at the menu: what MUME said of the character, the room and what
-            // was carried is not the state of anything now, and must not be replayed to a
-            // frontend that connects while MUME waits at its menu. The account's menu and
-            // characters stay: they are what MUME's menu shows.
-            m_replayCache.clearGame();
-            // The effects were this character's: the next one to enter starts with none known.
-            m_charAffects.reset();
-            m_groundState.reset();
-            m_roomContents.reset();
-            m_charEquipment.reset();
-            m_charInventory.reset();
-            m_charContainers.clear();
-        } else {
-            // A character is in the game: no login prompt stands, and the login was accepted.
-            m_loginPrompt = LoginPrompt{};
-            rememberAccepted();
-        }
-        publishSessionState();
-    });
-
-    m_observer.sig2_toggledEchoMode.connect(m_lifetime, [this](const bool echo) {
-        m_echo = echo;
-        publishSessionState();
-    });
-
-    // State: the login prompt MUME waits at, in MMapper.Session.State's `login`, so that it
-    // comes with `game` and `echo` in one message and is replayed with them. Sent at every
-    // prompt, the same one again too: that is how a refusal is told.
-    m_observer.sig2_loginPrompt.connect(m_lifetime, [this](const LoginPrompt &prompt) {
-        m_loginPrompt = prompt;
-        publishSessionState();
-    });
-
-    m_observer.sig2_sentToUserTerminal.connect(m_lifetime, [this](const TerminalOutput &out) {
-        publishTerminal(out);
-    });
-
-    m_observer.sig2_terminalHidden.connect(m_lifetime, [this](const TerminalHidden &hidden) {
-        // An event. A room's description goes only to the frontends that were spared it.
-        const GmcpMessage msg = frontend_messages::makeTerminalHidden(hidden);
-        for (Client &client : m_clients) {
-            if (frontend_messages::wantsTerminalHidden(hidden, client.filter)) {
-                sendTo(client, msg);
-            }
-        }
-    });
+    registerSessionHandlers();
+    registerPublishers();
 
     // Queued on purpose: the signal is emitted while the old session is still being torn
     // down, so the slot only actually frees up once the event loop has unwound.
@@ -224,236 +146,6 @@ FrontendServer::FrontendServer(GameObserver &observer,
             this,
             &FrontendServer::offerSession,
             Qt::QueuedConnection);
-
-    m_observer.sig2_sentToUserCombat.connect(m_lifetime, [this](const CombatEvent &event) {
-        // An event, like the XML elements: something that happened, not state to replay.
-        publish(frontend_messages::makeCombatEvent(event));
-        // What it changed of the effects on the player's character is state, though: kept,
-        // and sent whole after the event that changed it.
-        if (m_charAffects.receiveEvent(event, QDateTime::currentSecsSinceEpoch())) {
-            publishCharAffects();
-        }
-    });
-
-    m_observer.sig2_sentToUserXml.connect(m_lifetime, [this](const XmlElement &element) {
-        // Not cached for replay: these are events, and an element that closed before a
-        // frontend connected describes something that has already happened.
-        publish(frontend_messages::makeXmlElement(element));
-    });
-
-    m_observer.sig2_weatherLine.connect(m_lifetime, [this](const WeatherLine &line) {
-        // An event: a line MUME said, not state to replay. What it says about the ground
-        // where the player stands is replayed as MMapper.Weather.Ground instead.
-        publish(frontend_messages::makeWeatherEvent(line));
-    });
-
-    m_observer.sig2_groundChanged.connect(m_lifetime, [this](const GroundState &ground) {
-        onGroundChanged(ground);
-    });
-
-    m_observer.sig2_roomContents.connect(m_lifetime, [this](const RoomContentsSnapshot &contents) {
-        onRoomContents(contents);
-    });
-
-    m_observer.sig2_containerEvent.connect(m_lifetime, [this](const ContainerEvent &event) {
-        // An event: one reply to one command. What it says about the container rides along in
-        // the next MMapper.Room.Contents, which is replayed.
-        publish(frontend_messages::makeContainerEvent(event));
-    });
-
-    m_observer.sig2_itemBlock.connect(m_lifetime,
-                                      [this](const ItemBlock &block) { onItemBlock(block); });
-
-    m_observer.sig2_itemEvent.connect(m_lifetime, [this](const ItemEvent &event) {
-        // No stable object IDs exist in text replies; stale snapshots must not be replayed.
-        if (event.action != ItemActionEnum::REFUSED) {
-            m_charEquipment.reset();
-            m_charInventory.reset();
-            m_charContainers.clear();
-            m_roomContents.reset();
-        }
-        // An event: one reply that moved one thing. The next listing is the state.
-        publish(frontend_messages::makeCharItem(event));
-    });
-
-    // State: MUME's account menu and the account's characters, as last printed; kept while no
-    // character plays, which is when a frontend wants them. The one-line answers are events.
-    m_observer.sig2_accountMenu.connect(m_lifetime, [this](const AccountMenu &menu) {
-        // MUME's account menu: the login was accepted.
-        rememberAccepted();
-        const GmcpMessage msg = frontend_messages::makeAccountMenu(menu);
-        m_replayCache.remember(msg);
-        publish(msg);
-    });
-    m_observer.sig2_accountChars.connect(m_lifetime, [this](const AccountChars &chars) {
-        rememberAccepted();
-        const GmcpMessage msg = frontend_messages::makeAccountChars(chars);
-        m_replayCache.remember(msg);
-        publish(msg);
-    });
-    m_observer.sig2_accountReply.connect(m_lifetime, [this](const AccountReply &reply) {
-        publish(frontend_messages::makeAccountReply(reply));
-    });
-
-    // State: the character's figures as the last reply to `stat`, `score` or `info` gave them,
-    // replayed through the cache (Score merged, since `score` restates only the pools).
-    m_observer.sig2_charStat.connect(m_lifetime, [this](const CharStat &stat) {
-        const GmcpMessage msg = frontend_messages::makeCharStat(stat);
-        m_replayCache.remember(msg);
-        publish(msg);
-        // `stat`'s list sets the tracked effects right: after the reply it came in.
-        // Both, then one message: the wounds come in the same reply.
-        const bool affectsChanged = m_charAffects.receiveStat(stat.affects);
-        const bool woundsChanged = m_charAffects.receiveWounds(stat.wounds);
-        if (affectsChanged || woundsChanged) {
-            publishCharAffects();
-        }
-    });
-    m_observer.sig2_charScore.connect(m_lifetime, [this](const CharScore &score) {
-        const GmcpMessage msg = frontend_messages::makeCharScore(score);
-        m_replayCache.remember(msg);
-        publish(msg);
-        // `info`'s effects list states the wounds as `stat`'s does.
-        if (score.effectsKnown && m_charAffects.receiveWounds(score.wounds)) {
-            publishCharAffects();
-        }
-    });
-    m_observer.sig2_charBurden.connect(m_lifetime, [this](const CharBurden &burden) {
-        const GmcpMessage msg = frontend_messages::makeCharBurden(burden);
-        m_replayCache.remember(msg);
-        publish(msg);
-    });
-
-    // State: the followers of the player's character, whole at each change. What a frontend
-    // that connects later is told is what lasts of it: not the answer to an order that is
-    // over, nor a follower that left or died, which is in the one message that says so.
-    m_observer.sig2_charFollowers.connect(m_lifetime, [this](const CharFollowers &followers) {
-        m_replayCache.remember(frontend_messages::makeCharFollowers(lastingFollowers(followers)));
-        publish(frontend_messages::makeCharFollowers(followers));
-    });
-
-    // State: the wimpy as MUME last stated it.
-    m_observer.sig2_charWimpy.connect(m_lifetime, [this](const CharWimpy &wimpy) {
-        const GmcpMessage msg = frontend_messages::makeCharWimpy(wimpy);
-        m_replayCache.remember(msg);
-        publish(msg);
-    });
-
-    // State: the languages and how well they are known, as the last `change language` listed them.
-    m_observer.sig2_charLanguages.connect(m_lifetime, [this](const CharLanguages &languages) {
-        const GmcpMessage msg = frontend_messages::makeCharLanguages(languages);
-        m_replayCache.remember(msg);
-        publish(msg);
-    });
-
-    // An event: a skill improved by use.
-    m_observer.sig2_charImproved.connect(m_lifetime, [this](const CharImproved &improved) {
-        publish(frontend_messages::makeCharImproved(improved));
-    });
-
-    // An event: MUME's verdict on one `consider`.
-    m_observer.sig2_charConsider.connect(m_lifetime, [this](const CharConsider &consider) {
-        publish(frontend_messages::makeCharConsider(consider));
-    });
-    // An event: one sentence that refused one command.
-    m_observer.sig2_charRefused.connect(m_lifetime, [this](const CharRefused &refused) {
-        publish(frontend_messages::makeCharRefused(refused));
-    });
-    m_observer.sig2_handRaised.connect(m_lifetime, [this](const HandRaised &hand) {
-        publish(frontend_messages::makeRoomHandRaised(hand));
-    });
-
-    // State: the doors of the current room as MUME told the player, whole at each change.
-    m_observer.sig2_roomDoors.connect(m_lifetime, [this](const RoomDoors &doors) {
-        const GmcpMessage msg = frontend_messages::makeRoomDoor(doors);
-        m_replayCache.remember(msg);
-        publish(msg);
-    });
-
-    // Event: MUME's answer to a look at a side, whichever client sent the look; to every
-    // subscriber, observers included. Not replayed.
-    m_observer.sig2_exitLook.connect(m_lifetime, [this](const ExitLook &look) {
-        publish(frontend_messages::makeRoomLook(look));
-    });
-
-    // State: the level, experience and travel points, as the last reply to CHAR_LEVEL_REQUEST
-    // gave them.
-    m_observer.sig2_charLevel.connect(m_lifetime, [this](const CharLevel &level) {
-        const GmcpMessage msg = frontend_messages::makeCharLevel(level);
-        m_replayCache.remember(msg);
-        publish(msg);
-    });
-    // State: each set of abilities as the last reply to its CHAR_ABILITIES_*_REQUEST gave it.
-    m_observer.sig2_charAbilities.connect(m_lifetime, [this](const CharAbilitySet &set) {
-        const GmcpMessage msg = frontend_messages::makeCharAbilities(set);
-        m_replayCache.remember(msg);
-        publish(msg);
-    });
-
-    // MUME's replies at shops, guilds and inns, and to `trop`: events, except the general practice
-    // table, which is the character's own skills and is replayed as last sent.
-    m_observer.sig2_shopList.connect(m_lifetime, [this](const ShopList &list) {
-        publish(frontend_messages::makeShopList(list));
-    });
-    m_observer.sig2_shopDeal.connect(m_lifetime, [this](const ShopDeal &deal) {
-        publish(frontend_messages::makeShopDeal(deal));
-    });
-    m_observer.sig2_guildTeacher.connect(m_lifetime, [this](const GuildTeacher &teacher) {
-        publish(frontend_messages::makeGuildTeacher(teacher));
-    });
-    m_observer.sig2_guildPractised.connect(m_lifetime, [this](const GuildPractised &practised) {
-        publish(frontend_messages::makeGuildPractised(practised));
-    });
-    m_observer.sig2_charSkills.connect(m_lifetime, [this](const CharSkills &skills) {
-        const GmcpMessage msg = frontend_messages::makeCharSkills(skills);
-        m_replayCache.remember(msg);
-        publish(msg);
-    });
-    m_observer.sig2_innOffer.connect(m_lifetime, [this](const InnOffer &offer) {
-        publish(frontend_messages::makeInnOffer(offer));
-    });
-    m_observer.sig2_charTrophies.connect(m_lifetime, [this](const CharTrophies &trophies) {
-        publish(frontend_messages::makeCharTrophies(trophies));
-    });
-    // A text MUME showed through its viewer, which the driving frontend claimed (the proxy then
-    // opens no window of its own). An event, not replayed.
-    m_observer.sig2_viewText.connect(m_lifetime, [this](const ViewText &view) {
-        publish(frontend_messages::makeViewText(view));
-    });
-
-    m_observer.sig2_itemCommand.connect(m_lifetime, [this](const ItemCommandObservation &command) {
-        if (command.status == QStringLiteral("pending")
-            && command.action != QStringLiteral("equipment")
-            && command.action != QStringLiteral("inventory")
-            && command.action != QStringLiteral("look")
-            && command.action != QStringLiteral("examine")) {
-            m_charEquipment.reset();
-            m_charInventory.reset();
-            m_charContainers.clear();
-            m_roomContents.reset();
-        }
-        publish(frontend_messages::makeCharCommand(command));
-    });
-
-    // Every second, from MumeClock::slot_tick. Most ticks change nothing a frontend's own clock
-    // does not already know; onClockTick() decides.
-    m_observer.sig2_tick.connect(m_lifetime, [this](const MumeMoment &moment) {
-        onClockTick(moment, QDateTime::currentSecsSinceEpoch());
-    });
-
-    m_observer.sig2_sentToUserGmcp.connect(m_lifetime, [this](const GmcpMessage &msg) {
-        // The Log's situation: race, hit points, group, who is in the room.
-        m_importantLog.receiveGmcp(msg);
-        // Relayed verbatim: same package name, same payload the game sent. Core and
-        // MUME.Client are not: the proxy only filters out the MUME.Client messages it knows,
-        // and MUME's Core ones come through, so both are dropped here before anything a
-        // frontend subscribed to by name could match them.
-        if (!FrontendSubscriptions::isRelayable(msg)) {
-            return;
-        }
-        m_replayCache.remember(msg);
-        publish(msg);
-    });
 }
 
 FrontendServer::~FrontendServer()
@@ -654,7 +346,7 @@ bool FrontendServer::tryTakeSession(const Client &client)
         return false; // A telnet or built-in client owns the session.
     }
     m_driver = client.socket;
-    m_trade.setDriving(true);
+    m_runner.setDriving(true);
     updateViewerClaim();
     log(QString("Frontend '%1' is driving the session").arg(client.name));
     return true;
@@ -669,7 +361,7 @@ void FrontendServer::releaseSession()
     // Whatever login was held for remembering was this frontend's.
     m_loginMemory.reset();
     // Nothing more can be sent for an operation; it stops where it is.
-    m_trade.setDriving(false);
+    m_runner.setDriving(false);
     updateViewerClaim();
     // Closing the session ends the MUME connection, exactly as closing a telnet client does.
     m_session.detach();
@@ -684,7 +376,7 @@ GmcpMessage FrontendServer::sessionStateFor(const Client &client) const
         m_echo,
         m_driver != nullptr && m_driver == client.socket,
         m_observer.getGameState(),
-        m_trade.viewerState(),
+        m_runner.viewerState(),
         m_loginPrompt,
         rememberedAccountName(getConfig().account.accountName,
                               getConfig().account.accountPassword,
@@ -723,7 +415,7 @@ void FrontendServer::handleInput(Client &client, const GmcpMessage &msg)
     //
     // The player's line always goes at once; a trade operation holding MUME's pager answers it
     // with `q` first, and stops.
-    m_trade.beforePlayerLine(optText.value());
+    m_runner.beforePlayerLine(optText.value());
     // At MUME's own login prompts, and only while the frontend asked for it, the answer is held
     // for remembering (LoginMemory); never logged, never published.
     m_loginMemory.noteSent(m_loginPrompt.kind, optText.value());
@@ -789,7 +481,7 @@ void FrontendServer::handleTrade(Client &client, const GmcpMessage &msg)
     const QJsonValue idValue = payload.value("id");
     const QString id = idValue.toString();
     if (!doc.isObject() || !idValue.isString() || id.isEmpty()
-        || id.size() > TradeOperations::MAX_ID_CHARS) {
+        || id.size() > CommandRunner::MAX_ID_CHARS) {
         sendTo(client,
                frontend_messages::makeError("invalid-trade",
                                             QString("'%1' needs an object payload with an 'id' "
@@ -818,19 +510,19 @@ void FrontendServer::handleTrade(Client &client, const GmcpMessage &msg)
     }
 
     if (msg.isMMapperTradeCancel()) {
-        m_trade.cancel(id);
+        m_runner.cancel(id);
         return;
     }
 
-    m_trade.request(payload, tradeContext());
-    if (m_trade.busy() && !m_tradeTimer.isActive()) {
-        m_tradeTimer.start();
+    m_runner.request(payload, tradeContext());
+    if (m_runner.busy() && !m_runnerTimer.isActive()) {
+        m_runnerTimer.start();
     }
 }
 
-TradeOperations::Context FrontendServer::tradeContext() const
+CommandRunner::Context FrontendServer::tradeContext() const
 {
-    TradeOperations::Context context;
+    CommandRunner::Context context;
     context.driving = true;
     context.connected = m_upstreamConnected;
     context.echo = m_echo;
@@ -847,7 +539,7 @@ void FrontendServer::handleQuiet(Client &client, const GmcpMessage &msg)
     const QJsonValue idValue = payload.value("id");
     const QString id = idValue.toString();
     if (!doc.isObject() || !idValue.isString() || id.isEmpty()
-        || id.size() > TradeOperations::MAX_ID_CHARS) {
+        || id.size() > CommandRunner::MAX_ID_CHARS) {
         sendTo(client,
                frontend_messages::makeError("invalid-quiet",
                                             "MMapper.Input.Quiet needs an object payload with "
@@ -860,7 +552,7 @@ void FrontendServer::handleQuiet(Client &client, const GmcpMessage &msg)
         // Told to the observer alone, like a trade request of its.
         QuietReplyState refused;
         refused.id = id;
-        refused.text = payload.value("text").toString().left(TradeOperations::MAX_ARGUMENT_CHARS);
+        refused.text = payload.value("text").toString().left(CommandRunner::MAX_ARGUMENT_CHARS);
         refused.status = TradeStatusEnum::REFUSED;
         refused.reason = QStringLiteral("observing");
         sendTo(client, makeQuietReply(refused));
@@ -868,9 +560,9 @@ void FrontendServer::handleQuiet(Client &client, const GmcpMessage &msg)
     }
 
     // The text itself is not logged here, as no input is.
-    m_trade.requestQuiet(payload, tradeContext());
-    if (m_trade.busy() && !m_tradeTimer.isActive()) {
-        m_tradeTimer.start();
+    m_runner.requestQuiet(payload, tradeContext());
+    if (m_runner.busy() && !m_runnerTimer.isActive()) {
+        m_runnerTimer.start();
     }
 }
 
@@ -938,6 +630,13 @@ void FrontendServer::updateViewerClaim()
 
 void FrontendServer::publish(const GmcpMessage &msg)
 {
+    // What a late frontend is told of the package is its row in FrontendReplayPolicy.cpp.
+    m_replay.remember(msg);
+    broadcast(msg);
+}
+
+void FrontendServer::broadcast(const GmcpMessage &msg)
+{
     for (Client &client : m_clients) {
         sendTo(client, msg);
     }
@@ -957,45 +656,20 @@ void FrontendServer::replayTo(Client &client)
     // The Log's rules are state too.
     sendTo(client, m_importantLog.rulesMessage());
 
-    for (const auto &[type, msg] : m_replayCache.messages()) {
-        sendTo(client, msg);
-    }
-
-    if (m_timeState.has_value()) {
-        sendTo(client, *m_timeState);
-    }
-
-    if (m_groundState.has_value()) {
-        sendTo(client, *m_groundState);
-    }
-
+    std::optional<GmcpMessage> position;
     if (const auto optId = m_mapData.getCurrentRoomId()) {
         if (const auto room = m_mapData.findRoomHandle(*optId)) {
-            sendTo(client, frontend_messages::makeMapPosition(room));
+            position.emplace(frontend_messages::makeMapPosition(room));
         }
     }
-
-    // After the position, as it is published live: the objects belong to the room it names.
-    if (m_roomContents.has_value()) {
-        sendTo(client, *m_roomContents);
-    }
-
-    if (m_charEquipment.has_value()) {
-        sendTo(client, *m_charEquipment);
-    }
-    if (m_charInventory.has_value()) {
-        sendTo(client, *m_charInventory);
-    }
-    for (const auto &[key, msg] : m_charContainers) {
-        sendTo(client, msg);
-    }
+    m_replay.replay([&client](const GmcpMessage &msg) { sendTo(client, msg); },
+                    position,
+                    m_upstreamConnected);
 }
 
 void FrontendServer::publishCharAffects()
 {
-    const GmcpMessage msg = frontend_messages::makeCharAffects(m_charAffects.affects());
-    m_replayCache.remember(msg);
-    publish(msg);
+    publish(frontend_messages::makeCharAffects(m_charAffects.affects()));
     if (const auto endsAt = m_charAffects.bleedingEndsAt()) {
         const int64_t wait = std::max<int64_t>(*endsAt - QDateTime::currentSecsSinceEpoch(), 0);
         m_bleedTimer.start(static_cast<int>(wait * 1000 + 100));
@@ -1066,11 +740,10 @@ void FrontendServer::onGroundChanged(const GroundState &ground)
             room.emplace(std::move(handle));
         }
     }
-    // GmcpMessage is copy constructible but not copy assignable, so replace rather than assign.
-    m_groundState.reset();
-    m_groundState.emplace(
-        frontend_messages::makeGroundState(ground, room.has_value() ? &*room : nullptr));
-    publish(*m_groundState);
+    const GmcpMessage msg = frontend_messages::makeGroundState(ground,
+                                                               room.has_value() ? &*room : nullptr);
+    m_replay.hold(msg);
+    broadcast(msg);
 }
 
 void FrontendServer::onRoomContents(const RoomContentsSnapshot &observed)
@@ -1078,7 +751,7 @@ void FrontendServer::onRoomContents(const RoomContentsSnapshot &observed)
     RoomContentsSnapshot contents = observed;
     contents.snapshotId = QUuid::createUuid().toString(QUuid::WithoutBraces);
     if (contents.entered) {
-        m_charContainers.clear();
+        m_replay.forgetContainers();
     }
     // Reported at the prompt that ends a room display, after the path machine has moved the
     // player (see onGroundChanged), so the current room is the one these objects lie in.
@@ -1088,59 +761,44 @@ void FrontendServer::onRoomContents(const RoomContentsSnapshot &observed)
             room.emplace(std::move(handle));
         }
     }
-    // GmcpMessage is copy constructible but not copy assignable, so replace rather than assign.
-    m_roomContents.reset();
-    m_roomContents.emplace(
-        frontend_messages::makeRoomContents(contents, room.has_value() ? &*room : nullptr));
-    publish(*m_roomContents);
+    const GmcpMessage msg = frontend_messages::makeRoomContents(contents,
+                                                                room.has_value() ? &*room : nullptr);
+    m_replay.hold(msg);
+    broadcast(msg);
 }
 
 void FrontendServer::onItemBlock(const ItemBlock &observed)
 {
     ItemBlock block = observed;
     block.snapshotId = QUuid::createUuid().toString(QUuid::WithoutBraces);
-    // GmcpMessage is copy constructible but not copy assignable, so replace rather than assign.
     switch (block.kind) {
     case ItemBlockKindEnum::EQUIPMENT: {
-        GmcpMessage msg = frontend_messages::makeCharEquipment(block);
+        const GmcpMessage msg = frontend_messages::makeCharEquipment(block);
         if (block.owner == QStringLiteral("you")) {
-            m_charEquipment.reset();
-            m_charEquipment.emplace(msg);
+            m_replay.hold(msg);
         }
-        publish(msg);
+        broadcast(msg);
         break;
     }
     case ItemBlockKindEnum::INVENTORY: {
-        GmcpMessage msg = frontend_messages::makeCharInventory(block);
+        const GmcpMessage msg = frontend_messages::makeCharInventory(block);
         if (!block.peek) {
-            m_charInventory.reset();
-            m_charInventory.emplace(msg);
+            m_replay.hold(msg);
         }
-        publish(msg);
+        broadcast(msg);
         break;
     }
     case ItemBlockKindEnum::CONTAINER: {
-        GmcpMessage msg = frontend_messages::makeCharContainer(block);
+        const GmcpMessage msg = frontend_messages::makeCharContainer(block);
         // Without an isolated query selector the header cannot distinguish identical pouches.
         if (block.target.isEmpty()) {
-            m_charContainers.clear();
-            publish(msg);
-            break;
+            m_replay.forgetContainers();
+        } else {
+            // A closed reply has no location: it replaces the previous open observation for
+            // this selector rather than leaving both to be replayed.
+            m_replay.holdContainer(block.target, msg);
         }
-        // A closed reply has no location: it must replace the previous open observation
-        // for this selector rather than leave both in the replay cache.
-        const QString key = block.target;
-        const auto it = std::find_if(m_charContainers.begin(),
-                                     m_charContainers.end(),
-                                     [&key](const auto &entry) { return entry.first == key; });
-        if (it != m_charContainers.end()) {
-            m_charContainers.erase(it);
-        }
-        m_charContainers.emplace_back(key, msg);
-        while (m_charContainers.size() > CONTAINERS_KEPT) {
-            m_charContainers.pop_front();
-        }
-        publish(msg);
+        broadcast(msg);
         break;
     }
     }
@@ -1163,16 +821,15 @@ void FrontendServer::onClockTick(const MumeMoment &moment, const int64_t nowSecs
     const bool setAgain = std::llabs(minutes - expected) > 1;
     const bool changed = moment.hour != m_timeStateHour
                          || static_cast<int>(precision) != m_timeStatePrecision;
-    if (m_timeState.has_value() && !setAgain && !changed) {
+    if (m_replay.has(GmcpMessageTypeEnum::MMAPPER_TIME_STATE) && !setAgain && !changed) {
         return;
     }
 
-    // GmcpMessage is copy constructible but not copy assignable, so replace rather than assign.
-    m_timeState.reset();
-    m_timeState.emplace(frontend_messages::makeTimeState(moment, precision));
+    const GmcpMessage msg = frontend_messages::makeTimeState(moment, precision);
+    m_replay.hold(msg);
     m_timeStateMinutes = minutes;
     m_timeStateSentAt = nowSecs;
     m_timeStateHour = moment.hour;
     m_timeStatePrecision = static_cast<int>(precision);
-    publish(*m_timeState);
+    broadcast(msg);
 }

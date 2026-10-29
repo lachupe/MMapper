@@ -8,6 +8,7 @@
 #include "../parser/GameStateLines.h"
 #include "../parser/TradeLines.h"
 #include "../proxy/GmcpMessage.h"
+#include "ViewerClaim.h"
 
 #include <cstdint>
 #include <deque>
@@ -74,11 +75,11 @@ NODISCARD GmcpMessage makeQuietReply(const QuietReplyState &state);
 /// in the MMapper.Input.Reply that follows, and are not sent twice.
 NODISCARD GmcpMessage makeQuietHidden(const QuietReplyState &state);
 
-/// True if a frontend with these subscriptions claims MUME's viewer: only the driving frontend
-/// does, and only while it subscribes to MMapper.View.
-NODISCARD bool claimsViewer(const FrontendSubscriptions &subscriptions, bool driving);
-
-/// Runs the short conversations with MUME that MMapper.Trade.Request asks for: sends each
+/// The one runner of the commands MMapper says to MUME on its own account, one at a time: the
+/// operations of MMapper.Trade.Request (shop, guild, inn and trophy conversations) and the quiet
+/// command of MMapper.Input.Quiet, which are kinds of one operation (KindEnum) sharing the queue,
+/// the idle test, the pager and the timeouts. Runs the short conversations with MUME that
+/// MMapper.Trade.Request asks for: sends each
 /// step's command through the driving frontend's input path, answers MUME's pager for its own
 /// replies, judges each step at the next real prompt by the readers' packages (TradeLines),
 /// and publishes MMapper.Trade.Operation. One operation at a time overall.
@@ -109,12 +110,13 @@ NODISCARD bool claimsViewer(const FrontendSubscriptions &subscriptions, bool dri
 ///   `timeout`, and the parser is told at once (END): a reply that never comes cannot keep the
 ///   player's text out for longer.
 ///
-/// It also keeps MUME's viewer setting: `change viewer external` once per login while the
-/// driving frontend claims the viewer, unless the player set the viewer themselves.
+/// It also sends `change viewer external` once per login while the driving frontend claims the
+/// viewer, unless the player set the viewer themselves, since that is a line to MUME like the
+/// others; the setting itself is kept by ViewerClaim.
 ///
 /// Owned by FrontendServer; everything it hears comes from GameObserver, so it can be driven
 /// by a scripted MUME in tests.
-class NODISCARD TradeOperations final
+class NODISCARD CommandRunner final
 {
 public:
     using SendFn = std::function<void(const QString &)>;
@@ -224,7 +226,6 @@ private:
     SendFn m_send;
     PublishFn m_publish;
     NowFn m_now;
-    ChangedFn m_viewerChanged;
     Signal2Lifetime m_lifetime;
 
     std::optional<Operation> m_op;
@@ -250,18 +251,16 @@ private:
     int64_t m_lastActivityAt = 0;
     bool m_seenActivity = false;
 
-    QString m_viewer = QStringLiteral("unknown");
-    bool m_viewerSent = false;
-    bool m_viewerSetByPlayer = false;
+    ViewerClaim m_viewerClaim;
 
 public:
-    explicit TradeOperations(GameObserver &observer, SendFn send, PublishFn publish, NowFn now = {});
-    ~TradeOperations();
-    DELETE_CTORS_AND_ASSIGN_OPS(TradeOperations);
+    explicit CommandRunner(GameObserver &observer, SendFn send, PublishFn publish, NowFn now = {});
+    ~CommandRunner();
+    DELETE_CTORS_AND_ASSIGN_OPS(CommandRunner);
 
 public:
     /// Called when MUME's viewer setting as MMapper knows it changes (Session.State's `viewer`).
-    void setViewerChanged(ChangedFn fn) { m_viewerChanged = std::move(fn); }
+    void setViewerChanged(ChangedFn fn) { m_viewerClaim.setChanged(std::move(fn)); }
 
     /// Starts the operation `payload` asks for, or refuses it; publishes its Operation either
     /// way. The payload's `id` must already be checked to be a non-empty string.
@@ -284,7 +283,7 @@ public:
     void setDriving(bool driving);
 
 public:
-    NODISCARD QString viewerState() const { return m_viewer; }
+    NODISCARD QString viewerState() const { return m_viewerClaim.state(); }
     NODISCARD bool busy() const { return m_op.has_value(); }
     NODISCARD bool pagerOpen() const { return m_pagerOpen; }
 
@@ -305,6 +304,5 @@ private:
     NODISCARD bool idle() const;
     void sendQuietWhenIdle();
     void maybeSetViewer();
-    void noteViewerLine(const QString &line);
     void resetConnection();
 };

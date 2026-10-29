@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (C) 2026 The MMapper Authors
 
-#include "TestTradeOperations.h"
+#include "TestCommandRunner.h"
 
+#include "../src/frontend/CommandRunner.h"
 #include "../src/frontend/FrontendSubscriptions.h"
-#include "../src/frontend/TradeOperations.h"
 #include "../src/observer/gameobserver.h"
 #include "../src/parser/CharLines.h"
 #include "../src/parser/ChunkFrame.h"
@@ -54,7 +54,7 @@ struct NODISCARD Mume final
     /// "begin", "foreign", "end".
     QStringList quiet;
     Signal2Lifetime lifetime;
-    std::unique_ptr<TradeOperations> trade;
+    std::unique_ptr<CommandRunner> trade;
 
     Mume()
     {
@@ -71,7 +71,7 @@ struct NODISCARD Mume final
                 break;
             }
         });
-        trade = std::make_unique<TradeOperations>(
+        trade = std::make_unique<CommandRunner>(
             observer,
             [this](const QString &line) {
                 pending << line;
@@ -88,9 +88,9 @@ struct NODISCARD Mume final
         trade->setDriving(true);
     }
 
-    NODISCARD static TradeOperations::Context context()
+    NODISCARD static CommandRunner::Context context()
     {
-        TradeOperations::Context ctx;
+        CommandRunner::Context ctx;
         ctx.driving = true;
         ctx.connected = true;
         ctx.echo = true;
@@ -192,7 +192,7 @@ struct NODISCARD Whole final
     QStringList packages;
     std::vector<QJsonObject> replies;
     int64_t clock = 1000;
-    std::unique_ptr<TradeOperations> trade;
+    std::unique_ptr<CommandRunner> trade;
 
     Whole()
     {
@@ -205,7 +205,7 @@ struct NODISCARD Whole final
         observer.sig2_charSkills.connect(lifetime, [this](const CharSkills &skills) {
             packages << QStringLiteral("skills:%1:%2").arg(skills.rows.size()).arg(skills.complete);
         });
-        trade = std::make_unique<TradeOperations>(
+        trade = std::make_unique<CommandRunner>(
             observer,
             [this](const QString &line) {
                 pending << line;
@@ -311,7 +311,7 @@ const std::initializer_list<const char *>
 
 } // namespace
 
-void TestTradeOperations::operationMessageTest()
+void TestCommandRunner::operationMessageTest()
 {
     TradeOperationState state;
     state.id = QStringLiteral("r1");
@@ -341,7 +341,7 @@ void TestTradeOperations::operationMessageTest()
     QCOMPARE(tradeStatusName(TradeStatusEnum::CANCELLED), QStringLiteral("cancelled"));
 }
 
-void TestTradeOperations::shopListTest()
+void TestCommandRunner::shopListTest()
 {
     Mume mume;
     mume.request(R"({"id":"a","action":"shop.list","filter":"helm"})");
@@ -392,7 +392,7 @@ void TestTradeOperations::shopListTest()
     QCOMPARE(odd.last()["text"].toArray().at(0).toString(), QStringLiteral("Huh?!"));
 }
 
-void TestTradeOperations::shopBuyTest()
+void TestCommandRunner::shopBuyTest()
 {
     Mume mume;
     mume.request(R"({"id":"a","action":"shop.buy","number":470,"count":3})");
@@ -428,7 +428,7 @@ void TestTradeOperations::shopBuyTest()
     QVERIFY(bad.sent.isEmpty());
 }
 
-void TestTradeOperations::shopSellTest()
+void TestCommandRunner::shopSellTest()
 {
     Mume mume;
     mume.request(R"({"id":"s","action":"shop.sell","items":["2.sword","helm","all.metal"]})");
@@ -463,7 +463,7 @@ void TestTradeOperations::shopSellTest()
     QVERIFY(bad.sent.isEmpty());
 }
 
-void TestTradeOperations::guildListTest()
+void TestCommandRunner::guildListTest()
 {
     Mume mume;
     mume.request(R"({"id":"g","action":"guild.list"})");
@@ -485,7 +485,7 @@ void TestTradeOperations::guildListTest()
     QCOMPARE(mume.status(), QStringLiteral("done"));
 }
 
-void TestTradeOperations::practiseTimesTest()
+void TestCommandRunner::practiseTimesTest()
 {
     Mume mume;
     mume.request(R"({"id":"p","action":"guild.practise","name":"block door","times":3})");
@@ -520,7 +520,7 @@ void TestTradeOperations::practiseTimesTest()
     QCOMPARE(most.sent.size(), 2);
 }
 
-void TestTradeOperations::practiseLimitTest()
+void TestCommandRunner::practiseLimitTest()
 {
     // "limit": as far as the teacher goes, with no count known ahead.
     Mume mume;
@@ -571,7 +571,7 @@ void TestTradeOperations::practiseLimitTest()
     QCOMPARE(refused.reason(), QStringLiteral("limit reached"));
 }
 
-void TestTradeOperations::practiseRefusalTest()
+void TestCommandRunner::practiseRefusalTest()
 {
     Mume mume;
     mume.request(R"({"id":"p","action":"guild.practise","name":"portal","times":4})");
@@ -608,7 +608,7 @@ void TestTradeOperations::practiseRefusalTest()
     QCOMPARE(bad.reason(), QStringLiteral("invalid arguments"));
 }
 
-void TestTradeOperations::dialogReplyParsingTest()
+void TestCommandRunner::dialogReplyParsingTest()
 {
     // Drive the real readers and operation runner together, as the XML parser does.
     for (const char *const request :
@@ -653,7 +653,7 @@ void TestTradeOperations::dialogReplyParsingTest()
     QCOMPARE(trophies.status(), QStringLiteral("done"));
 }
 
-void TestTradeOperations::innOfferAndRentTest()
+void TestCommandRunner::innOfferAndRentTest()
 {
     Mume mume;
     mume.request(R"({"id":"o","action":"inn.offer"})");
@@ -684,7 +684,7 @@ void TestTradeOperations::innOfferAndRentTest()
     QCOMPARE(no.reason(), QStringLiteral("not rented"));
 }
 
-void TestTradeOperations::innRetireTest()
+void TestCommandRunner::innRetireTest()
 {
     Mume mume;
     mume.request(R"({"id":"x","action":"inn.retire"})");
@@ -726,7 +726,7 @@ void TestTradeOperations::innRetireTest()
     QCOMPARE(early.reason(), QStringLiteral("left the game"));
 }
 
-void TestTradeOperations::trophiesPagerTest()
+void TestCommandRunner::trophiesPagerTest()
 {
     Mume mume;
     mume.request(R"({"id":"t","action":"char.trophies"})");
@@ -767,7 +767,7 @@ void TestTradeOperations::trophiesPagerTest()
     QCOMPARE(mume.sent.size(), 4);
 }
 
-void TestTradeOperations::quietReplyMessageTest()
+void TestCommandRunner::quietReplyMessageTest()
 {
     QuietReplyState state;
     state.id = QStringLiteral("k1");
@@ -785,7 +785,7 @@ void TestTradeOperations::quietReplyMessageTest()
                         R"("reason":"","status":"done","text":"prac"})"));
 }
 
-void TestTradeOperations::quietHiddenTest()
+void TestCommandRunner::quietHiddenTest()
 {
     // One MMapper.Terminal.Hidden for a quiet command whose reply was kept from the terminal:
     // which command, whose request, how many lines. The lines are in the reply, not here too.
@@ -830,7 +830,7 @@ void TestTradeOperations::quietHiddenTest()
     Mume late;
     late.requestQuiet(R"({"id":"m","text":"prac"})");
     late.flush();
-    late.clock += TradeOperations::QUIET_TIMEOUT_MS;
+    late.clock += CommandRunner::QUIET_TIMEOUT_MS;
     late.trade->expire();
     QCOMPARE(late.names, std::vector<QString>{QStringLiteral("MMapper.Input.Reply")});
     Mume refused;
@@ -838,7 +838,7 @@ void TestTradeOperations::quietHiddenTest()
     QCOMPARE(refused.names, std::vector<QString>{QStringLiteral("MMapper.Input.Reply")});
 }
 
-void TestTradeOperations::quietCommandTest()
+void TestCommandRunner::quietCommandTest()
 {
     // The quiet command: MMapper sends the frontend's line itself and tells the parser once
     // it has reached MUME; the reply is what the parser reports of it.
@@ -884,7 +884,7 @@ void TestTradeOperations::quietCommandTest()
     QCOMPARE(mume.sent, QStringList{"prac"});
 
     // Any line: the runner knows nothing of the command. Here `stat`, right after.
-    mume.clock += TradeOperations::QUIET_IDLE_MS;
+    mume.clock += CommandRunner::QUIET_IDLE_MS;
     mume.requestQuiet(R"({"id":"l","text":"stat"})");
     QCOMPARE(mume.sent.back(), QStringLiteral("stat"));
     mume.flush();
@@ -897,13 +897,13 @@ void TestTradeOperations::quietCommandTest()
     QCOMPARE(mume.last()["lines"].toArray().size(), 2);
 
     // A trade operation's id is its own: Trade.Cancel does not reach a quiet command.
-    mume.clock += TradeOperations::QUIET_IDLE_MS;
+    mume.clock += CommandRunner::QUIET_IDLE_MS;
     mume.requestQuiet(R"({"id":"m","text":"info"})");
     mume.trade->cancel(QStringLiteral("m"));
     QVERIFY(mume.trade->busy());
 }
 
-void TestTradeOperations::quietAllowedTest()
+void TestCommandRunner::quietAllowedTest()
 {
     // A command the player never sees may only read. Each of these is sent.
     for (const char *const line : {"prac",
@@ -973,14 +973,14 @@ void TestTradeOperations::quietAllowedTest()
         QVERIFY2(!mume.trade->busy(), line);
         QVERIFY2(mume.quiet.isEmpty(), line);
         // Nor later: there is nothing waiting to be sent when MUME is idle.
-        mume.clock += TradeOperations::QUIET_IDLE_MS;
+        mume.clock += CommandRunner::QUIET_IDLE_MS;
         mume.trade->expire();
         mume.prompt();
         QVERIFY2(mume.sent.isEmpty(), line);
     }
 }
 
-void TestTradeOperations::quietIdleTest()
+void TestCommandRunner::quietIdleTest()
 {
     // It is sent only when no reply of the player's is still to come. Here the player's `look`
     // has gone out and its prompt has not come: the command waits.
@@ -996,7 +996,7 @@ void TestTradeOperations::quietIdleTest()
     // Its prompt: every line has had one. Half a second later the command goes.
     mume.prompt();
     QCOMPARE(mume.sent, QStringList{"look"});
-    mume.clock += TradeOperations::QUIET_SETTLE_MS;
+    mume.clock += CommandRunner::QUIET_SETTLE_MS;
     mume.trade->expire();
     QCOMPARE(mume.sent, (QStringList{"look", "prac"}));
     QVERIFY(mume.ops.empty());
@@ -1009,12 +1009,12 @@ void TestTradeOperations::quietIdleTest()
     two.requestQuiet(R"({"id":"l","text":"prac"})");
     two.line(QStringLiteral("A dark cave"));
     two.prompt();
-    two.clock += TradeOperations::QUIET_SETTLE_MS;
+    two.clock += CommandRunner::QUIET_SETTLE_MS;
     two.trade->expire();
     QCOMPARE(two.sent.size(), 2);
     two.line(QStringLiteral("A dark cave"));
     two.prompt();
-    two.clock += TradeOperations::QUIET_SETTLE_MS;
+    two.clock += CommandRunner::QUIET_SETTLE_MS;
     two.trade->expire();
     QCOMPARE(two.sent.back(), QStringLiteral("prac"));
 
@@ -1042,7 +1042,7 @@ void TestTradeOperations::quietIdleTest()
     silent.player(QStringLiteral("look"));
     silent.flush();
     silent.requestQuiet(R"({"id":"n","text":"prac"})");
-    silent.clock += TradeOperations::QUIET_IDLE_MS - 1;
+    silent.clock += CommandRunner::QUIET_IDLE_MS - 1;
     silent.trade->expire();
     QCOMPARE(silent.sent, QStringList{"look"});
     silent.clock += 1;
@@ -1058,13 +1058,13 @@ void TestTradeOperations::quietIdleTest()
     typing.player(QStringLiteral("north"));
     QCOMPARE(typing.pending, QStringList{"north"});
     typing.flush();
-    typing.clock += TradeOperations::QUIET_SETTLE_MS;
+    typing.clock += CommandRunner::QUIET_SETTLE_MS;
     typing.trade->expire();
     QCOMPARE(typing.sent, (QStringList{"look", "north"}));
     QVERIFY(typing.trade->busy());
 }
 
-void TestTradeOperations::quietPagerTest()
+void TestCommandRunner::quietPagerTest()
 {
     // The pager the parser hid is the runner's: answered with Return, page by page.
     Mume mume;
@@ -1099,11 +1099,11 @@ void TestTradeOperations::quietPagerTest()
     Mume slow;
     slow.requestQuiet(R"({"id":"l","text":"prac"})");
     slow.flush();
-    slow.clock += TradeOperations::QUIET_TIMEOUT_MS - 1;
+    slow.clock += CommandRunner::QUIET_TIMEOUT_MS - 1;
     slow.quietLine(QStringLiteral("Skill   Good   Easy   None"));
     slow.quietPager(40);
     slow.flush();
-    slow.clock += TradeOperations::QUIET_TIMEOUT_MS - 1;
+    slow.clock += CommandRunner::QUIET_TIMEOUT_MS - 1;
     slow.trade->expire();
     QVERIFY(slow.trade->busy());
 
@@ -1120,7 +1120,7 @@ void TestTradeOperations::quietPagerTest()
     Mume many;
     many.requestQuiet(R"({"id":"n","text":"prac"})");
     many.flush();
-    for (int i = 0; i <= TradeOperations::MAX_PAGES; ++i) {
+    for (int i = 0; i <= CommandRunner::MAX_PAGES; ++i) {
         many.quietLine(QStringLiteral("row %1").arg(i));
         many.quietPager(i + 1);
         many.flush();
@@ -1133,7 +1133,7 @@ void TestTradeOperations::quietPagerTest()
     QCOMPARE(many.quiet, (QStringList{"begin", "end"}));
 }
 
-void TestTradeOperations::quietOverlapTest()
+void TestCommandRunner::quietOverlapTest()
 {
     // The player's own lines, and anything else going to MUME, do not stop a quiet command:
     // MUME answers in order. The parser is told, so that its window ends at the next prompt.
@@ -1224,13 +1224,13 @@ void TestTradeOperations::quietOverlapTest()
     QCOMPARE(paging.sent, QStringList{"trop"});
 }
 
-void TestTradeOperations::quietFailuresTest()
+void TestCommandRunner::quietFailuresTest()
 {
     // No reply in time: failed, and the parser is told at once that it is over.
     Mume mume;
     mume.requestQuiet(R"({"id":"k","text":"prac"})");
     mume.flush();
-    mume.clock += TradeOperations::QUIET_TIMEOUT_MS - 1;
+    mume.clock += CommandRunner::QUIET_TIMEOUT_MS - 1;
     mume.trade->expire();
     QVERIFY(mume.ops.empty());
     mume.clock += 1;
@@ -1250,7 +1250,7 @@ void TestTradeOperations::quietFailuresTest()
     paged.quietPager(40);
     paged.flush();
     paged.quietPager(40);
-    paged.clock += TradeOperations::QUIET_TIMEOUT_MS;
+    paged.clock += CommandRunner::QUIET_TIMEOUT_MS;
     paged.trade->expire();
     QCOMPARE(paged.status(), QStringLiteral("failed"));
     QCOMPARE(paged.sent.back(), QStringLiteral("q"));
@@ -1262,7 +1262,7 @@ void TestTradeOperations::quietFailuresTest()
     Mume lost;
     lost.requestQuiet(R"({"id":"m","text":"look"})");
     lost.pending.clear();
-    lost.clock += TradeOperations::QUIET_TIMEOUT_MS;
+    lost.clock += CommandRunner::QUIET_TIMEOUT_MS;
     lost.trade->expire();
     QCOMPARE(lost.reason(), QStringLiteral("timeout"));
     QVERIFY(lost.quiet.isEmpty());
@@ -1280,7 +1280,7 @@ void TestTradeOperations::quietFailuresTest()
     bad.requestQuiet(R"({"id":"d","text":7})");
     QCOMPARE(bad.reason(), QStringLiteral("invalid arguments"));
     QVERIFY(bad.sent.isEmpty());
-    TradeOperations::Context ctx = Mume::context();
+    CommandRunner::Context ctx = Mume::context();
     ctx.game = GameStateEnum::MENU;
     bad.trade->requestQuiet(json(R"({"id":"e","text":"prac"})"), ctx);
     QCOMPARE(bad.reason(), QStringLiteral("not in the game"));
@@ -1313,7 +1313,7 @@ void TestTradeOperations::quietFailuresTest()
     QCOMPARE(released.quiet, (QStringList{"begin", "end"}));
 }
 
-void TestTradeOperations::quietWholeTest()
+void TestCommandRunner::quietWholeTest()
 {
     // The readers and the runner together, as in MMapper: a short `prac`. Nothing of it
     // reaches the terminal; MMapper.Char.Skills is published as for a typed one, before the
@@ -1468,7 +1468,7 @@ void TestTradeOperations::quietWholeTest()
         Whole mume;
         mume.requestQuiet(R"({"id":"k","text":"prac"})");
         mume.flush();
-        mume.clock += TradeOperations::QUIET_TIMEOUT_MS;
+        mume.clock += CommandRunner::QUIET_TIMEOUT_MS;
         mume.trade->expire();
         QCOMPARE(mume.status(), QStringLiteral("failed"));
         QCOMPARE(mume.reason(), QStringLiteral("timeout"));
@@ -1478,12 +1478,12 @@ void TestTradeOperations::quietWholeTest()
     }
 }
 
-void TestTradeOperations::tooManyPagesTest()
+void TestCommandRunner::tooManyPagesTest()
 {
     Mume mume;
     mume.request(R"({"id":"t","action":"char.trophies"})");
     mume.flush();
-    for (int page = 1; page <= TradeOperations::MAX_PAGES; ++page) {
+    for (int page = 1; page <= CommandRunner::MAX_PAGES; ++page) {
         mume.line(QStringLiteral("row"));
         mume.pager(page * 4);
         QCOMPARE(mume.sent.size(), page + 1);
@@ -1499,7 +1499,7 @@ void TestTradeOperations::tooManyPagesTest()
     QVERIFY(mume.ops.size() == 2);
 }
 
-void TestTradeOperations::playerPreemptionTest()
+void TestCommandRunner::playerPreemptionTest()
 {
     Mume mume;
     mume.request(R"({"id":"t","action":"char.trophies"})");
@@ -1529,7 +1529,7 @@ void TestTradeOperations::playerPreemptionTest()
     QCOMPARE(plain.reason(), QStringLiteral("player input"));
 }
 
-void TestTradeOperations::foreignLineTest()
+void TestCommandRunner::foreignLineTest()
 {
     Mume mume;
     mume.request(R"({"id":"s","action":"shop.sell","items":["sword","helm"]})");
@@ -1557,12 +1557,12 @@ void TestTradeOperations::foreignLineTest()
     QCOMPARE(order.status(), QStringLiteral("running"));
 }
 
-void TestTradeOperations::timeoutTest()
+void TestCommandRunner::timeoutTest()
 {
     Mume mume;
     mume.request(R"({"id":"t","action":"char.trophies"})");
     mume.flush();
-    mume.clock += TradeOperations::STEP_TIMEOUT_MS - 1;
+    mume.clock += CommandRunner::STEP_TIMEOUT_MS - 1;
     mume.trade->expire();
     QCOMPARE(mume.status(), QStringLiteral("running"));
     mume.clock += 2;
@@ -1590,7 +1590,7 @@ void TestTradeOperations::timeoutTest()
     QCOMPARE(paged.sent.back(), QStringLiteral("q"));
 }
 
-void TestTradeOperations::refusalsTest()
+void TestCommandRunner::refusalsTest()
 {
     Mume mume;
     mume.request(R"({"id":"a","action":"shop.value","item":"sword"})");
@@ -1651,7 +1651,7 @@ void TestTradeOperations::refusalsTest()
     QCOMPARE(released.reason(), QStringLiteral("observing"));
 }
 
-void TestTradeOperations::cancelTest()
+void TestCommandRunner::cancelTest()
 {
     Mume mume;
     mume.request(R"({"id":"s","action":"shop.sell","items":["sword","helm"]})");
@@ -1685,7 +1685,7 @@ void TestTradeOperations::cancelTest()
     QCOMPARE(paged.status(), QStringLiteral("cancelled"));
 }
 
-void TestTradeOperations::abortTest()
+void TestCommandRunner::abortTest()
 {
     {
         Mume mume;
@@ -1717,7 +1717,7 @@ void TestTradeOperations::abortTest()
     }
 }
 
-void TestTradeOperations::viewerClaimTest()
+void TestCommandRunner::viewerClaimTest()
 {
     FrontendSubscriptions viewer;
     QVERIFY(viewer.applySupports(GmcpMessage::fromRawBytes(
@@ -1742,7 +1742,7 @@ void TestTradeOperations::viewerClaimTest()
     QVERIFY(!claimsViewer(viewer, true));
 }
 
-void TestTradeOperations::viewerSettingTest()
+void TestCommandRunner::viewerSettingTest()
 {
     Mume mume;
     // Not claimed: never set.
@@ -1816,4 +1816,4 @@ void TestTradeOperations::viewerSettingTest()
     QCOMPARE(mume.sent.back(), QStringLiteral("change viewer external"));
 }
 
-QTEST_MAIN(TestTradeOperations)
+QTEST_MAIN(TestCommandRunner)

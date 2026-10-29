@@ -68,7 +68,7 @@ NODISCARD std::string_view toProtocolString(TerminalHiddenEnum kind);
 
 /// MMapper.Terminal.Hidden -- something kept out of the terminal: `kind`, `text` (the hidden
 /// text itself, colour removed) and, for a room's description, `roomId` when MMapper knew it. An
-/// event, not replayed. The quiet command's is built by TradeOperations (makeQuietHidden()).
+/// event, not replayed. The quiet command's is built by CommandRunner (makeQuietHidden()).
 NODISCARD GmcpMessage makeTerminalHidden(const TerminalHidden &hidden);
 
 /// Whether a frontend with `filter` is told of `hidden`: a room's description only if it was
@@ -117,12 +117,12 @@ struct NODISCARD MapIdentity final
 /// "unknown" (nothing seen yet, or MUME not connected). MUME goes back to its menu after a rent
 /// or a quit with the connection open, so `upstream` alone cannot say the character has gone.
 ///
-/// `trade` is the version of the trade operations MMapper.Trade.Request runs (TradeOperations),
+/// `trade` is the version of the trade operations MMapper.Trade.Request runs (CommandRunner),
 /// 1 today, and `quiet` the version of the quiet command, MMapper.Input.Quiet, 1 as well: a
 /// frontend that finds no `quiet` is talking to an MMapper without it. `hidden` is the version
 /// of MMapper.Terminal.Filter and MMapper.Terminal.Hidden, 1 too. `viewer` is MUME's
 /// `change viewer` setting as far as MMapper knows it: "external", "simple", "off" or "unknown"
-/// (TradeOperations::viewerState()).
+/// (CommandRunner::viewerState()).
 ///
 /// `log` is the version of the prioritised Log, MMapper.Log (spec section 37), 1 today.
 ///

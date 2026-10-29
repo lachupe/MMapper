@@ -4,6 +4,7 @@
 
 #include "../global/macros.h"
 #include "../proxy/GmcpMessage.h"
+#include "FrontendReplayPolicy.h"
 
 #include <map>
 
@@ -29,8 +30,9 @@
 /// replayed room has its exits, and so its doors, as they were on arrival, and a frontend that
 /// attaches late shows them so until the next change.
 ///
-/// The kind of replay each package gets (whole, merged fields, keyed set, none) is listed in
-/// protocol_vocab.json, which tools/protocol_vocab.py writes from the switches in the .cpp.
+/// The kind of replay each package gets (whole, merged fields, keyed set, none) and when it is
+/// forgotten is one row per package in FrontendReplayPolicy.cpp; protocol_vocab.json is written
+/// from that table by tools/protocol_vocab.py.
 ///
 /// Deliberately free of Qt networking types so it can be unit tested on its own.
 class NODISCARD FrontendReplayCache final
@@ -48,13 +50,23 @@ public:
         return m_messages;
     }
 
-    /// For a new game session, which invalidates everything learned in the previous one.
+    /// The message kept for `type`, or null.
+    NODISCARD const GmcpMessage *find(GmcpMessageTypeEnum type) const;
+
+    /// Keeps `msg` whole, whatever its package's kind: for SNAPSHOT packages, which FrontendServer
+    /// builds itself and which no change of the cache could fold into.
+    void hold(const GmcpMessage &msg) { store(msg); }
+
+    /// Forgets what the packages of this scope and the smaller ones kept (see ReplayScopeEnum).
+    void clear(ReplayScopeEnum scope);
+
+    /// Forgets everything.
     void clear() { m_messages.clear(); }
 
     /// For a character leaving the game with the connection open (a rent, a quit, the menu):
     /// forgets everything but the account's menu and characters, which describe the account,
     /// not the character.
-    void clearGame();
+    void clearGame() { clear(ReplayScopeEnum::GAME); }
 
 private:
     void store(const GmcpMessage &msg);

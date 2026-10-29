@@ -709,10 +709,20 @@ if(WITH_FRONTEND)
         frontend/FrontendLoginMemory.h
         frontend/FrontendMapIdentity.cpp
         frontend/FrontendMapIdentity.h
-        frontend/FrontendMessages.cpp
+        frontend/FrontendMessagesAccount.cpp
+        frontend/FrontendMessagesChar.cpp
+        frontend/FrontendMessagesRoom.cpp
+        frontend/FrontendMessagesSession.cpp
+        frontend/FrontendMessagesTime.cpp
+        frontend/FrontendMessagesXml.cpp
         frontend/FrontendMessages.h
+        frontend/FrontendPublishers.cpp
         frontend/FrontendReplayCache.cpp
         frontend/FrontendReplayCache.h
+        frontend/FrontendReplayPolicy.cpp
+        frontend/FrontendReplayPolicy.h
+        frontend/FrontendReplayState.cpp
+        frontend/FrontendReplayState.h
         frontend/FrontendRenderPause.h
         frontend/FrontendServer.cpp
         frontend/FrontendServer.h
@@ -726,8 +736,10 @@ if(WITH_FRONTEND)
         frontend/LogRules.h
         frontend/TradeMessages.cpp
         frontend/TradeMessages.h
-        frontend/TradeOperations.cpp
-        frontend/TradeOperations.h
+        frontend/CommandRunner.cpp
+        frontend/CommandRunner.h
+        frontend/ViewerClaim.cpp
+        frontend/ViewerClaim.h
     )
 endif()
 

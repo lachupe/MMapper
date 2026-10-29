@@ -3,9 +3,8 @@
 
 #include "FrontendReplayCache.h"
 
-#include "FrontendJson.h"
-
 #include "../global/TextUtils.h"
+#include "FrontendJson.h"
 
 #include <optional>
 
@@ -17,77 +16,6 @@
 using frontend_json::toGmcpJson;
 
 namespace {
-
-/// Packages whose latest value describes current state on its own, and is replayed as sent.
-NODISCARD bool isWholeState(const GmcpMessageTypeEnum type)
-{
-    switch (type) {
-    case GmcpMessageTypeEnum::CHAR_NAME:
-    case GmcpMessageTypeEnum::EVENT_DARKNESS:
-    case GmcpMessageTypeEnum::EVENT_MOON:
-    case GmcpMessageTypeEnum::EVENT_SUN:
-    case GmcpMessageTypeEnum::GROUP_SET:
-    case GmcpMessageTypeEnum::ROOM_CHARS_SET:
-    case GmcpMessageTypeEnum::ROOM_INFO:
-    // MMapper's own, read off the replies to `stat` and `info`: each reply states them whole.
-    case GmcpMessageTypeEnum::MMAPPER_CHAR_BURDEN:
-    case GmcpMessageTypeEnum::MMAPPER_CHAR_LEVEL:
-    // The effects on the character, which CharAffectsTracker keeps and sends whole at each
-    // change, and the wimpy as last stated.
-    case GmcpMessageTypeEnum::MMAPPER_CHAR_AFFECTS:
-    case GmcpMessageTypeEnum::MMAPPER_CHAR_WIMPY:
-    case GmcpMessageTypeEnum::MMAPPER_CHAR_LANGUAGES:
-    // The followers, which CharFollowersTracker keeps and sends whole at each change. What is
-    // remembered is the lasting part of each message: see FrontendServer.
-    case GmcpMessageTypeEnum::MMAPPER_CHAR_FOLLOWERS:
-    // The doors of the current room, which RoomDoorTracker keeps and sends whole at each change.
-    case GmcpMessageTypeEnum::MMAPPER_ROOM_DOOR:
-    // The account menu and `list`'s characters: each printing is the whole of it.
-    case GmcpMessageTypeEnum::MMAPPER_ACCOUNT_CHARS:
-    case GmcpMessageTypeEnum::MMAPPER_ACCOUNT_MENU:
-    // The general practice table, read off `prac` away from a guild: each reply lists it whole.
-    case GmcpMessageTypeEnum::MMAPPER_CHAR_SKILLS:
-    case GmcpMessageTypeEnum::MMAPPER_CHAR_STAT:
-        return true;
-    default:
-        return false;
-    }
-}
-
-/// Packages that carry only the fields which changed, so that the state is every field seen
-/// so far, each with the last value MUME gave it.
-NODISCARD bool carriesChangedFields(const GmcpMessageTypeEnum type)
-{
-    switch (type) {
-    case GmcpMessageTypeEnum::CHAR_STATUSVARS:
-    case GmcpMessageTypeEnum::CHAR_VITALS:
-    // `score` states only the pools, `info` the whole sheet: a one-line score must not wipe
-    // out the sheet a late frontend would otherwise be told.
-    case GmcpMessageTypeEnum::MMAPPER_CHAR_SCORE:
-    // Each reply states one set of abilities: the others stay as they were.
-    case GmcpMessageTypeEnum::MMAPPER_CHAR_ABILITIES:
-        return true;
-    default:
-        return false;
-    }
-}
-
-/// The Set whose members a package adds, updates or removes.
-NODISCARD std::optional<GmcpMessageTypeEnum> setChangedBy(const GmcpMessageTypeEnum type)
-{
-    switch (type) {
-    case GmcpMessageTypeEnum::GROUP_ADD:
-    case GmcpMessageTypeEnum::GROUP_REMOVE:
-    case GmcpMessageTypeEnum::GROUP_UPDATE:
-        return GmcpMessageTypeEnum::GROUP_SET;
-    case GmcpMessageTypeEnum::ROOM_CHARS_ADD:
-    case GmcpMessageTypeEnum::ROOM_CHARS_REMOVE:
-    case GmcpMessageTypeEnum::ROOM_CHARS_UPDATE:
-        return GmcpMessageTypeEnum::ROOM_CHARS_SET;
-    default:
-        return std::nullopt;
-    }
-}
 
 NODISCARD QJsonDocument parse(const GmcpMessage &msg)
 {
@@ -107,25 +35,40 @@ void mergeInto(QJsonObject &into, const QJsonObject &changed)
 
 void FrontendReplayCache::remember(const GmcpMessage &msg)
 {
-    const GmcpMessageTypeEnum type = msg.getType();
-    if (const auto setType = setChangedBy(type)) {
-        applyToSet(*setType, msg);
-    } else if (carriesChangedFields(type)) {
+    const ReplayPolicy policy = replayPolicy(msg.getType());
+    switch (policy.kind) {
+    case ReplayKindEnum::SET_CHANGE:
+        if (policy.changes.has_value()) {
+            applyToSet(*policy.changes, msg);
+        }
+        break;
+    case ReplayKindEnum::MERGE_FIELDS:
         mergeFields(msg);
-    } else if (isWholeState(type)) {
+        break;
+    case ReplayKindEnum::WHOLE:
+    case ReplayKindEnum::KEYED_SET:
         store(msg);
+        break;
+    case ReplayKindEnum::EVENT:
+    case ReplayKindEnum::SNAPSHOT:
+    case ReplayKindEnum::CONTAINER_LRU:
+        break; // Not state this cache folds: events, and what FrontendReplayState holds itself.
     }
 }
 
-void FrontendReplayCache::clearGame()
+const GmcpMessage *FrontendReplayCache::find(const GmcpMessageTypeEnum type) const
+{
+    const auto it = m_messages.find(type);
+    return it == m_messages.end() ? nullptr : &it->second;
+}
+
+void FrontendReplayCache::clear(const ReplayScopeEnum scope)
 {
     for (auto it = m_messages.begin(); it != m_messages.end();) {
-        const GmcpMessageTypeEnum type = it->first;
-        if (type == GmcpMessageTypeEnum::MMAPPER_ACCOUNT_CHARS
-            || type == GmcpMessageTypeEnum::MMAPPER_ACCOUNT_MENU) {
-            ++it;
-        } else {
+        if (isClearedBy(replayPolicy(it->first), scope)) {
             it = m_messages.erase(it);
+        } else {
+            ++it;
         }
     }
 }

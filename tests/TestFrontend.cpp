@@ -3,11 +3,14 @@
 
 #include "TestFrontend.h"
 
+#include "../src/frontend/FrontendJson.h"
 #include "../src/frontend/FrontendLoginMemory.h"
 #include "../src/frontend/FrontendMapIdentity.h"
 #include "../src/frontend/FrontendMessages.h"
 #include "../src/frontend/FrontendRenderPause.h"
 #include "../src/frontend/FrontendReplayCache.h"
+#include "../src/frontend/FrontendReplayPolicy.h"
+#include "../src/frontend/FrontendReplayState.h"
 #include "../src/frontend/FrontendSubscriptions.h"
 #include "../src/frontend/ImportantLog.h"
 #include "../src/global/HideQDebug.h"
@@ -38,6 +41,11 @@
 #include "../src/parser/XmlElement.h"
 #include "../src/proxy/GmcpMessage.h"
 #include "../src/proxy/GmcpModule.h"
+
+#include <algorithm>
+#include <optional>
+#include <set>
+#include <vector>
 
 #include <QDir>
 #include <QFile>
@@ -3337,6 +3345,182 @@ NODISCARD QByteArray goldenText(const GmcpMessage &msg)
 /// fails here until the folder is rewritten (MM_UPDATE_GOLDEN=1 ctest -R TestFrontend) and
 /// copied into mume3d's tests/fixtures/protocol_frames/, where the client test then shows what
 /// the reader makes of it.
+namespace {
+
+struct NODISCARD PackageName final
+{
+    GmcpMessageTypeEnum type;
+    const char *friendly;
+};
+
+constexpr const PackageName ALL_PACKAGES[] = {
+#define X_PACKAGE(UPPER_CASE, CamelCase, normalized, friendly) \
+    {GmcpMessageTypeEnum::UPPER_CASE, friendly},
+    XFOREACH_GMCP_MESSAGE_TYPE(X_PACKAGE)
+#undef X_PACKAGE
+};
+
+NODISCARD GmcpMessage stateMessage(const GmcpMessageTypeEnum type, const QJsonObject &payload)
+{
+    return GmcpMessage{type, frontend_json::toGmcpJson(QJsonDocument{payload})};
+}
+
+NODISCARD QJsonObject oneField(const QString &key, const int value)
+{
+    QJsonObject fields;
+    fields.insert(key, value);
+    return fields;
+}
+
+/// The packages `state` replays, in the order it sends them.
+NODISCARD std::vector<GmcpMessageTypeEnum> replayedTypes(const FrontendReplayState &state,
+                                                         const std::optional<GmcpMessage> &position,
+                                                         const bool connected)
+{
+    std::vector<GmcpMessageTypeEnum> types;
+    state.replay([&types](const GmcpMessage &msg) { types.push_back(msg.getType()); },
+                 position,
+                 connected);
+    return types;
+}
+
+NODISCARD bool contains(const std::vector<GmcpMessageTypeEnum> &types, const GmcpMessageTypeEnum t)
+{
+    return std::find(types.begin(), types.end(), t) != types.end();
+}
+
+/// A state with something of every scope in it.
+void fill(FrontendReplayState &state)
+{
+    state.remember(stateMessage(GmcpMessageTypeEnum::CHAR_VITALS, oneField("hp", 10)));
+    state.remember(stateMessage(GmcpMessageTypeEnum::MMAPPER_ACCOUNT_MENU, oneField("n", 1)));
+    state.hold(stateMessage(GmcpMessageTypeEnum::MMAPPER_TIME_STATE, oneField("hour", 3)));
+    state.hold(stateMessage(GmcpMessageTypeEnum::MMAPPER_WEATHER_GROUND, oneField("snow", 1)));
+    state.hold(stateMessage(GmcpMessageTypeEnum::MMAPPER_ROOM_CONTENTS, oneField("n", 2)));
+    state.hold(stateMessage(GmcpMessageTypeEnum::MMAPPER_CHAR_EQUIPMENT, oneField("n", 3)));
+    state.hold(stateMessage(GmcpMessageTypeEnum::MMAPPER_CHAR_INVENTORY, oneField("n", 4)));
+    state.holdContainer(QStringLiteral("bag"),
+                        stateMessage(GmcpMessageTypeEnum::MMAPPER_CHAR_CONTAINER, oneField("n", 5)));
+}
+
+} // namespace
+
+void TestFrontend::replayPolicyCoverageTest()
+{
+    std::set<GmcpMessageTypeEnum> rows;
+    for (const ReplayPolicy &policy : replayPolicies()) {
+        QVERIFY2(rows.insert(policy.type).second, "two policy rows for one package");
+        if (policy.kind == ReplayKindEnum::EVENT) {
+            QVERIFY(policy.scope == ReplayScopeEnum::NONE);
+        } else {
+            QVERIFY(policy.scope != ReplayScopeEnum::NONE);
+        }
+        if (policy.kind == ReplayKindEnum::SET_CHANGE) {
+            QVERIFY(policy.changes.has_value());
+            QVERIFY(replayPolicy(*policy.changes).kind == ReplayKindEnum::KEYED_SET);
+        }
+    }
+
+    // Every package has a policy: a row, or, for the game's own events that are relayed as
+    // they come, none. Every MMapper.* package has its row, so that adding one is a decision.
+    for (const PackageName &package : ALL_PACKAGES) {
+        QCOMPARE(replayPolicy(package.type).type, package.type);
+        if (QString::fromLatin1(package.friendly).startsWith(QStringLiteral("MMapper."))) {
+            QVERIFY2(hasReplayPolicyRow(package.type),
+                     package.friendly); // the package is missing from FrontendReplayPolicy.cpp
+        }
+    }
+    // And no row for a package that does not exist.
+    QCOMPARE(rows.size(), replayPolicies().size());
+}
+
+void TestFrontend::replayOrderTest()
+{
+    FrontendReplayState state;
+    fill(state);
+    const GmcpMessage position = stateMessage(GmcpMessageTypeEnum::MMAPPER_MAP_POSITION,
+                                              oneField("id", 1));
+
+    const auto types = replayedTypes(state, position, true);
+    // What MUME stated first, in package order; then the clock and the ground; then the
+    // position; then what lies in the room it names, what is worn and carried, the containers.
+    const std::vector<GmcpMessageTypeEnum> expectedTail{GmcpMessageTypeEnum::MMAPPER_TIME_STATE,
+                                                        GmcpMessageTypeEnum::MMAPPER_WEATHER_GROUND,
+                                                        GmcpMessageTypeEnum::MMAPPER_MAP_POSITION,
+                                                        GmcpMessageTypeEnum::MMAPPER_ROOM_CONTENTS,
+                                                        GmcpMessageTypeEnum::MMAPPER_CHAR_EQUIPMENT,
+                                                        GmcpMessageTypeEnum::MMAPPER_CHAR_INVENTORY,
+                                                        GmcpMessageTypeEnum::MMAPPER_CHAR_CONTAINER};
+    QCOMPARE(types.size(), size_t{2} + expectedTail.size());
+    QCOMPARE(types[0], GmcpMessageTypeEnum::CHAR_VITALS);
+    QCOMPARE(types[1], GmcpMessageTypeEnum::MMAPPER_ACCOUNT_MENU);
+    QVERIFY(std::equal(expectedTail.begin(), expectedTail.end(), types.begin() + 2));
+}
+
+void TestFrontend::replayDisconnectedTest()
+{
+    FrontendReplayState state;
+    fill(state);
+    const GmcpMessage position = stateMessage(GmcpMessageTypeEnum::MMAPPER_MAP_POSITION,
+                                              oneField("id", 1));
+    QVERIFY(
+        contains(replayedTypes(state, position, true), GmcpMessageTypeEnum::MMAPPER_MAP_POSITION));
+
+    // A frontend that connects while MUME is not connected is told no position: the room
+    // the map remembers is not where anyone stands. The rest is replayed as ever.
+    const auto types = replayedTypes(state, position, false);
+    QVERIFY(!contains(types, GmcpMessageTypeEnum::MMAPPER_MAP_POSITION));
+    QVERIFY(contains(types, GmcpMessageTypeEnum::MMAPPER_ROOM_CONTENTS));
+    QVERIFY(contains(types, GmcpMessageTypeEnum::CHAR_VITALS));
+
+    // And none when there is no room to name, connected or not.
+    QVERIFY(!contains(replayedTypes(state, std::nullopt, true),
+                      GmcpMessageTypeEnum::MMAPPER_MAP_POSITION));
+}
+
+void TestFrontend::replayScopesTest()
+{
+    const auto kept = [](const std::vector<GmcpMessageTypeEnum> &types) {
+        return std::set<GmcpMessageTypeEnum>{types.begin(), types.end()};
+    };
+
+    // ITEMS (MUME disconnected, an item moved): the room's contents and what is carried and
+    // opened go; the character, the ground, the account and the clock stay.
+    FrontendReplayState state;
+    fill(state);
+    state.clear(ReplayScopeEnum::ITEMS);
+    QCOMPARE(kept(replayedTypes(state, std::nullopt, true)),
+             (std::set<GmcpMessageTypeEnum>{GmcpMessageTypeEnum::CHAR_VITALS,
+                                            GmcpMessageTypeEnum::MMAPPER_ACCOUNT_MENU,
+                                            GmcpMessageTypeEnum::MMAPPER_TIME_STATE,
+                                            GmcpMessageTypeEnum::MMAPPER_WEATHER_GROUND}));
+    QCOMPARE(state.containerCount(), size_t{0});
+
+    // GAME (the character left the game): the account's menu and the clock stay.
+    FrontendReplayState left;
+    fill(left);
+    left.clear(ReplayScopeEnum::GAME);
+    QCOMPARE(kept(replayedTypes(left, std::nullopt, true)),
+             (std::set<GmcpMessageTypeEnum>{GmcpMessageTypeEnum::MMAPPER_ACCOUNT_MENU,
+                                            GmcpMessageTypeEnum::MMAPPER_TIME_STATE}));
+
+    // ACCOUNT (a new connection): only the clock outlasts it.
+    FrontendReplayState fresh;
+    fill(fresh);
+    fresh.clear(ReplayScopeEnum::ACCOUNT);
+    QCOMPARE(kept(replayedTypes(fresh, std::nullopt, true)),
+             (std::set<GmcpMessageTypeEnum>{GmcpMessageTypeEnum::MMAPPER_TIME_STATE}));
+
+    // The containers: the last few, a repeat replacing its earlier listing.
+    FrontendReplayState bags;
+    for (int i = 0; i < 12; ++i) {
+        bags.holdContainer(QString::number(i % 10),
+                           stateMessage(GmcpMessageTypeEnum::MMAPPER_CHAR_CONTAINER,
+                                        oneField("n", i)));
+    }
+    QCOMPARE(bags.containerCount(), FrontendReplayState::CONTAINERS_KEPT);
+}
+
 void TestFrontend::goldenFramesTest()
 {
     const Map map = makeOneRoomMap(ServerRoomId{812345});
