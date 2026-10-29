@@ -368,6 +368,33 @@ NODISCARD QJsonValue ridableValue(const RoomRidableEnum ridable)
     return QJsonValue::Null;
 }
 
+/// How every package names a room (ARCH.12): MMapper's id in its map file, always, and MUME's own where
+/// the game supplied one -- omitted rather than zeroed, so that a client can tell "unknown" from a
+/// legitimate id. The one place these two keys are written. The session-local `id` is deliberately not
+/// part of it, and the fingerprint is added where a package carries it (MMapper.Map.Position).
+///
+/// Where the object goes is each package's own and unchanged: its top level for MMapper.Map.Position and
+/// MMapper.Room.Contents (addRoomRef()), `room` for MMapper.Weather.Ground, and an exit's entry for the
+/// room it leads to.
+NODISCARD QJsonObject roomRef(const RoomHandle &room)
+{
+    QJsonObject ref;
+    ref["externalId"] = static_cast<qint64>(room.getIdExternal().asUint32());
+    if (const ServerRoomId serverId = room.getServerId(); serverId != INVALID_SERVER_ROOMID) {
+        ref["serverId"] = static_cast<qint64>(serverId.asUint32());
+    }
+    return ref;
+}
+
+/// roomRef(room)'s keys written into `obj`.
+void addRoomRef(QJsonObject &obj, const RoomHandle &room)
+{
+    const QJsonObject ref = roomRef(room);
+    for (auto it = ref.begin(); it != ref.end(); ++it) {
+        obj.insert(it.key(), it.value());
+    }
+}
+
 } // namespace
 
 GmcpMessage makeMapPosition(const RoomHandle &room)
@@ -376,13 +403,7 @@ GmcpMessage makeMapPosition(const RoomHandle &room)
 
     // Session-local handle; clients must not persist this.
     obj["id"] = static_cast<qint64>(room.getId().asUint32());
-    obj["externalId"] = static_cast<qint64>(room.getIdExternal().asUint32());
-
-    // Omitted rather than zeroed when MUME never supplied one, so that a client can tell
-    // "unknown" apart from a legitimate id.
-    if (const ServerRoomId serverId = room.getServerId(); serverId != INVALID_SERVER_ROOMID) {
-        obj["serverId"] = static_cast<qint64>(serverId.asUint32());
-    }
+    addRoomRef(obj, room);
 
     obj["name"] = room.getName().toQString();
     obj["area"] = room.getArea().toQString();
@@ -411,11 +432,7 @@ GmcpMessage makeMapPosition(const RoomHandle &room)
         if (!target.has_value()) {
             continue;
         }
-        QJsonObject to;
-        to["externalId"] = static_cast<qint64>(target->getIdExternal().asUint32());
-        if (const ServerRoomId id = target->getServerId(); id != INVALID_SERVER_ROOMID) {
-            to["serverId"] = static_cast<qint64>(id.asUint32());
-        }
+        QJsonObject to = roomRef(*target);
         to["ridable"] = ridableValue(target->getRidableType());
         exits[QString(QLatin1Char(lowercaseDirection(dir)[0]))] = to;
     }
@@ -539,12 +556,7 @@ GmcpMessage makeGroundState(const GroundState &state, const RoomHandle *const ro
     obj["ice"] = mmqt::toQStringUtf8(state.ice);
     obj["entered"] = state.entered;
     if (room != nullptr && *room) {
-        QJsonObject where;
-        where["externalId"] = static_cast<qint64>(room->getIdExternal().asUint32());
-        if (const ServerRoomId serverId = room->getServerId(); serverId != INVALID_SERVER_ROOMID) {
-            where["serverId"] = static_cast<qint64>(serverId.asUint32());
-        }
-        obj["room"] = where;
+        obj["room"] = roomRef(*room);
     }
     return GmcpMessage{GmcpMessageTypeEnum::MMAPPER_WEATHER_GROUND, toGmcpJson(obj)};
 }
@@ -560,10 +572,7 @@ GmcpMessage makeRoomContents(const RoomContentsSnapshot &contents, const RoomHan
 
     QJsonObject obj;
     if (room != nullptr && *room) {
-        obj["externalId"] = static_cast<qint64>(room->getIdExternal().asUint32());
-        if (const ServerRoomId serverId = room->getServerId(); serverId != INVALID_SERVER_ROOMID) {
-            obj["serverId"] = static_cast<qint64>(serverId.asUint32());
-        }
+        addRoomRef(obj, *room);
     }
     if (!contents.snapshotId.isEmpty()) {
         obj["snapshotId"] = contents.snapshotId;

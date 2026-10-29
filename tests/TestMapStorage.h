@@ -25,6 +25,7 @@ private Q_SLOTS:
     static void fingerprintVectorTest();
     static void fingerprintUtf8VectorTest();
     static void fingerprintOfRoomTest();
+    static void fingerprintFixtureTest();
     static void xmlExportFingerprintTest();
     static void xmlRoundTripTest();
 };
