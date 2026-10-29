@@ -809,6 +809,9 @@ if(MMAPPER_IS_DEBUG AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     # saves from a MapData.
     target_compile_options(TestMapStorage PRIVATE -fno-sanitize=vptr)
 endif()
+# The rooms of mume3d's tests/fixtures/room_keys.json, copied here (fingerprintFixtureTest).
+target_compile_definitions(TestMapStorage PRIVATE
+        MM_ROOM_KEYS_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/golden/room_keys.json")
 add_test(NAME TestMapStorage COMMAND TestMapStorage)
 
 # Adventure

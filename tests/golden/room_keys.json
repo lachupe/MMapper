@@ -1,0 +1,303 @@
+{
+ "about": "ARCH.12: made-up rooms with every exit shape the fingerprint reads (an exit as the XML export writes it: `flags` are its exitflag words, NO_EXIT among them; `to` its targets in the export's order) and the room keys and own fingerprints expected of them. Checked by tests/test_room_keys.py (tools/bake/keys.py), tests/overlay_keys_smoke.gd (RoomKey, MapCatalogue) and MMapper's TestMapStorage (RoomFingerprint.cpp, from its own copy at tests/golden/room_keys.json: copy this file there when it changes). `key` is mume:<server> for a room with a server id, else fp:<fingerprint>, else for rooms alike even in their neighbours' descriptions local:<source_hash>:<id>; `fingerprint` is the room's own.",
+ "source_hash": "ab12cd34",
+ "rooms": [
+  {
+   "id": 1,
+   "server": "9001",
+   "name": "West End",
+   "description": "The street ends here.\n",
+   "terrain": "ROAD",
+   "exits": {
+    "east": {
+     "flags": [],
+     "to": [
+      2
+     ]
+    },
+    "north": {
+     "flags": [],
+     "to": [
+      4
+     ]
+    }
+   },
+   "fingerprint": "01bb55b21ec3",
+   "key": "mume:9001"
+  },
+  {
+   "id": 2,
+   "server": "",
+   "name": "Old Oak",
+   "description": "An old oak stands here.\n",
+   "terrain": "ROAD",
+   "exits": {
+    "west": {
+     "flags": [],
+     "to": [
+      1
+     ]
+    },
+    "east": {
+     "flags": [],
+     "to": [
+      3
+     ]
+    }
+   },
+   "fingerprint": "7a49c6c14974",
+   "key": "fp:7a49c6c14974"
+  },
+  {
+   "id": 3,
+   "server": "",
+   "name": "East End",
+   "description": "The street ends in a field.\n",
+   "terrain": "ROAD",
+   "exits": {
+    "west": {
+     "flags": [],
+     "to": [
+      2
+     ]
+    },
+    "up": {
+     "flags": [
+      "NO_EXIT"
+     ],
+     "to": [
+      2
+     ]
+    }
+   },
+   "fingerprint": "82942e19f7d3",
+   "key": "fp:82942e19f7d3"
+  },
+  {
+   "id": 4,
+   "server": "9004",
+   "name": "A Garden",
+   "description": "Flowers grow here.\n",
+   "terrain": "FIELD",
+   "exits": {
+    "south": {
+     "flags": [],
+     "to": [
+      1
+     ]
+    },
+    "down": {
+     "flags": [
+      "DOOR"
+     ],
+     "to": []
+    }
+   },
+   "fingerprint": "c4e3176d49f6",
+   "key": "mume:9004"
+  },
+  {
+   "id": 5,
+   "server": "",
+   "name": "The Fork",
+   "description": "Smoke & ash, <b>soot</b> and \"quotes\" hang here.\n",
+   "terrain": "FOREST",
+   "exits": {
+    "east": {
+     "flags": [],
+     "to": [
+      7,
+      6
+     ]
+    },
+    "west": {
+     "flags": [],
+     "to": []
+    },
+    "north": {
+     "flags": [
+      "DOOR",
+      "HIDDEN"
+     ],
+     "to": [
+      6
+     ]
+    },
+    "south": {
+     "flags": [
+      "NO_EXIT"
+     ],
+     "to": [
+      5
+     ]
+    }
+   },
+   "fingerprint": "bf9d562070c5",
+   "key": "fp:bf9d562070c5"
+  },
+  {
+   "id": 6,
+   "server": "",
+   "name": "Fork Arm",
+   "description": "A path bends away.\n",
+   "terrain": "FOREST",
+   "exits": {
+    "west": {
+     "flags": [],
+     "to": [
+      5
+     ]
+    }
+   },
+   "fingerprint": "1d203f550527",
+   "key": "fp:1d203f550527"
+  },
+  {
+   "id": 7,
+   "server": "",
+   "name": "Other Arm",
+   "description": "A second path bends away.\n",
+   "terrain": "FOREST",
+   "exits": {
+    "west": {
+     "flags": [],
+     "to": [
+      5
+     ]
+    }
+   },
+   "fingerprint": "8e64c2f3b5c3",
+   "key": "fp:8e64c2f3b5c3"
+  },
+  {
+   "id": 8,
+   "server": "",
+   "name": "A Dark Passage",
+   "description": "It is dark.\n",
+   "terrain": "TUNNEL",
+   "exits": {
+    "north": {
+     "flags": [],
+     "to": [
+      10
+     ]
+    }
+   },
+   "fingerprint": "9337f7e76347",
+   "key": "fp:0cb6a92f9c53"
+  },
+  {
+   "id": 9,
+   "server": "",
+   "name": "A Dark Passage",
+   "description": "It is dark.\n",
+   "terrain": "TUNNEL",
+   "exits": {
+    "north": {
+     "flags": [],
+     "to": [
+      11
+     ]
+    }
+   },
+   "fingerprint": "9337f7e76347",
+   "key": "fp:0f7561b64032"
+  },
+  {
+   "id": 10,
+   "server": "",
+   "name": "Cellar",
+   "description": "It is wet here.\n",
+   "terrain": "TUNNEL",
+   "exits": {
+    "south": {
+     "flags": [],
+     "to": [
+      8
+     ]
+    }
+   },
+   "fingerprint": "bf8c23de75c8",
+   "key": "fp:bf8c23de75c8"
+  },
+  {
+   "id": 11,
+   "server": "",
+   "name": "Cellar",
+   "description": "It is dry here.\n",
+   "terrain": "TUNNEL",
+   "exits": {
+    "south": {
+     "flags": [],
+     "to": [
+      9
+     ]
+    }
+   },
+   "fingerprint": "c3e24426a0fa",
+   "key": "fp:c3e24426a0fa"
+  },
+  {
+   "id": 12,
+   "server": "",
+   "name": "Maze",
+   "description": "Twisty little passages.\n",
+   "terrain": "TUNNEL",
+   "exits": {
+    "east": {
+     "flags": [],
+     "to": [
+      14
+     ]
+    }
+   },
+   "fingerprint": "436c26b99d78",
+   "key": "local:ab12cd34:12"
+  },
+  {
+   "id": 13,
+   "server": "",
+   "name": "Maze",
+   "description": "Twisty little passages.\n",
+   "terrain": "TUNNEL",
+   "exits": {
+    "east": {
+     "flags": [],
+     "to": [
+      14
+     ]
+    }
+   },
+   "fingerprint": "436c26b99d78",
+   "key": "local:ab12cd34:13"
+  },
+  {
+   "id": 14,
+   "server": "",
+   "name": "Maze Hub",
+   "description": "All the passages end here.\n",
+   "terrain": "TUNNEL",
+   "exits": {
+    "west": {
+     "flags": [],
+     "to": [
+      12,
+      13
+     ]
+    }
+   },
+   "fingerprint": "c1cd28fcc6a9",
+   "key": "fp:c1cd28fcc6a9"
+  },
+  {
+   "id": 15,
+   "server": "",
+   "name": "Nowhere",
+   "description": "",
+   "terrain": "",
+   "exits": {},
+   "fingerprint": "6db0772f4a1b",
+   "key": "fp:6db0772f4a1b"
+  }
+ ]
+}

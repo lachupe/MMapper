@@ -30,6 +30,9 @@
 
 #include <QCryptographicHash>
 #include <QFile>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QRegularExpression>
 #include <QStringList>
 #include <QTemporaryDir>
@@ -449,6 +452,58 @@ void TestMapStorage::xmlRoundTripTest()
     const std::optional<RawMapLoadData> stillLoaded = importXml(tampered);
     QVERIFY(stillLoaded.has_value());
     QCOMPARE(stillLoaded->rooms.size(), map.getRoomsCount());
+}
+
+/// The rooms mume3d's tests/fixtures/room_keys.json holds (copied to tests/golden/room_keys.json), each with the
+/// fingerprint its Python (tools/bake/keys.py) and GDScript (MapCatalogue) sides expect: exit shapes of every kind,
+/// among them one marked NO_EXIT, one to no room and one to several. Where that file changes, copy it here.
+void TestMapStorage::fingerprintFixtureTest()
+{
+    QFile in{QStringLiteral(MM_ROOM_KEYS_FIXTURE)};
+    QVERIFY2(in.open(QIODevice::ReadOnly), "tests/golden/room_keys.json is missing");
+    const QJsonDocument doc = QJsonDocument::fromJson(in.readAll());
+    QVERIFY(doc.isObject());
+    const QJsonArray rooms = doc.object()["rooms"].toArray();
+    QVERIFY(rooms.size() >= 15);
+
+    std::map<int, QString> names;
+    for (const QJsonValue &value : rooms) {
+        names[value.toObject()["id"].toInt()] = value.toObject()["name"].toString();
+    }
+    static const std::map<QString, char> LETTERS{
+        {"north", 'N'}, {"south", 'S'}, {"east", 'E'}, {"west", 'W'}, {"up", 'U'}, {"down", 'D'}};
+
+    for (const QJsonValue &value : rooms) {
+        const QJsonObject room = value.toObject();
+        room_fingerprint::Fields fields;
+        fields.name = room["name"].toString();
+        fields.description = room["description"].toString();
+        fields.terrain = room["terrain"].toString();
+        const QJsonObject exits = room["exits"].toObject();
+        for (auto it = exits.begin(); it != exits.end(); ++it) {
+            const QJsonObject exit = it.value().toObject();
+            bool noExit = false;
+            for (const QJsonValue &flag : exit["flags"].toArray()) {
+                noExit = noExit || flag.toString() == QStringLiteral("NO_EXIT");
+            }
+            if (noExit) {
+                continue;
+            }
+            int lowest = -1;
+            for (const QJsonValue &to : exit["to"].toArray()) {
+                lowest = (lowest < 0) ? to.toInt() : std::min(lowest, to.toInt());
+            }
+            room_fingerprint::Exit entry;
+            entry.letter = LETTERS.at(it.key());
+            entry.target = (lowest < 0) ? QString{} : names.at(lowest);
+            fields.exits.push_back(entry);
+        }
+        QVERIFY2(room_fingerprint::compute(fields) == room["fingerprint"].toString(),
+                 qPrintable(QStringLiteral("room %1 (%2): %3 against the fixture's %4")
+                                .arg(room["id"].toInt())
+                                .arg(fields.name, room_fingerprint::compute(fields),
+                                     room["fingerprint"].toString())));
+    }
 }
 
 QTEST_MAIN(TestMapStorage)
