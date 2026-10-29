@@ -1,0 +1,8 @@
+{
+    "package": "MMapper.Char.Refused",
+    "payload": {
+        "action": "rest",
+        "reason": "fighting",
+        "text": "Rest while fighting? Are you MAD?"
+    }
+}

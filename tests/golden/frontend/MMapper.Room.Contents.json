@@ -1,0 +1,27 @@
+{
+    "package": "MMapper.Room.Contents",
+    "payload": {
+        "entered": true,
+        "externalId": 1,
+        "objects": [
+            {
+                "container": true,
+                "count": 1,
+                "index": 0,
+                "keyword": "chest",
+                "line": "A wooden chest stands in the corner.",
+                "name": null,
+                "state": {
+                    "empty": null,
+                    "known": 1790000000,
+                    "locked": true,
+                    "open": false,
+                    "pickproof": null
+                },
+                "target": "chest"
+            }
+        ],
+        "seen": true,
+        "serverId": 812345
+    }
+}

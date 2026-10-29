@@ -1,0 +1,21 @@
+{
+    "package": "MMapper.Map.Position",
+    "payload": {
+        "area": "The Shire",
+        "exits": {
+        },
+        "externalId": 1,
+        "fingerprint": "a7793e150db4",
+        "id": 0,
+        "layout": {
+            "kind": "mmapper-grid",
+            "x": 12,
+            "y": -34,
+            "z": 2
+        },
+        "name": "A forest path",
+        "ridable": null,
+        "serverId": 812345,
+        "terrain": "FOREST"
+    }
+}

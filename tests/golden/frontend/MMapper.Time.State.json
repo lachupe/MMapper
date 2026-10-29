@@ -1,0 +1,26 @@
+{
+    "package": "MMapper.Time.State",
+    "payload": {
+        "dawnHour": 5,
+        "day": 18,
+        "duskHour": 21,
+        "hour": 15,
+        "minute": 12,
+        "month": 9,
+        "monthName": "Halimath",
+        "moon": {
+            "level": 11,
+            "phase": "waning-gibbous",
+            "position": "below",
+            "visibility": "invisible",
+            "waxing": false,
+            "zenithMinute": 88
+        },
+        "phase": "day",
+        "precision": "minute",
+        "season": "summer",
+        "secondsPerHour": 60,
+        "weekday": "Highday",
+        "year": 3030
+    }
+}
