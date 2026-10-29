@@ -704,6 +704,7 @@ endif()
 
 if(WITH_FRONTEND)
     list(APPEND mmapper_SRCS
+        frontend/FrontendJson.h
         frontend/FrontendLoginMemory.cpp
         frontend/FrontendLoginMemory.h
         frontend/FrontendMapIdentity.cpp

@@ -3,6 +3,8 @@
 
 #include "FrontendMessages.h"
 
+#include "FrontendJson.h"
+
 #include "../global/TextUtils.h"
 #include "../global/parserutils.h"
 #include "../map/ExitDirection.h"
@@ -19,6 +21,14 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QMetaEnum>
+
+using frontend_json::maybeBool;
+using frontend_json::orNull;
+using frontend_json::putNumber;
+using frontend_json::putRoomRef;
+using frontend_json::putText;
+using frontend_json::roomRef;
+using frontend_json::toGmcpJson;
 
 namespace {
 
@@ -167,12 +177,6 @@ NODISCARD QJsonObject toJson(const XmlElement &element)
         obj["direction"] = mmqt::toQStringUtf8(element.direction);
     }
     return obj;
-}
-
-NODISCARD GmcpJson toGmcpJson(const QJsonObject &obj)
-{
-    const QString json = QJsonDocument{obj}.toJson(QJsonDocument::Compact);
-    return GmcpJson{json};
 }
 
 } // namespace
@@ -368,33 +372,6 @@ NODISCARD QJsonValue ridableValue(const RoomRidableEnum ridable)
     return QJsonValue::Null;
 }
 
-/// How every package names a room (ARCH.12): MMapper's id in its map file, always, and MUME's own where
-/// the game supplied one -- omitted rather than zeroed, so that a client can tell "unknown" from a
-/// legitimate id. The one place these two keys are written. The session-local `id` is deliberately not
-/// part of it, and the fingerprint is added where a package carries it (MMapper.Map.Position).
-///
-/// Where the object goes is each package's own and unchanged: its top level for MMapper.Map.Position and
-/// MMapper.Room.Contents (addRoomRef()), `room` for MMapper.Weather.Ground, and an exit's entry for the
-/// room it leads to.
-NODISCARD QJsonObject roomRef(const RoomHandle &room)
-{
-    QJsonObject ref;
-    ref["externalId"] = static_cast<qint64>(room.getIdExternal().asUint32());
-    if (const ServerRoomId serverId = room.getServerId(); serverId != INVALID_SERVER_ROOMID) {
-        ref["serverId"] = static_cast<qint64>(serverId.asUint32());
-    }
-    return ref;
-}
-
-/// roomRef(room)'s keys written into `obj`.
-void addRoomRef(QJsonObject &obj, const RoomHandle &room)
-{
-    const QJsonObject ref = roomRef(room);
-    for (auto it = ref.begin(); it != ref.end(); ++it) {
-        obj.insert(it.key(), it.value());
-    }
-}
-
 } // namespace
 
 GmcpMessage makeMapPosition(const RoomHandle &room)
@@ -403,7 +380,7 @@ GmcpMessage makeMapPosition(const RoomHandle &room)
 
     // Session-local handle; clients must not persist this.
     obj["id"] = static_cast<qint64>(room.getId().asUint32());
-    addRoomRef(obj, room);
+    putRoomRef(obj, room);
 
     obj["name"] = room.getName().toQString();
     obj["area"] = room.getArea().toQString();
@@ -459,25 +436,20 @@ GmcpMessage makeCombatEvent(const CombatEvent &event)
     obj["kind"] = mmqt::toQStringUtf8(to_string_view(event.kind));
     obj["text"] = event.text;
     // Quiet on the wire: a field is only sent when the line said something for it.
-    const auto put = [&obj](const char *const key, const QString &value) {
-        if (!value.isEmpty()) {
-            obj[key] = value;
-        }
-    };
-    put("actor", event.actor);
-    put("target", event.target);
+    putText(obj, "actor", event.actor);
+    putText(obj, "target", event.target);
     if (event.kind == CombatKindEnum::BLOW) {
         obj["outcome"] = mmqt::toQStringUtf8(to_string_view(event.outcome));
     }
     if (event.phase != CombatPhaseEnum::NONE) {
         obj["phase"] = mmqt::toQStringUtf8(to_string_view(event.phase));
     }
-    put("verb", event.verb);
-    put("part", event.part);
-    put("quality", event.quality);
-    put("severity", event.severity);
-    put("effect", event.effect);
-    put("detail", event.detail);
+    putText(obj, "verb", event.verb);
+    putText(obj, "part", event.part);
+    putText(obj, "quality", event.quality);
+    putText(obj, "severity", event.severity);
+    putText(obj, "effect", event.effect);
+    putText(obj, "detail", event.detail);
     return GmcpMessage{GmcpMessageTypeEnum::MMAPPER_COMBAT_EVENT, toGmcpJson(obj)};
 }
 
@@ -563,16 +535,10 @@ GmcpMessage makeGroundState(const GroundState &state, const RoomHandle *const ro
 
 GmcpMessage makeRoomContents(const RoomContentsSnapshot &contents, const RoomHandle *const room)
 {
-    const auto maybe = [](const std::optional<bool> &value) -> QJsonValue {
-        return value.has_value() ? QJsonValue{*value} : QJsonValue{QJsonValue::Null};
-    };
-    const auto orNull = [](const QString &text) -> QJsonValue {
-        return text.isEmpty() ? QJsonValue{QJsonValue::Null} : QJsonValue{text};
-    };
 
     QJsonObject obj;
     if (room != nullptr && *room) {
-        addRoomRef(obj, *room);
+        putRoomRef(obj, *room);
     }
     if (!contents.snapshotId.isEmpty()) {
         obj["snapshotId"] = contents.snapshotId;
@@ -598,10 +564,10 @@ GmcpMessage makeRoomContents(const RoomContentsSnapshot &contents, const RoomHan
         entry["keyword"] = orNull(object.keyword);
         entry["target"] = orNull(object.target);
         QJsonObject state;
-        state["open"] = maybe(object.state.open);
-        state["locked"] = maybe(object.state.locked);
-        state["pickproof"] = maybe(object.state.pickproof);
-        state["empty"] = maybe(object.state.empty);
+        state["open"] = maybeBool(object.state.open);
+        state["locked"] = maybeBool(object.state.locked);
+        state["pickproof"] = maybeBool(object.state.pickproof);
+        state["empty"] = maybeBool(object.state.empty);
         state["known"] = static_cast<qint64>(object.state.known);
         entry["state"] = state;
         objects.append(entry);
@@ -718,38 +684,15 @@ GmcpMessage makeCharItem(const ItemEvent &event)
 {
     QJsonObject obj;
     obj["action"] = mmqt::toQStringUtf8(to_string_view(event.action));
-    const auto optional = [&obj](const char *const key, const QString &value) {
-        if (!value.isEmpty()) {
-            obj[key] = value;
-        }
-    };
-    optional("item", event.item);
-    optional("container", event.container);
-    optional("place", event.place);
-    optional("slot", event.slot);
-    optional("other", event.other);
-    optional("reason", event.reason);
+    putText(obj, "item", event.item);
+    putText(obj, "container", event.container);
+    putText(obj, "place", event.place);
+    putText(obj, "slot", event.slot);
+    putText(obj, "other", event.other);
+    putText(obj, "reason", event.reason);
     obj["text"] = event.text;
     return GmcpMessage{GmcpMessageTypeEnum::MMAPPER_CHAR_ITEM, toGmcpJson(obj)};
 }
-
-namespace {
-
-void putNumber(QJsonObject &obj, const char *const key, const std::optional<int64_t> &value)
-{
-    if (value.has_value()) {
-        obj[key] = static_cast<qint64>(*value);
-    }
-}
-
-void putText(QJsonObject &obj, const char *const key, const QString &value)
-{
-    if (!value.isEmpty()) {
-        obj[key] = value;
-    }
-}
-
-} // namespace
 
 GmcpMessage makeAccountMenu(const AccountMenu &menu)
 {

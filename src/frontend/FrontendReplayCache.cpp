@@ -3,6 +3,8 @@
 
 #include "FrontendReplayCache.h"
 
+#include "FrontendJson.h"
+
 #include "../global/TextUtils.h"
 
 #include <optional>
@@ -11,6 +13,8 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonValue>
+
+using frontend_json::toGmcpJson;
 
 namespace {
 
@@ -89,11 +93,6 @@ NODISCARD QJsonDocument parse(const GmcpMessage &msg)
 {
     const auto &optJson = msg.getJson();
     return optJson.has_value() ? QJsonDocument::fromJson(optJson->toQByteArray()) : QJsonDocument{};
-}
-
-NODISCARD GmcpJson toGmcpJson(const QJsonDocument &doc)
-{
-    return GmcpJson{mmqt::toStdStringUtf8(doc.toJson(QJsonDocument::Compact))};
 }
 
 /// Copies every field of `changed` over `into`, leaving the fields it does not mention alone.

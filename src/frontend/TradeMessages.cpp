@@ -3,33 +3,19 @@
 
 #include "TradeMessages.h"
 
+#include "FrontendJson.h"
+
 #include <optional>
 
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 
+using frontend_json::putNumber;
+using frontend_json::putText;
+using frontend_json::toGmcpJson;
+
 namespace {
-
-NODISCARD GmcpJson toGmcpJson(const QJsonObject &obj)
-{
-    const QString json = QJsonDocument{obj}.toJson(QJsonDocument::Compact);
-    return GmcpJson{json};
-}
-
-void putNumber(QJsonObject &obj, const char *const key, const std::optional<int64_t> &value)
-{
-    if (value.has_value()) {
-        obj[key] = static_cast<qint64>(*value);
-    }
-}
-
-void putText(QJsonObject &obj, const char *const key, const QString &value)
-{
-    if (!value.isEmpty()) {
-        obj[key] = value;
-    }
-}
 
 /// A table's pager state, sent always so that a frontend can tell a short reply from a cut one.
 void putPaged(QJsonObject &obj, const bool paged, const bool complete)
