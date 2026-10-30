@@ -1749,6 +1749,32 @@ void TestFrontend::charAffectsTest()
     QCOMPARE(names(), (QStringList{QStringLiteral("armour"), QStringLiteral("sanctuary")}));
     QVERIFY(!line("You feel weaker.", 1601));
 
+    // Panic: fleeing starts it (the line is a flee event), "You feel bolder." ends it.
+    QVERIFY(line("You flee head over heels.", 1590));
+    QVERIFY(names().contains(QStringLiteral("panic")));
+    QVERIFY(line("You feel bolder.", 1595));
+    QVERIFY(!names().contains(QStringLiteral("panic")));
+    // Somebody else fleeing is no panic of ours.
+    QVERIFY(!line("*a Man* (one) flees head over heels.", 1596));
+    // Hunger repeats its line while it lasts: the first sets the time, the repeats move
+    // `refreshed` only.
+    QVERIFY(line("You begin to feel hungry.", 1597));
+    QVERIFY(line("You are hungry.", 1598));
+    {
+        QJsonObject hunger;
+        for (const QJsonValue &v : payload()["affects"].toArray()) {
+            if (v.toObject()["name"].toString() == QStringLiteral("hunger")) {
+                hunger = v.toObject();
+            }
+        }
+        QCOMPARE(hunger["since"].toInteger(), 1597);
+        QCOMPARE(hunger["refreshed"].toInteger(), 1598);
+    }
+    // A down for what was not known changes nothing.
+    QVERIFY(!line("You feel cured.", 1599));
+    // Put the list back as the rest of this test expects it (a `stat` drops hunger).
+    QVERIFY(tracker.receiveStat(QStringList{QStringLiteral("armour"), QStringLiteral("sanctuary")}));
+
     // Somebody else's effects, heals, the conditions that are no lasting effect, and lines
     // that are no effect at all leave the list alone.
     QVERIFY(!line("Walo is surrounded by a brilliant white aura.", 1602));

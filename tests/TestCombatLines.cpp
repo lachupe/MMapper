@@ -1757,6 +1757,7 @@ void TestCombatLines::affectTest()
         {"You have a righteous feeling!", A, UP, "you", "", "protection from evil"},
         {"You feel less righteous.", A, DOWN, "you", "", "protection from evil"},
         {"You feel aware of this place.", A, UP, "you", "", "watch room"},
+        {"You feel aware of this room.", A, UP, "you", "", "watch room"},
         {"Your awareness decreases.", A, DOWN, "you", "", "watch room"},
         {"[xanscasoebb] Your awareness decreases.", A, DOWN, "you", "", "watch room"},
         {"The draught burns down your throat, and a fiery feeling fills your limbs.",
@@ -1851,6 +1852,52 @@ void TestCombatLines::affectTest()
                                    "been lost... Despair settles on you.",
                                    "You feel bolder than ever.",
                                    "Your vision blurs as the smoke thickens."}) {
+        QVERIFY2(!parseCombatLine(QString::fromUtf8(line)).has_value(), line);
+    }
+}
+
+void TestCombatLines::affectLibraryTest()
+{
+    // ARCH.8: the lines added to complete the library, every one a real line from the powwow
+    // logs (archives/log-2005..2006) unless marked "powwow action": the user's own powwow
+    // actions, for lines no log had. docs/frontend-affect-library.md has the whole table.
+    const auto A = CombatKindEnum::AFFECT;
+    const auto UP = CombatPhaseEnum::UP;
+    const auto DOWN = CombatPhaseEnum::DOWN;
+    const auto RE = CombatPhaseEnum::REFRESH;
+    checkEvents({
+        // Cure disease, after "A warm feeling fills your body." (log-2006.03.06).
+        {"You feel cured.", A, DOWN, "you", "", "disease"},
+        {"The grip on your lungs recedes.", A, DOWN, "you", "", "smother"},
+        {"You feel warmer.", A, DOWN, "you", "", "chill touch"},
+        // Sleep spell landing: both lines come, one after the other.
+        {"The drowsiness completely overwhelms you.", A, UP, "you", "", "sleep"},
+        {"You feel very sleepy... zzzzzz", A, UP, "you", "", "sleep"},
+        {"You feel less tired.", A, DOWN, "you", "", "sleep"},
+        // After "The sage makes a fast gesture towards you." (log-2005.09.03).
+        {"You are paralysed!", A, UP, "you", "", "paralysis"},
+        {"You are paralyzed!", A, UP, "you", "", "paralysis"},
+        {"You can move again.", A, DOWN, "you", "", "paralysis"},
+        {"You begin to feel hungry.", A, UP, "you", "", "hunger"},
+        {"You are hungry.", A, RE, "you", "", "hunger"},
+        {"You begin to feel thirsty.", A, UP, "you", "", "thirst"},
+        {"You are thirsty.", A, RE, "you", "", "thirst"},
+        // Powwow action.
+        {"You feel aware of all that is foul and evil.", A, UP, "you", "", "detect evil"},
+        // Powwow action; one log line, in a fight, with nothing to say what it was.
+        {"You feel a strange taste in your mouth.", A, DOWN, "you", "", "antidote"},
+        // The twiddler's leftovers come off first, as for any line (the logs have
+        // "\You are hungry." and "|/-\You begin to feel thirsty." hundreds of times).
+        {"\\You are hungry.", A, RE, "you", "", "hunger"},
+        {"|/-\\You begin to feel thirsty.", A, UP, "you", "", "thirst"},
+        {"-\\|/You feel cured.", A, DOWN, "you", "", "disease"},
+    });
+
+    // Words that only look alike are no event.
+    for (const char *const line : {"You feel cured of your sins.",
+                                   "You are hungry for blood.",
+                                   "You can move again, said Gondrian.",
+                                   "You feel warmer than before."}) {
         QVERIFY2(!parseCombatLine(QString::fromUtf8(line)).has_value(), line);
     }
 }

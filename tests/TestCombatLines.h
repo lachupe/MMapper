@@ -55,6 +55,7 @@ private Q_SLOTS:
     static void unnamedCasterTest();
     static void fellTest();
     static void affectTest();
+    static void affectLibraryTest();
     static void harmfulConditionTest();
     static void woundTendedTest();
     static void notFix16Test();

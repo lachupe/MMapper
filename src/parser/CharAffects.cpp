@@ -288,6 +288,17 @@ bool CharAffectsTracker::receiveEvent(const CombatEvent &event, const int64_t no
     if (event.kind == CombatKindEnum::AFFECT && event.detail == g_woundName) {
         return receiveWoundLine(event.effect, now) || ended;
     }
+    if (event.kind == CombatKindEnum::FLEE && event.phase == CombatPhaseEnum::ATTEMPT
+        && event.text.startsWith(QStringLiteral("You flee head over heels"))) {
+        // Fleeing puts the player in panic (stat: "panic"); MUME says nothing else when it
+        // starts, and "You feel bolder." when it ends.
+        CombatEvent panic;
+        panic.kind = CombatKindEnum::AFFECT;
+        panic.phase = CombatPhaseEnum::UP;
+        panic.actor = event.actor;
+        panic.detail = QStringLiteral("panic");
+        return receiveEvent(panic, now);
+    }
     CombatPhaseEnum phase = event.phase;
     if (event.kind == CombatKindEnum::CONDITION) {
         if (!isLastingCondition(event.detail)) {

@@ -860,7 +860,7 @@ const AffectLine g_affectLines[] = {
     AFFECT_LINE(R"(^You feel less righteous\.$)", DOWN, "protection from evil"),
     // A watch room's line may have the room's key before it: "[xanscasoebb] Your awareness
     // decreases."
-    AFFECT_LINE(R"(^You feel aware of this place\.$)", UP, "watch room"),
+    AFFECT_LINE(R"(^You feel aware of this (?:place|room)\.$)", UP, "watch room"),
     AFFECT_LINE(R"(^(?:\[\w+\] )?Your awareness decreases\.$)", DOWN, "watch room"),
     AFFECT_LINE(R"(^The draught burns down your throat, and a fiery feeling fills your limbs\.$)",
                 UP,
@@ -896,6 +896,28 @@ const AffectLine g_affectLines[] = {
         "disorientation"),
     AFFECT_LINE(R"(^You feel less disoriented\.$)", DOWN, "disorientation"),
     AFFECT_LINE(R"(^You feel bolder\.$)", DOWN, "panic"),
+    // The rest of the library (docs/frontend-affect-library.md): lines from the powwow logs
+    // (archives 2005-2006) and the user's own powwow actions where no log had them.
+    AFFECT_LINE(R"(^You feel cured\.$)", DOWN, "disease"),
+    AFFECT_LINE(R"(^The grip on your lungs recedes\.$)", DOWN, "smother"),
+    AFFECT_LINE(R"(^You feel warmer\.$)", DOWN, "chill touch"),
+    AFFECT_LINE(R"(^(?:The drowsiness completely overwhelms you\.|You feel very sleepy\.\.\. zzzzzz)$)",
+                UP,
+                "sleep"),
+    AFFECT_LINE(R"(^You feel less tired\.$)", DOWN, "sleep"),
+    AFFECT_LINE(R"(^You are paraly[sz]ed!$)", UP, "paralysis"),
+    AFFECT_LINE(R"(^You can move again\.$)", DOWN, "paralysis"),
+    // Hunger and thirst: stat lists them. The first line starts it, the second repeats while it
+    // lasts (a refresh, so the repeat does not restart the clock). Nothing says it ended: eating
+    // or drinking says "You are full." for both.
+    AFFECT_LINE(R"(^You begin to feel hungry\.$)", UP, "hunger"),
+    AFFECT_LINE(R"(^You are hungry\.$)", REFRESH, "hunger"),
+    AFFECT_LINE(R"(^You begin to feel thirsty\.$)", UP, "thirst"),
+    AFFECT_LINE(R"(^You are thirsty\.$)", REFRESH, "thirst"),
+    // The user's powwow actions; no log line (detect evil, antidote). Detect evil's own down line
+    // is the watch room's "Your awareness decreases.", so it is not told apart.
+    AFFECT_LINE(R"(^You feel aware of all that is foul and evil\.$)", UP, "detect evil"),
+    AFFECT_LINE(R"(^You feel a strange taste in your mouth\.$)", DOWN, "antidote"),
     // Heals: cure light, cure serious, cure critic, heal, a pale blue stone, and on others.
     AFFECT_LINE(R"(^Your scratches and bruises disappear\.$)", UP, "heal"),
     AFFECT_LINE(R"(^You begin to see scars fade away and a feeling of health comes over you\.$)",
