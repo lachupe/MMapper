@@ -666,11 +666,12 @@ void TradeLinesTracker::markOwnLine(const QString &line)
 /// the pieces; otherwise the list stays as it was read.
 void readPieces(ShopList &list)
 {
-    bool numeric = false;
-    const int64_t wanted = list.query.trimmed().toLongLong(&numeric);
-    if (!numeric || list.rows.size() < 2 || list.rows.front().number != wanted) {
+    // By its shape, not by the query (the commands MMapper remembers can drift from the replies): a header row that ends in
+    // a colon, then rows that are all "(condition, age) for price".
+    if (list.rows.size() < 2 || !list.rows.front().name.trimmed().endsWith(QLatin1Char(':'))) {
         return;
     }
+    const int64_t wanted = list.rows.front().number;
     static const QRegularExpression pieceText{
         QStringLiteral(R"(^\(([^()]*)\)\s*(?:for\s+(.+?))?\.?$)")};
     std::vector<ShopPiece> pieces;
