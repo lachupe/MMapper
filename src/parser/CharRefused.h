@@ -3,6 +3,7 @@
 // Copyright (C) 2026 The MMapper Authors
 
 #include "../global/macros.h"
+#include "CombatLines.h"
 #include "ContainerLines.h"
 
 #include <optional>
@@ -13,22 +14,21 @@
 /// A command of the player's that MUME refused, or answered "already" (MMapper.Char.Refused).
 ///
 /// MUME says no in prose, one sentence per reason, and the sentence seldom names the command.
-/// The moves and attacks it refuses are MMapper.Combat.Event `refused` (CombatLines.cpp:
-/// g_refusals, g_rescueRefusals, g_assistRefused, g_backstabRefusals, g_castRefused,
-/// g_castFraming), the answers to `order` are MMapper.Char.Followers `reply`, a refused practice
-/// is MMapper.Guild.Practised, and a refusal about a chest is MMapper.Room.Container. This is
-/// the rest: the sentences those readers leave alone, so that no line is two events. The one
-/// exception is a ride refused ("Oops! You cannot go there riding!"), which is both a
-/// Combat.Event `refused` `cannot-ride` and, here, `noride` with the side the move went.
-///
-/// The table is mume3d's docs/action-rules.md section 1 (the powwow logs of 2005-2006, cited
-/// row by row in CharRefused.cpp); a line is matched whole. None was seen live.
+/// This is every refusal MMapper reads, in one shape, so that a frontend learns refusals from one
+/// package and never from the text: the table in CharRefused.cpp (mume3d's docs/action-rules.md
+/// section 1, the powwow logs of 2005-2006, cited row by row; matched whole, none seen live), a
+/// door's refusals (refusedFromDoorReply()), and the refusals the fight reader reads
+/// (refusedFromCombat(): MMapper.Combat.Event `refused`, and `cast`, `rescue`, `assist`,
+/// `backstab` with phase `refused`). A sentence that another package also tells -- those
+/// Combat.Events, a follow, protect or order answer in MMapper.Char.Followers, a practice refused
+/// in MMapper.Guild.Practised -- is sent there too; one line is never two Char.Refused.
 struct NODISCARD CharRefused final
 {
     /// The frontend's action the sentence belongs to: move, flee, rescue, assist, kill, bash,
     /// kick, backstab, cast, disengage, stand, rest, sleep, wake, ride, lead, dismount, order,
-    /// camp, track, time, look, charge, butcher, whet, open, close, lock, unlock, pick. Empty
-    /// when the sentence answers several commands and does not say which.
+    /// camp, track, time, look, charge, butcher, whet, open, close, lock, unlock, pick, follow,
+    /// protect, practise, shoot. Empty when the sentence answers several commands and does not
+    /// say which.
     QString action;
     /// Why, as a stable code; see refusedReasons().
     QString reason;
@@ -44,6 +44,17 @@ struct NODISCARD CharRefused final
 /// The refusal `line` is (colour removed, matched whole), or nullopt. `dir` is left empty: the
 /// line never says it.
 NODISCARD std::optional<CharRefused> parseRefusedLine(const QString &line);
+
+/// The refusal a fight line is (MMapper.Combat.Event `refused`, or `cast`, `rescue`, `assist`,
+/// `backstab` with phase `refused`), or nullopt. The ride refused (`cannot-ride`) is nullopt here:
+/// parseRefusedLine() has it as `noride`.
+NODISCARD std::optional<CharRefused> refusedFromCombat(const CombatEvent &event);
+
+/// The one Char.Refused a line of MUME's is, given what the fight reader made of it (`combat`,
+/// parseCombatLine()): parseRefusedLine()'s reading, else refusedFromCombat()'s, else nullopt.
+/// What MumeXmlParser publishes for each line, the door replies aside.
+NODISCARD std::optional<CharRefused> refusalOfLine(const QString &line,
+                                                   const std::optional<CombatEvent> &combat);
 
 /// The refusal a door command's answer is ("It seems to be locked." after `open exit e`), or
 /// nullopt when the answer is no refusal ("Ok.", "*click*").

@@ -124,6 +124,10 @@ struct NODISCARD XmlElement final
     /// came from and for MOVE_OUT where they went, read out of the line; for MOVEMENT it is
     /// MUME's own `dir`. Filled in when the element completes; see completeMovementElement().
     std::string direction;
+    /// For MOVE_IN and MOVE_OUT only: the mover's verb as the line has it -- "leaves", "has
+    /// arrived", "arrives", or another third-person verb followed by the way ("swims", "flies") --
+    /// or empty when the line has another shape. Filled in by completeMovementElement().
+    QString verb;
 };
 
 NODISCARD XmlTagEnum toXmlTag(std::string_view name);
@@ -152,20 +156,27 @@ NODISCARD std::string deriveMovementDirection(const XmlElement &element);
 /// shape.
 NODISCARD QString readMoverName(const XmlElement &element);
 
+/// The verb of a MOVE_IN or MOVE_OUT line (see XmlElement::verb), read with readMoverName()'s
+/// pattern. Empty for every other tag and for a line of another shape.
+NODISCARD QString readMoverVerb(const XmlElement &element);
+
 /// Finishes a movement element once it is complete, for a consumer that cannot match an unnamed
 /// line to anyone: where MUME did not tag the one who moves -- "The willow leaves north." has no
 /// markup at all -- a CHARACTER child holding readMoverName() is put first among the children, so
 /// that every move_in and move_out a name can be read from names somebody the same way. A name
-/// MUME did tag is left exactly as MUME sent it. Then fills `direction` (deriveMovementDirection()).
+/// MUME did tag is left exactly as MUME sent it. Then fills `verb` (readMoverVerb()) and
+/// `direction` (deriveMovementDirection()).
 /// Every other tag only has `direction` set, which is empty for them.
 void completeMovementElement(XmlElement &element);
 
 /// A MOVE_IN or MOVE_OUT element made from a plain line, for a MUME that sent the line with no
 /// movement markup round it (mume3d's live tests of 2026-10-03: 51 such lines, not one
 /// <move_in>): "A townsman leaves east.", "An old man has arrived from the north.", "A rat arrives
-/// from below." Completed as MUME's own would be (completeMovementElement()). Only the two plain
-/// shapes, "<who> leaves <way>[ ...]." and "<who> has arrived|arrives from <the way|above|below>[ ...].",
-/// and only a line of 120 characters or less; anything else is std::nullopt.
+/// from below.", "A trout swims west." Completed as MUME's own would be (completeMovementElement()).
+/// Only the plain shapes "<who> leaves <way>[ ...].", "<who> <beast's verb> <way>[ ...]." (flies,
+/// swims, rides, wades, climbs, crawls, slithers, flutters, scurries, hops) and "<who> has
+/// arrived|arrives from <the way|above|below>[ ...].", of 120 characters or less and with no
+/// quote in them (speech); anything else is std::nullopt.
 NODISCARD std::optional<XmlElement> plainMovementElement(const QString &line);
 
 /// Parses the attributes out of a tag body, i.e. what stood between < and > with the tag

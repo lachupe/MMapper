@@ -2832,6 +2832,236 @@ void TestFrontend::charRefusedTest()
     QVERIFY(cache.messages().empty());
 }
 
+void TestFrontend::charRefusedEveryRefusalTest()
+{
+    // Every refusal mume3d's action rules (data/ui/action_rules.json, the rows that are not
+    // `available`) know MUME's line of, fed as MumeXmlParser feeds a line: the fight reader
+    // first, then refusalOfLine(). Each is one MMapper.Char.Refused, so that the client learns
+    // refusals from the package alone (ARCH.8 part 2). {line, action, reason, target}
+    struct NODISCARD Row final
+    {
+        const char *line;
+        const char *action;
+        const char *reason;
+        const char *target;
+    };
+    const Row rows[] = {
+        // Already so.
+        {"You are already attempting to flee!", "flee", "already", ""},
+        {"You will attempt to flee!", "flee", "queued", ""},
+        {"Do you not consider fighting as standing?", "stand", "already", ""},
+        {"You are already standing.", "stand", "already", ""},
+        {"You are already sound asleep.", "sleep", "already", ""},
+        {"You are already awake...", "wake", "already", ""},
+        {"You are already resting.", "rest", "already", ""},
+        {"You are already riding.", "ride", "already", ""},
+        {"You are not riding.", "dismount", "already", ""},
+        {"A pony is already following you!", "lead", "already", "A pony"},
+        {"Bash someone already bashed? Aren't we funny?", "bash", "already", ""},
+        {"You're already fighting!", "", "already", ""},
+        {"But your crossbow is already loaded!", "shoot", "already", "crossbow"},
+        // Helpless.
+        {"You are stunned and cannot realize what is going on!", "", "helpless", ""},
+        {"You are incapacitated and will slowly die, if not aided.", "", "helpless", ""},
+        {"You are mortally wounded and will die soon if not aided.", "", "helpless", ""},
+        {"You are dead! Sorry...", "", "helpless", ""},
+        // The position, the fight (Combat.Event `refused` too).
+        {"In your dreams, or what?", "", "sleeping", ""},
+        {"Nah... You feel too relaxed to do that..", "", "resting", ""},
+        {"Maybe you should get on your feet first?", "", "sitting", ""},
+        {"No way! You are fighting for your life!", "", "fighting", ""},
+        {"You can't do that while fighting.", "", "fighting", ""},
+        {"You are too exhausted.", "", "exhausted", ""},
+        {"You are too exhausted to ride.", "", "exhausted", ""},
+        {"You are not fighting.", "", "not-fighting", ""},
+        {"Disengage what? You must be fighting!", "disengage", "not-fighting", ""},
+        {"Your opponent won't stop this fight just like that.", "disengage", "fighting", ""},
+        {"You can't do this sitting!", "cast", "position", ""},
+        {"You can't concentrate enough while resting.", "cast", "resting", ""},
+        {"Rest while fighting? Are you MAD?", "rest", "fighting", ""},
+        {"Sleep while fighting? Are you MAD?", "sleep", "fighting", ""},
+        {"You can't wake up!", "wake", "slept", ""},
+        {"You have to stand in order to practice anything.", "practise", "position", ""},
+        // A move (always sent by the client; a ride refused is learnt).
+        {"A pack horse (my) is too exhausted.", "move", "mount-exhausted", "A pack horse"},
+        {"Oops! You cannot go there riding!", "move", "noride", ""},
+        {"You cannot ride there.", "move", "noride", ""},
+        {"OOPS! You cannot go there while riding!", "move", "noride", ""},
+        {"Alas, you cannot go that way...", "move", "no-exit", ""},
+        {"The door seems to be closed.", "move", "door-closed", "door"},
+        {"The ascent is too steep, you need to climb to go there.", "move", "climb", ""},
+        {"The descent is too steep, you need to climb to go there.", "move", "climb", ""},
+        {"You failed to climb there and fall down, hurting yourself.", "move", "climb-failed", ""},
+        {"You need to swim to go there.", "move", "swim", ""},
+        {"You failed swimming there.", "move", "swim-failed", ""},
+        {"You can't go into deep water!", "move", "deep-water", ""},
+        {"You are unable to manoeuvre past a huge stone giant.",
+         "move",
+         "guarded",
+         "a huge stone giant"},
+        {"ZBLAM! A pony doesn't want you riding him anymore.", "move", "thrown", "A pony"},
+        {"You don't control your mount!", "move", "no-control", ""},
+        // Attacks and their kin.
+        {"Who do you want to assist?", "assist", "no-target", ""},
+        {"But nobody is fighting him!", "assist", "not-fighting", ""},
+        {"Alas! There is no fighting space left to reach him!", "", "no-space", ""},
+        {"You are too afraid.", "", "afraid", ""},
+        {"But nobody is fighting him?", "rescue", "not-fighting", ""},
+        {"What about fleeing instead?", "rescue", "self", ""},
+        {"Who do you want to rescue?", "rescue", "no-target", ""},
+        {"Alas! You have no fighting space left!", "rescue", "no-space", ""},
+        {"They aren't here.", "", "no-target", ""},
+        {"Nobody here by that name.", "", "no-target", ""},
+        {"You don't see any orc here.", "", "no-target", "orc"},
+        {"Alas! You failed to reach him through the melee.", "", "melee", ""},
+        {"Alas! There was no clear line of sight to her!", "", "no-line-of-sight", ""},
+        {"Alas! The melee is too dense to target her safely!", "kill", "no-space", ""},
+        {"Bash what or whom?", "bash", "no-target", ""},
+        {"Bash whom or what?", "bash", "no-target", ""},
+        {"You cannot bash someone you aren't fighting!", "bash", "not-fighting", ""},
+        {"Sorry, you can't do that, you don't have any idea about it!", "", "no-skill", ""},
+        {"Maybe learning how to bash would help?", "bash", "no-skill", ""},
+        {"Perhaps you should learn the art of backstabbing...", "backstab", "no-skill", ""},
+        {"Try learning some spells first!", "cast", "no-skill", ""},
+        {"You need a shield to do that successfully.", "bash", "no-item", "shield"},
+        {"You cannot kick someone you aren't fighting!", "kick", "not-fighting", ""},
+        {"You can't backstab a fighting person, too alert!", "backstab", "fighting", ""},
+        {"For a successful backstab you need to be wielding a suitable weapon.",
+         "backstab",
+         "no-item",
+         "weapon"},
+        // Spells.
+        {"You can't do that under water!", "", "water", ""},
+        {"Alas, not enough mana flows through you...", "cast", "mana", ""},
+        {"Impossible! You can't concentrate enough.", "cast", "concentration", ""},
+        {"Alas, your lips are sealed!", "cast", "silenced", ""},
+        {"What should the spell be cast upon?", "cast", "no-target", ""},
+        {"You are too busy right now!", "", "busy", ""},
+        // Mounts, places, tools.
+        {"No one here by that name.", "", "no-target", ""},
+        {"A pony doesn't want to follow you!", "lead", "unwilling", "A pony"},
+        {"Lead what?", "lead", "no-target", ""},
+        {"It is pitch black...", "look", "dark", ""},
+        {"You cannot guess the time indoors.", "time", "not-here", ""},
+        {"You cannot camp in the city.", "camp", "not-here", ""},
+        {"You cannot camp while riding.", "camp", "riding", ""},
+        {"Tracking in water is not possible.", "track", "water", ""},
+        {"You fail to find tracks on the stone floor.", "track", "not-here", ""},
+        {"Sorry, but you cannot do that here!", "", "not-here", ""},
+        {"You are unable to leave this place.", "", "not-here", ""},
+        {"It seems too heavy to be bashed down...", "", "door-heavy", ""},
+        {"The ice layer is too thick and prevents you from reaching it.", "open", "door-iced", ""},
+        {"You need a lance and a mount to charge.", "charge", "no-item", "lance"},
+        {"You need a knife to do that.", "butcher", "no-item", "knife"},
+        {"You need a whetstone in your equipment.", "whet", "no-item", "whetstone"},
+        // Orders, follow, protect.
+        {"You have no loyal subjects here.", "order", "no-target", ""},
+        {"No one responds to your commanding voice.", "order", "no-target", ""},
+        {"An old man doesn't want you to follow him!", "follow", "unwilling", "An old man"},
+        {"Zmej doesn't want you to follow him.", "follow", "sent-away", "Zmej"},
+        {"Sorry, but following in 'loops' is not allowed.", "follow", "loop", ""},
+        {"You can only protect those in your group.", "protect", "not-grouped", ""},
+    };
+    const QStringList reasons = refusedReasons();
+    for (const Row &row : rows) {
+        const QString line = QString::fromUtf8(row.line);
+        const std::optional<CharRefused> refused = refusalOfLine(line, parseCombatLine(line));
+        if (!refused.has_value()) {
+            QFAIL(qPrintable(QStringLiteral("no Char.Refused for: ") + line));
+        }
+        QCOMPARE(refused->action, QString::fromUtf8(row.action));
+        QCOMPARE(refused->reason, QString::fromUtf8(row.reason));
+        QCOMPARE(refused->target, QString::fromUtf8(row.target));
+        QCOMPARE(refused->text, line);
+        QVERIFY2(reasons.contains(refused->reason), qPrintable(refused->reason));
+    }
+
+    // The package, for one the fight reader read: a refused cast.
+    const QString mana = QStringLiteral("Alas, not enough mana flows through you...");
+    QCOMPARE(frontend_messages::makeCharRefused(*refusalOfLine(mana, parseCombatLine(mana)))
+                 .toRawBytes(),
+             QByteArray(R"(MMapper.Char.Refused {"action":"cast","reason":"mana",)"
+                        R"("text":"Alas, not enough mana flows through you..."})"));
+    // A fight line that is no refusal, and an ordinary line, are none.
+    for (const char *const line : {"You flee head over heels.",
+                                   "Heroically you come to Eve's rescue!",
+                                   "You assist Ugúlukk (lead).",
+                                   "You stand up.",
+                                   "Ok."}) {
+        const QString text = QString::fromUtf8(line);
+        QVERIFY2(!refusalOfLine(text, parseCombatLine(text)).has_value(), line);
+    }
+}
+
+void TestFrontend::movementVerbTest()
+{
+    // The mover's verb travels beside the direction, for a marked-up line and a plain one.
+    const auto verbOf = [](const char *const line) -> QString {
+        const auto made = plainMovementElement(QString::fromUtf8(line));
+        return made.has_value()
+                   ? payloadOf(frontend_messages::makeXmlElement(*made))["verb"].toString()
+                   : QStringLiteral("<none>");
+    };
+    QCOMPARE(verbOf("A townsman leaves east."), QStringLiteral("leaves"));
+    QCOMPARE(verbOf("An old man has arrived from the north."), QStringLiteral("has arrived"));
+    QCOMPARE(verbOf("A bat arrives from above."), QStringLiteral("arrives"));
+    // mume3d's transcript reader's verbs (RoomOccupantsHints.LEAVING_VERBS), now MMapper's.
+    for (const char *const verb : {"flies",
+                                   "swims",
+                                   "rides",
+                                   "wades",
+                                   "climbs",
+                                   "crawls",
+                                   "slithers",
+                                   "flutters",
+                                   "scurries",
+                                   "hops"}) {
+        const QString line = QStringLiteral("A trout %1 west.").arg(QString::fromUtf8(verb));
+        const auto made = plainMovementElement(line);
+        QVERIFY2(made.has_value(), qPrintable(line));
+        const QJsonObject obj = payloadOf(frontend_messages::makeXmlElement(*made));
+        QCOMPARE(obj["tag"].toString(), QStringLiteral("move_out"));
+        QCOMPARE(obj["verb"].toString(), QString::fromUtf8(verb));
+        QCOMPARE(obj["direction"].toString(), QStringLiteral("west"));
+        QCOMPARE(obj["children"].toArray()[0].toObject()["text"].toString(),
+                 QStringLiteral("A trout"));
+    }
+    // Speech and the player's own lines are never a move; nor a verb not on the list, plain.
+    QCOMPARE(verbOf("Bob says 'I swim north.'"), QStringLiteral("<none>"));
+    QCOMPARE(verbOf("Bob says \"Kohrn leaves north.\""), QStringLiteral("<none>"));
+    QCOMPARE(verbOf("The road winds north."), QStringLiteral("<none>"));
+
+    // MUME's own markup, the mover tagged: the verb is read off the line all the same.
+    XmlElement stolb;
+    stolb.tag = XmlTagEnum::PLAYER;
+    stolb.name = "player";
+    stolb.text = QStringLiteral("*Stolb the Orc*");
+    XmlElement departure;
+    departure.tag = XmlTagEnum::MOVE_OUT;
+    departure.name = "move_out";
+    departure.text = QStringLiteral("*Stolb the Orc* [stolb] gallops south.");
+    departure.children.emplace_back(stolb);
+    completeMovementElement(departure);
+    const QJsonObject obj = payloadOf(frontend_messages::makeXmlElement(departure));
+    QCOMPARE(obj["verb"].toString(), QStringLiteral("gallops"));
+    QCOMPARE(obj["direction"].toString(), QStringLiteral("south"));
+    QCOMPARE(obj["children"].toArray().size(), 1);
+    // A line that names no way keeps its verb; a blow, which is no move, has none.
+    XmlElement sigh;
+    sigh.tag = XmlTagEnum::MOVE_OUT;
+    sigh.name = "move_out";
+    sigh.text = QStringLiteral("An old man leaves with a sigh.");
+    completeMovementElement(sigh);
+    QCOMPARE(sigh.verb, QStringLiteral("leaves"));
+    QVERIFY(sigh.direction.empty());
+    XmlElement hit;
+    hit.tag = XmlTagEnum::HIT;
+    hit.text = QStringLiteral("A dirty uruk leaves you bleeding.");
+    completeMovementElement(hit);
+    QVERIFY(hit.verb.isEmpty());
+    QVERIFY(!payloadOf(frontend_messages::makeXmlElement(hit)).contains("verb"));
+}
+
 void TestFrontend::roomLookTest()
 {
     QCOMPARE(GmcpMessage::fromRawBytes(QByteArray{"MMapper.Room.Look"}).getType(),
