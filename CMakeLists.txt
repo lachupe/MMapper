@@ -194,6 +194,8 @@ else()
 endif()
 
 add_subdirectory(external/glm)
+# GLM 1.0 refuses the gtx/ headers (gtx/norm.hpp, ...) unless asked for; 0.9.9 did not
+add_compile_definitions(GLM_ENABLE_EXPERIMENTAL)
 add_subdirectory(external/immer)
 
 # Extract git branch and revision
