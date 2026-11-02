@@ -1379,6 +1379,8 @@ void TestTradeLines::quietCommandAllowedTest()
                                    "eq all",
                                    "value sword",
                                    "VALUE 2.helm",
+                                   "show 549",
+                                   "show 2.helm",
                                    "i  "}) {
         QVERIFY2(allowed(line), line);
     }

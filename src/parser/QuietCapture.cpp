@@ -40,7 +40,10 @@ struct NODISCARD QuietWord final
 /// `value <item>` (mume3d FEAT.32, 2026-10-17): the shops' help (sell.txt, value.txt) says it
 /// "lets you know how much a shopkeeper would pay for a certain item without actually selling
 /// it", so it reads. The help gives no shorter form, so only the whole word is let through.
-constexpr std::array<QuietWord, 14> g_quietWords{{
+/// `show <number>` (mume3d FEAT.183, 2026-11-02): a shop's `show` tells what one item or piece looks like and what the
+/// keeper would want for it (live at the King's Armoury: "They are a fine pair of rigid leather gloves ... It would cost you
+/// one silver and eighty-nine copper."), and changes nothing. Only the whole word is let through.
+constexpr std::array<QuietWord, 15> g_quietWords{{
     {"equipment", 2, true},
     {"examine", 3, true},
     {"exits", 2, false},
@@ -50,6 +53,7 @@ constexpr std::array<QuietWord, 14> g_quietWords{{
     {"look", 1, true},
     {"practice", 2, false},
     {"score", 2, false},
+    {"show", 4, true},
     {"stat", 4, false},
     {"time", 2, false},
     {"trophy", 3, true},
