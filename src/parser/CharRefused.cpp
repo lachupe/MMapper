@@ -3,6 +3,7 @@
 
 #include "CharRefused.h"
 
+#include "CombatLines.h"
 #include "LineText.h"
 
 #include <QRegularExpression>
@@ -179,6 +180,31 @@ const RefusedRow g_rows[] = {
     row(R"(^Sorry, but you cannot do that here!$)", "", "not-here"),
     // M row 153 (n=4): a place that holds the character; in none of his logs.
     row(R"(^You are unable to leave this place\.$)", "", "not-here"),
+
+    // -- helpless: what MUME answers any command with while the character cannot act ----------
+    // mume3d's action rules (helpless.*); the condition lines are also MMapper.Combat.Event
+    // `condition`, "You are dead!" its `death`, and the stunned line its `self` `stunned`.
+    row(R"(^You are stunned and cannot realize what is going on!$)", "", "helpless"),
+    row(R"(^You are incapacitated and will slowly die, if not aided\.$)", "", "helpless"),
+    row(R"(^You are mortally wounded and will die soon if not aided\.$)", "", "helpless"),
+    row(R"(^You are dead!\s+Sorry\.\.\.$)", "", "helpless"),
+
+    // -- follow, protect, order: also MMapper.Char.Followers lines that change nothing --------
+    // CharFollowers.cpp g_followDenied: "An old man doesn't want you to follow him!" (`follow`
+    // refused, log-2006.02.03-00.39.44.txt:109205) and "Zmej doesn't want you to follow him."
+    // (sent away, "You stop following Zmej." next; log-2005.09.05-19.23.16.txt:42094).
+    row(R"(^(?<t>.+?) doesn't want you to follow (?:him|her|it|them)!$)", "follow", "unwilling"),
+    row(R"(^(?<t>.+?) doesn't want you to follow (?:him|her|it|them)\.$)", "follow", "sent-away"),
+    // 16; log-2005.09.05-19.23.16.txt:66214.
+    row(R"(^Sorry, but following in 'loops' is not allowed\.$)", "follow", "loop"),
+    // 3; log-2005.12.24-02.05.16.txt:130436.
+    row(R"(^You can only protect those in your group\.$)", "protect", "not-grouped"),
+    // MMapper.Char.Followers `reply` `none-here`; log-2005.11.07-05.28.32.txt:16600.
+    row(R"(^You have no loyal subjects here\.$)", "order", "no-target"),
+    // MMapper.Guild.Practised refused (TradeLines.cpp g_practiseRefused, elvenrunes).
+    row(R"(^You have to stand in order to practi[cs]e anything\.$)", "practise", "position"),
+    // mume3d's action rules (door.no_bash): a door that will not be bashed down. No other reader.
+    row(R"(^It seems too heavy to be bashed down\.\.\.$)", "", "door-heavy"),
 };
 
 NODISCARD QString actionWord(const ContainerActionEnum action)
@@ -220,6 +246,132 @@ std::optional<CharRefused> parseRefusedLine(const QString &raw)
         return refused;
     }
     return std::nullopt;
+}
+
+std::optional<CharRefused> refusedFromCombat(const CombatEvent &event)
+{
+    // {combat detail, action, reason}; a reason of nullptr keeps the detail.
+    struct NODISCARD Mapping final
+    {
+        const char *detail;
+        const char *action;
+        const char *reason;
+    };
+    // MMapper.Combat.Event `refused` (CombatLines.cpp g_refusals). A sentence that answers
+    // several commands has no action: "No way! You are fighting for your life!" refuses a move,
+    // a ride, a lead and an assist alike. The ride refused (cannot-ride) is not here: it is a
+    // row of the table above, with its side.
+    static const Mapping refusedKind[] = {
+        {"fighting", "", nullptr},
+        {"exhausted", "", nullptr},
+        {"resting", "", nullptr},
+        {"sitting", "", nullptr},
+        {"sleeping", "", nullptr},
+        {"no-target", "", nullptr},
+        {"no-line-of-sight", "", nullptr},
+        {"no-space", "", nullptr},
+        {"melee", "", nullptr},
+        {"victim-gone", "", nullptr},
+        {"not-fighting", "", nullptr},
+        {"already-fighting", "", "already"},
+        {"while-fighting", "", "fighting"},
+        {"already-standing", "stand", "already"},
+        {"nobody-fighting-you", "disengage", "not-fighting"},
+        {"already-loaded", "shoot", "already"},
+        {"mount-exhausted", "move", nullptr},
+        {"mount-refuses", "move", nullptr},
+        {"thrown", "move", nullptr},
+        {"door-closed", "move", nullptr},
+        {"no-exit", "move", nullptr},
+        {"climb", "move", nullptr},
+        {"climb-failed", "move", nullptr},
+        {"swim", "move", nullptr},
+        {"swim-failed", "move", nullptr},
+        {"deep-water", "move", nullptr},
+        {"ice", "move", nullptr},
+        {"boat", "move", nullptr},
+    };
+    // `cast` `refused` (g_castRefused, g_castFraming); an empty detail is "Impossible! You can't
+    // concentrate enough.", which MUME does not explain.
+    static const Mapping castKind[] = {
+        {"resting", "cast", nullptr},
+        {"mana", "cast", nullptr},
+        {"no-target", "cast", nullptr},
+        {"no-spells", "cast", "no-skill"},
+        {"", "cast", "concentration"},
+    };
+    // `rescue`, `assist` and `backstab` `refused`.
+    static const Mapping rescueKind[] = {
+        {"no-target", "rescue", nullptr},
+        {"not-fighting", "rescue", nullptr},
+    };
+    static const Mapping assistKind[] = {
+        {"no-target", "assist", nullptr},
+    };
+    static const Mapping backstabKind[] = {
+        {"fighting", "backstab", nullptr},
+        {"no-target", "backstab", nullptr},
+        {"weapon", "backstab", "no-item"},
+    };
+
+    const auto find = [&event](const auto &table) -> const Mapping * {
+        for (const Mapping &m : table) {
+            if (event.detail == QLatin1String(m.detail)) {
+                return &m;
+            }
+        }
+        return nullptr;
+    };
+    const Mapping *found = nullptr;
+    if (event.kind == CombatKindEnum::REFUSED) {
+        found = find(refusedKind);
+    } else if (event.phase == CombatPhaseEnum::REFUSED) {
+        switch (event.kind) {
+        case CombatKindEnum::CAST:
+            found = find(castKind);
+            break;
+        case CombatKindEnum::RESCUE:
+            found = find(rescueKind);
+            break;
+        case CombatKindEnum::ASSIST:
+            found = find(assistKind);
+            break;
+        case CombatKindEnum::BACKSTAB:
+            found = find(backstabKind);
+            break;
+        case CombatKindEnum::BLOW:
+        case CombatKindEnum::FLEE:
+        case CombatKindEnum::REFUSED:
+        case CombatKindEnum::BASH:
+        case CombatKindEnum::CONDITION:
+        case CombatKindEnum::DEATH:
+        case CombatKindEnum::SELF:
+        case CombatKindEnum::AFFECT:
+            break;
+        }
+    }
+    if (found == nullptr) {
+        return std::nullopt;
+    }
+    CharRefused refused;
+    refused.action = QString::fromLatin1(found->action);
+    refused.reason = found->reason != nullptr ? QString::fromLatin1(found->reason) : event.detail;
+    refused.text = event.text;
+    refused.target = event.target;
+    if (event.kind == CombatKindEnum::BACKSTAB && event.detail == QStringLiteral("weapon")) {
+        refused.target = QStringLiteral("weapon");
+    }
+    return refused;
+}
+
+std::optional<CharRefused> refusalOfLine(const QString &line,
+                                         const std::optional<CombatEvent> &combat)
+{
+    // The table first: a ride refused is a Combat.Event too, and the table's row is `noride`.
+    if (auto refused = parseRefusedLine(line)) {
+        return refused;
+    }
+    return combat.has_value() ? refusedFromCombat(*combat) : std::nullopt;
 }
 
 std::optional<CharRefused> refusedFromDoorReply(const DoorReply &reply)
@@ -306,7 +458,30 @@ QStringList refusedReasons()
             reasons.append(reason);
         }
     }
-    for (const char *const reason : {"door-locked", "unknown"}) {
+    for (const char *const reason : {"door-locked",
+                                     "unknown",
+                                     // refusedFromCombat()
+                                     "exhausted",
+                                     "resting",
+                                     "sitting",
+                                     "sleeping",
+                                     "no-line-of-sight",
+                                     "melee",
+                                     "victim-gone",
+                                     "mount-exhausted",
+                                     "mount-refuses",
+                                     "thrown",
+                                     "door-closed",
+                                     "no-exit",
+                                     "climb",
+                                     "climb-failed",
+                                     "swim",
+                                     "swim-failed",
+                                     "deep-water",
+                                     "ice",
+                                     "boat",
+                                     "mana",
+                                     "concentration"}) {
         if (!reasons.contains(QLatin1String(reason))) {
             reasons.append(QString::fromLatin1(reason));
         }

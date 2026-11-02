@@ -373,7 +373,10 @@ void MumeXmlParser::parse(const TelnetData &data, const bool isGoAhead)
         // the user sees it, colour removed but not otherwise normalised, so that a name keeps
         // the accents Room.Chars gives it and the two can be matched.
         const QString &plain = chunk.plain;
-        if (auto combat = parseCombatLine(plain)) {
+        // A fight line that is a refusal is MMapper.Char.Refused as well (below), so that a
+        // frontend learns every refusal from that one package.
+        const std::optional<CombatEvent> combatLine = parseCombatLine(plain);
+        if (auto combat = combatLine) {
             m_ownCastTracker.attribute(*combat);
             m_ownCastTracker.receiveEvent(*combat);
             m_observer.observeSentToUserCombat(*combat);
@@ -439,7 +442,7 @@ void MumeXmlParser::parse(const TelnetData &data, const bool isGoAhead)
                 if (const auto consider = m_considerReader.receiveLine(plain)) {
                     m_observer.observeCharConsider(*consider);
                 }
-                if (auto refused = parseRefusedLine(plain)) {
+                if (auto refused = refusalOfLine(plain, combatLine)) {
                     if (refused->action == QStringLiteral("move")) {
                         refused->dir = moveDir;
                     }

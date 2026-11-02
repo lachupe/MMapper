@@ -64,6 +64,11 @@ NODISCARD QJsonObject toJson(const XmlElement &element)
     if (!element.direction.empty()) {
         obj["direction"] = mmqt::toQStringUtf8(element.direction);
     }
+    // The mover's verb as the line has it ("leaves", "swims", "has arrived"), for move_in and
+    // move_out; omitted when the line has another shape.
+    if (!element.verb.isEmpty()) {
+        obj["verb"] = element.verb;
+    }
     return obj;
 }
 

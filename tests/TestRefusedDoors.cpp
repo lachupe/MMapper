@@ -159,7 +159,8 @@ struct NODISCARD NotRefusedCase final
     const char *source;
 };
 
-// The refusals another reader already publishes: kept as they are, and not sent twice.
+// The refusals the fight reader publishes: not in the table, and a Char.Refused through
+// refusedFromCombat() instead (refusalOfLine()), so that each line is one Char.Refused.
 const NotRefusedCase g_notRefused[] = {
     // MMapper.Combat.Event kind refused (CombatLines.cpp g_refusals)
     {"No way! You are fighting for your life!", "Combat.Event refused fighting",
@@ -237,13 +238,9 @@ const NotRefusedCase g_notRefused[] = {
 
 // The same for the readers TestRefusedDoors does not link, and lines that refuse nothing.
 const NotRefusedCase g_notRefusedElsewhere[] = {
-    {"You have no loyal subjects here.", "Char.Followers reply none-here",
-     "log-2005.11.07-05.28.32.txt:16600"},
     {"You failed to control a mother eagle (one).", "Char.Followers reply failed",
      "log-2005.11.07-15.57.10.txt:38029"},
     {"Order who to do what?", "Char.Followers reply syntax", "log-2005.11.03-21.45.23.txt:2566"},
-    {"You have to stand in order to practice anything.", "Guild.Practised refused",
-     "log-2005.10.08-15.55.31.txt:9929"},
     // Door answers that mean nothing without the command: refusedFromDoorReply() has them, and
     // a chest's are MMapper.Room.Container.
     {"It seems to be locked.", "paired", "log-2005.09.05-19.23.16.txt:32897"},
@@ -311,7 +308,8 @@ void TestRefusedDoors::refusedLinesTest()
         QVERIFY2(refused->dir.isEmpty(), c.line);
         QVERIFY2(QByteArray{c.source}.size() > 0, c.line);
 
-        // No line is two events, a ride refused apart: what MMapper.Combat.Event has stays there.
+        // A table row is no fight line, a ride refused apart: the fight reader's refusals reach
+        // Char.Refused through refusedFromCombat(), not through the table.
         const auto combat = parseCombatLine(line);
         QVERIFY2(combat.has_value() == c.alsoCombat, c.line);
         if (c.alsoCombat) {
@@ -337,6 +335,14 @@ void TestRefusedDoors::notRefusedTest()
         // ... and it is the event the table says it is.
         const auto combat = parseCombatLine(line);
         QVERIFY2(combat.has_value(), c.line);
+        // ... and, being a refusal, still one Char.Refused, read off that event; a flee that
+        // failed is none.
+        const auto refused = refusalOfLine(line, combat);
+        const bool isRefusal = QByteArray{c.instead}.contains(" refused");
+        QVERIFY2(refused.has_value() == isRefusal, c.line);
+        if (refused.has_value()) {
+            QVERIFY2(refused->text == combat->text, c.line);
+        }
         const QString instead = QString::fromLatin1(c.instead);
         if (instead.startsWith(QStringLiteral("Combat.Event refused"))) {
             QVERIFY2(combat->kind == CombatKindEnum::REFUSED, c.line);
@@ -346,7 +352,8 @@ void TestRefusedDoors::notRefusedTest()
         }
     }
     for (const NotRefusedCase &c : g_notRefusedElsewhere) {
-        QVERIFY2(!parseRefusedLine(QString::fromUtf8(c.line)).has_value(), c.line);
+        const QString line = QString::fromUtf8(c.line);
+        QVERIFY2(!refusalOfLine(line, parseCombatLine(line)).has_value(), c.line);
     }
 }
 
@@ -404,10 +411,14 @@ void TestRefusedDoors::reasonsTest()
 {
     // The codes a frontend switches on: a change here is a change of the protocol.
     QCOMPARE(refusedReasons().join(QLatin1Char(' ')),
-             QStringLiteral("afraid already busy dark door-blocked door-iced door-locked "
-                            "door-moving fighting guarded no-control no-item no-skill no-space "
-                            "no-target noride not-fighting not-here position queued riding self "
-                            "silenced slept unknown unwilling water"));
+             QStringLiteral("afraid already boat busy climb climb-failed concentration dark "
+                            "deep-water door-blocked door-closed door-heavy door-iced door-locked "
+                            "door-moving exhausted fighting guarded helpless ice loop mana melee "
+                            "mount-exhausted mount-refuses no-control no-exit no-item "
+                            "no-line-of-sight no-skill no-space no-target noride not-fighting "
+                            "not-grouped not-here position queued resting riding self sent-away "
+                            "silenced sitting sleeping slept swim swim-failed thrown unknown "
+                            "unwilling victim-gone water"));
 }
 
 void TestRefusedDoors::doorLinesTest()

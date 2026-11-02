@@ -190,8 +190,15 @@ const QRegularExpression g_groupLabel{
 // riding a hungry warg.", "X leaves with a sigh.", "X has arrived from the south.", and any other
 // verb that is followed by the way itself, "A trout swims east.". The name is matched as short
 // as it can be, so the rider is taken, not the mount.
+// The verb is group "v": "leaves", "has arrived", "arrives", or the other verb ("swims").
 const QRegularExpression g_moverLine{QStringLiteral(
-    R"(^(?<n>.+?) (?:leaves|has arrived|arrives|[a-z]+s (?=(?:north|south|east|west|up|down)\b)))")};
+    R"(^(?<n>.+?) (?<v>leaves|has arrived|arrives|[a-z]+s(?= (?:north|south|east|west|up|down)\b)))")};
+
+// The verbs a plain line (no markup) is taken for a departure by besides "leaves", followed by the
+// way: how beasts go. mume3d's list, from its transcript reader of 2026-10 (RoomOccupantsHints,
+// LEAVING_VERBS); a marked-up line takes any verb (g_moverLine).
+const QRegularExpression g_plainGoes{QStringLiteral(
+    R"(^\S.*? (?:flies|swims|rides|wades|climbs|crawls|slithers|flutters|scurries|hops) (?:north|south|east|west|up|down)(?:[ ,].*)?\.$)")};
 
 /// The longest a name read out of a line may be. A longer one is a line this does not know, not
 /// a name.
@@ -226,14 +233,25 @@ NODISCARD QString withoutLeadingStar(const QString &text)
     return trimmed;
 }
 
-} // namespace
-
-QString readMoverName(const XmlElement &element)
+NODISCARD QRegularExpressionMatch matchMoverLine(const XmlElement &element)
 {
     if (element.tag != XmlTagEnum::MOVE_IN && element.tag != XmlTagEnum::MOVE_OUT) {
         return {};
     }
-    const QRegularExpressionMatch m = g_moverLine.match(element.text.trimmed());
+    return g_moverLine.match(element.text.trimmed());
+}
+
+} // namespace
+
+QString readMoverVerb(const XmlElement &element)
+{
+    const QRegularExpressionMatch m = matchMoverLine(element);
+    return m.hasMatch() ? m.captured(u"v") : QString{};
+}
+
+QString readMoverName(const XmlElement &element)
+{
+    const QRegularExpressionMatch m = matchMoverLine(element);
     if (!m.hasMatch()) {
         return {};
     }
@@ -256,8 +274,12 @@ std::optional<XmlElement> plainMovementElement(const QString &line)
     if (text.isEmpty() || text.size() > 120) {
         return std::nullopt;
     }
+    // Speech is never a move: "Bob says 'I swim north.'"
+    if (text.contains(QStringLiteral(" '")) || text.contains(QChar{'"'})) {
+        return std::nullopt;
+    }
     XmlElement element;
-    if (leaves.match(text).hasMatch()) {
+    if (leaves.match(text).hasMatch() || g_plainGoes.match(text).hasMatch()) {
         element.tag = XmlTagEnum::MOVE_OUT;
     } else if (arrives.match(text).hasMatch()) {
         element.tag = XmlTagEnum::MOVE_IN;
@@ -293,6 +315,7 @@ void completeMovementElement(XmlElement &element)
             }
         }
     }
+    element.verb = readMoverVerb(element);
     // After the name, so that a name read out of the line is left out of the search too.
     element.direction = deriveMovementDirection(element);
 }
