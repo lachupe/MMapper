@@ -63,6 +63,9 @@ struct NODISCARD Mume final
             case QuietCommandEnum::BEGIN:
                 quiet << QStringLiteral("begin");
                 break;
+            case QuietCommandEnum::BEGIN_TELL:
+                quiet << QStringLiteral("begin");
+                break;
             case QuietCommandEnum::FOREIGN:
                 quiet << QStringLiteral("foreign");
                 break;

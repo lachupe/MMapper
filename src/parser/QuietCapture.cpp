@@ -194,10 +194,13 @@ void QuietCapture::receiveCommand(const QuietCommandEnum what)
 {
     switch (what) {
     case QuietCommandEnum::BEGIN:
+    case QuietCommandEnum::BEGIN_TELL:
         m_open = true;
         m_replied = false;
         m_shown = false;
         m_foreign = false;
+        m_tellReply = what == QuietCommandEnum::BEGIN_TELL;
+        m_inTell = false;
         break;
     case QuietCommandEnum::FOREIGN:
         if (m_open) {
@@ -213,6 +216,8 @@ void QuietCapture::receiveCommand(const QuietCommandEnum what)
 void QuietCapture::reset()
 {
     m_open = false;
+    m_tellReply = false;
+    m_inTell = false;
     m_replied = false;
     m_shown = false;
     m_foreign = false;
@@ -226,6 +231,18 @@ QuietCapture::Verdict QuietCapture::receiveLine(const QString &plain,
         return verdict;
     }
     const bool blank = plain.trimmed().isEmpty();
+    if (m_tellReply && traffic == QuietTrafficEnum::OTHER && !blank) {
+        // The keeper's tell is this command's reply, and its second line, when it wraps, is the tell's still.
+        static const QRegularExpression tellStart{QStringLiteral(R"(\btells you ')")};
+        const QString text = plain.trimmed();
+        if (m_inTell || tellStart.match(text).hasMatch()) {
+            m_inTell = !text.endsWith(QLatin1Char('\''));
+            verdict.hidden = true;
+            verdict.captured = true;
+            m_replied = true;
+            return verdict;
+        }
+    }
     switch (traffic) {
     case QuietTrafficEnum::OTHER:
         m_shown = true;

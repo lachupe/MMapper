@@ -1595,6 +1595,22 @@ void TestTradeLines::quietCaptureTest()
     v = q.receivePrompt();
     QVERIFY(!v.hidden && v.ended);
 
+    // `value <item>` is answered by a keeper's tell (live 2026-11-02, the weaponsmith): it is the reply, its wrapped second line too,
+    // and a tell that is not the keeper's of a plain window stays other traffic (above).
+    q.receiveCommand(QuietCommandEnum::BEGIN_TELL);
+    v = q.receivePrompt();
+    QVERIFY(!v.hidden && !v.ended); // The command's own prompt comes before the tell.
+    v = line(q,
+             "A weaponsmith tells you 'Well ... I wouldn't give more than eight silver and",
+             QuietTrafficEnum::OTHER);
+    QVERIFY(v.hidden && v.captured);
+    v = line(q, "seventy-seven copper for that.'", QuietTrafficEnum::OTHER);
+    QVERIFY(v.hidden && v.captured);
+    v = line(q, "A black wolf arrives from the north.", QuietTrafficEnum::OTHER);
+    QVERIFY(!v.hidden && !v.captured);
+    v = q.receivePrompt();
+    QVERIFY(v.ended);
+
     // What cannot be told is shown and captured, and counts as the reply.
     q.receiveCommand(QuietCommandEnum::BEGIN);
     v = line(q, "You are thirsty.", QuietTrafficEnum::UNSURE);
