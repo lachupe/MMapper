@@ -7,7 +7,10 @@ this file; tools without automatic instruction loading must read it explicitly.
 
 - This Qt/C++ MMapper fork publishes the frontend protocol consumed by the sibling
   mume3d repository. Check the actual branch and dirty paths before work; the main
-  development branch has been `db/frontend-protocol-impl`.
+  development branch is `mume3d` (the default; `db/frontend-protocol-impl` until
+  2026-11-02). `origin` is upstream MUME/MMapper: never push there; the fork is the
+  `lachupe` remote. `master` mirrors upstream's master, `exp/*` are the user's
+  experiments, merged work branches are deleted and kept as `archive/*` tags.
 - MMapper owns the integer grid and room graph. Float layouts, local spaces and all
   3D behavior belong in mume3d; publish derived hints rather than changing that split.
 - MUME parsing belongs here and reaches the client as `MMapper.*` packages. New
