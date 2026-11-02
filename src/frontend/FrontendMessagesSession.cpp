@@ -35,6 +35,14 @@ NODISCARD QJsonValue idOrNull(const QString &id)
     return id.isEmpty() ? QJsonValue{QJsonValue::Null} : QJsonValue{id};
 }
 
+/// What this MMapper sends of the packages (and package fields) a client may stop parsing MUME
+/// text for, named without the "MMapper." prefix; a field is "Package.field". Session.State's
+/// `packages`. A later slice adds its name here and nowhere else.
+const std::array<const char *, 2> g_sentPackages{
+    "Char.Refused",
+    "Xml.Element.verb",
+};
+
 } // namespace
 
 namespace frontend_messages {
@@ -169,6 +177,11 @@ GmcpMessage makeSessionState(const bool upstreamConnected,
     obj["quiet"] = 1;
     obj["hidden"] = 1;
     obj["log"] = 1;
+    QJsonArray packages;
+    for (const char *name : g_sentPackages) {
+        packages.append(QString::fromLatin1(name));
+    }
+    obj["packages"] = packages;
     obj["viewer"] = viewer;
     obj["upstream"] = upstreamConnected ? QStringLiteral("connected")
                                         : QStringLiteral("disconnected");

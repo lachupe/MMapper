@@ -520,6 +520,12 @@ void TestFrontend::sessionStateTest()
     // And MMapper.Terminal.Filter with MMapper.Terminal.Hidden.
     QCOMPARE(payloadOf(connected)["hidden"].toInt(), 1);
     QCOMPARE(payloadOf(connected)["viewer"].toString(), QStringLiteral("unknown"));
+    // The packages this MMapper sends, one name each, so a client can tell a new mapper from an
+    // old one (which sends no list).
+    const QJsonArray packages = payloadOf(connected)["packages"].toArray();
+    QVERIFY(packages.contains(QStringLiteral("Char.Refused")));
+    QVERIFY(packages.contains(QStringLiteral("Xml.Element.verb")));
+    QCOMPARE(packages.size(), 2);
     QCOMPARE(payloadOf(frontend_messages::makeSessionState(true,
                                                            arda,
                                                            true,

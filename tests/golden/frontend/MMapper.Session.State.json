@@ -10,6 +10,10 @@
         "mapLoaded": true,
         "mapName": "arda.mm2",
         "mapRooms": 31000,
+        "packages": [
+            "Char.Refused",
+            "Xml.Element.verb"
+        ],
         "quiet": 1,
         "rememberedAccount": null,
         "role": "driving",
