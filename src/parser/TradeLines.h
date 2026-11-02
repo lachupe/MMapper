@@ -318,6 +318,8 @@ private:
     bool m_afterPager = false;
     /// The "-----" separators seen in the list being read.
     int m_listGroup = 0;
+    /// The text of the last row read, joined with the indented lines MUME wrapped it onto.
+    QString m_listRowText;
 
     std::optional<ShopList> m_list;
     std::optional<GuildTeacher> m_teacher;

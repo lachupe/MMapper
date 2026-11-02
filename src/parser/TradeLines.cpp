@@ -260,6 +260,8 @@ const QRegularExpression g_listNone{QStringLiteral(R"(^There are no such things 
 const QRegularExpression g_listRow{QStringLiteral(R"(^(\d+)\. (.+?) up to (.+?)\.?$)")};
 // A row without "up to" has never been seen; kept rather than dropped.
 const QRegularExpression g_listRowPlain{QStringLiteral(R"(^(\d+)\. (.+?)\.?$)")};
+// What starts a row (as opposed to the line MUME wrapped one onto).
+const QRegularExpression g_listRowStart{QStringLiteral(R"(^\d+\. )")};
 const QRegularExpression g_listSeparator{QStringLiteral(R"(^-{3,}$)")};
 const QRegularExpression g_brackets{QStringLiteral(R"(^(.*?)\s*\(([^()]*)\)$)")};
 const QRegularExpression g_dealMiss{QStringLiteral(R"(^There is no such thing for sale\.$)")};
@@ -620,6 +622,7 @@ void TradeLinesTracker::openTable(const TableEnum table, const QString &line)
     switch (table) {
     case TableEnum::LIST:
         m_list.emplace();
+        m_listRowText.clear();
         if (!m_listQueries.empty()) {
             m_list->query = m_listQueries.front();
             m_listQueries.pop_front();
@@ -700,6 +703,7 @@ void TradeLinesTracker::closeTable()
         break;
     }
     m_list.reset();
+    m_listRowText.clear();
     m_teacher.reset();
     m_skills.reset();
     m_trophies.reset();
@@ -731,8 +735,14 @@ bool TradeLinesTracker::readTableLine(const QString &raw, const QString &text)
             m_listGroup += 1;
             return true;
         }
-        const QRegularExpressionMatch m = g_listRow.match(text);
-        const QRegularExpressionMatch plain = m.hasMatch() ? m : g_listRowPlain.match(text);
+        // MUME wraps a long row at its line width: "547. two fine pairs ... up to" and, indented, "two silver and
+        // twenty-eight copper.". The row is read again from both lines, and the second is the table's own line,
+        // not one for the Log.
+        const bool continued = !m_listRowText.isEmpty() && !m_list->rows.empty() && !raw.isEmpty()
+                               && raw.at(0).isSpace() && !g_listRowStart.match(text).hasMatch();
+        const QString rowText = continued ? m_listRowText + QLatin1Char(' ') + text : text;
+        const QRegularExpressionMatch m = g_listRow.match(rowText);
+        const QRegularExpressionMatch plain = m.hasMatch() ? m : g_listRowPlain.match(rowText);
         if (!plain.hasMatch()) {
             return false;
         }
@@ -745,8 +755,13 @@ bool TradeLinesTracker::readTableLine(const QString &raw, const QString &text)
                 row.priceCopper = price->copper;
             }
         }
-        row.group = m_listGroup;
-        m_list->rows.push_back(std::move(row));
+        row.group = continued ? m_list->rows.back().group : m_listGroup;
+        if (continued) {
+            m_list->rows.back() = std::move(row);
+        } else {
+            m_list->rows.push_back(std::move(row));
+        }
+        m_listRowText = rowText;
         m_tableHasRow = true;
         markOwnLine(raw);
         return true;

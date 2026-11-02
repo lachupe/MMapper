@@ -411,6 +411,40 @@ void TestTradeLines::shopListEmptyAndForeignTest()
     QVERIFY(!foreign.lists[0].text.contains(QStringLiteral("Kilthan")));
 }
 
+void TestTradeLines::shopListWrappedTest()
+{
+    // Long rows wrap at MUME's line width and go on indented (the King's Armoury, `list gloves`, live 2026-11-02): the price is
+    // on the second line, or its second half is, and neither is a line for the Log.
+    const TradeReplies wrapped = feed(
+        {"You can buy:",
+         "",
+         " 525. eleven pairs of metal gauntlets (well-maintained, new) up to five gold",
+         "      and two silver.",
+         " 547. two fine pairs of rigid leather gloves (flawless, seasoned) up to",
+         "      two silver and twenty-eight copper.",
+         " 550. fourteen pairs of chain mail gloves (well-maintained, new) up to one gold",
+         "      and two silver.",
+         " 604. six sturdy pairs of soft leather gloves (marred, fresh) up to",
+         "      ninety-six copper.",
+         "",
+         PROMPT});
+    QCOMPARE(wrapped.lists.size(), size_t{1});
+    const std::vector<ShopRow> &rows = wrapped.lists[0].rows;
+    QCOMPARE(rows.size(), size_t{4});
+    QCOMPARE(rows[0].number, int64_t{525});
+    QCOMPARE(rows[0].count, int64_t{11});
+    QCOMPARE(rows[0].priceCopper.value_or(-1), int64_t{5 * 2000 + 2 * 100});
+    QCOMPARE(rows[1].number, int64_t{547});
+    QCOMPARE(rows[1].count, int64_t{2});
+    QCOMPARE(rows[1].condition, QStringLiteral("flawless"));
+    QCOMPARE(rows[1].age, QStringLiteral("seasoned"));
+    QVERIFY(!rows[1].name.contains(QStringLiteral("up to")));
+    QCOMPARE(rows[1].priceCopper.value_or(-1), int64_t{2 * 100 + 28});
+    QCOMPARE(rows[3].priceCopper.value_or(-1), int64_t{96});
+    // The wrapped lines are the table's own: none of them is left for the Log.
+    QVERIFY(wrapped.lists[0].text.contains(QStringLiteral("and two silver.")));
+}
+
 void TestTradeLines::shopListPagedTest()
 {
     // The helms list cut by the pager after its second row, then continued: paged, complete.
