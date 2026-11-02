@@ -67,6 +67,20 @@ GmcpMessage makeShopList(const ShopList &list)
         rows.append(r);
     }
     obj["rows"] = rows;
+    if (list.piecesOf != 0) {
+        QJsonArray pieces;
+        for (const ShopPiece &piece : list.pieces) {
+            QJsonObject o;
+            o["number"] = static_cast<qint64>(piece.number);
+            o["condition"] = piece.condition;
+            o["age"] = piece.age;
+            putNumber(o, "priceCopper", piece.priceCopper);
+            o["priceText"] = piece.priceText;
+            pieces.append(o);
+        }
+        obj["number"] = static_cast<qint64>(list.piecesOf);
+        obj["pieces"] = pieces;
+    }
     obj["empty"] = list.empty;
     putPaged(obj, list.paged, list.complete);
     obj["text"] = list.text;

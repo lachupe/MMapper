@@ -315,6 +315,14 @@ void CommandRunner::request(const QJsonObject &payload, const Context &context)
         } else {
             return refuse(id, action, invalid);
         }
+    } else if (action == QStringLiteral("shop.pieces")) {
+        // The pieces of a stack: `list <number>` (a reply of the list's kind, with `pieces`).
+        op.kind = KindEnum::SHOP_LIST;
+        const auto number = integerOf(payload.value("number"), 1, 999999);
+        if (!number.has_value()) {
+            return refuse(id, action, invalid);
+        }
+        op.commands << QStringLiteral("list %1").arg(*number);
     } else if (action == QStringLiteral("shop.buy")) {
         op.kind = KindEnum::SHOP_BUY;
         const auto number = integerOf(payload.value("number"), 1, 999999);
@@ -376,7 +384,7 @@ void CommandRunner::request(const QJsonObject &payload, const Context &context)
         op.kind = KindEnum::CHAR_TROPHIES;
         op.commands << QStringLiteral("trop");
     } else {
-        // shop.pieces, shop.show, shop.value, shop.mend, shop.resize wait for a live session
+        // shop.show, shop.value, shop.mend, shop.resize wait for a live session
         // to show their replies; anything else is not an action at all.
         return refuse(id, action, QStringLiteral("unsupported"));
     }

@@ -381,6 +381,20 @@ void TestCommandRunner::shopListTest()
     bare.prompt();
     QCOMPARE(bare.status(), QStringLiteral("done"));
 
+    // The pieces of a stack are `list <number>`; a bad number is refused.
+    Mume pieces;
+    pieces.request(R"({"id":"p","action":"shop.pieces","number":547})");
+    QCOMPARE(pieces.sent, QStringList{"list 547"});
+    pieces.flush();
+    pieces.line(QStringLiteral("You can buy:"));
+    pieces.observer.observeShopList(ShopList{});
+    pieces.prompt();
+    QCOMPARE(pieces.status(), QStringLiteral("done"));
+    Mume bad;
+    bad.request(R"({"id":"q","action":"shop.pieces","number":"gloves"})");
+    QCOMPARE(bad.status(), QStringLiteral("refused"));
+    QCOMPARE(bad.reason(), QStringLiteral("invalid arguments"));
+
     // A reply nothing recognised fails at the prompt, with MUME's words.
     Mume odd;
     odd.request(R"({"id":"c","action":"shop.list"})");

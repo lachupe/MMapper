@@ -22,6 +22,7 @@ private Q_SLOTS:
     static void shopListEmptyAndForeignTest();
     static void shopListPagedTest();
     static void shopListWrappedTest();
+    static void shopPiecesTest();
     static void shopDealTest();
     static void shopClosedAndNotDealsTest();
     static void guildTeacherTest();

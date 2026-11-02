@@ -661,6 +661,45 @@ void TradeLinesTracker::markOwnLine(const QString &line)
     }
 }
 
+/// `list 547` answers "547. two fine pairs of rigid leather gloves:" and one line per piece, each with its own number
+/// ("548.  (flawless, seasoned) for two silver and twenty-eight copper."). Where the reply is of that shape the rows become
+/// the pieces; otherwise the list stays as it was read.
+void readPieces(ShopList &list)
+{
+    bool numeric = false;
+    const int64_t wanted = list.query.trimmed().toLongLong(&numeric);
+    if (!numeric || list.rows.size() < 2 || list.rows.front().number != wanted) {
+        return;
+    }
+    static const QRegularExpression pieceText{
+        QStringLiteral(R"(^\(([^()]*)\)\s*(?:for\s+(.+?))?\.?$)")};
+    std::vector<ShopPiece> pieces;
+    for (size_t i = 1; i < list.rows.size(); ++i) {
+        const ShopRow &row = list.rows[i];
+        const QRegularExpressionMatch m = pieceText.match(row.name.trimmed());
+        if (!m.hasMatch()) {
+            return;
+        }
+        ShopPiece piece;
+        piece.number = row.number;
+        const QStringList parts = m.captured(1).split(QLatin1Char(','), Qt::SkipEmptyParts);
+        if (!parts.isEmpty()) {
+            piece.condition = parts.front().trimmed();
+        }
+        if (parts.size() >= 2) {
+            piece.age = parts.mid(1).join(QLatin1Char(',')).trimmed();
+        }
+        piece.priceText = m.captured(2);
+        if (const std::optional<Money> price = parseMoney(piece.priceText)) {
+            piece.priceCopper = price->copper;
+        }
+        pieces.push_back(std::move(piece));
+    }
+    list.piecesOf = wanted;
+    list.pieces = std::move(pieces);
+    list.rows.clear();
+}
+
 void TradeLinesTracker::closeTable()
 {
     const TableEnum table = std::exchange(m_table, TableEnum::NONE);
@@ -672,6 +711,7 @@ void TradeLinesTracker::closeTable()
             m_list->text = text;
             m_list->paged = m_paged;
             m_list->complete = complete;
+            readPieces(*m_list);
             m_done.lists.push_back(std::move(*m_list));
         }
         break;

@@ -93,9 +93,23 @@ struct NODISCARD ShopRow final
     int group = 0;
 };
 
+/// One piece of a stack, from `list <number>`: "548.  (flawless, seasoned) for two silver and twenty-eight copper."
+struct NODISCARD ShopPiece final
+{
+    /// The number `buy` takes for this very piece.
+    int64_t number = 0;
+    QString condition;
+    QString age;
+    std::optional<int64_t> priceCopper;
+    QString priceText;
+};
+
 /// MUME's reply to `list [filter]`.
 struct NODISCARD ShopList final
 {
+    /// The stock number a `list <number>` reply is about, with its pieces in `pieces` (and no `rows`); 0 for an ordinary list.
+    int64_t piecesOf = 0;
+    std::vector<ShopPiece> pieces;
     /// The list does not name the keeper; left empty.
     QString keeper;
     /// The words after `list` in the command this reply answers, when one was seen going out.

@@ -445,6 +445,47 @@ void TestTradeLines::shopListWrappedTest()
     QVERIFY(wrapped.lists[0].text.contains(QStringLiteral("and two silver.")));
 }
 
+void TestTradeLines::shopPiecesTest()
+{
+    // `list 547` and `list 593` at the King's Armoury (live 2026-11-02): one line per piece, each with its own number; the
+    // second piece's price wraps.
+    TradeLinesTracker tracker;
+    tracker.receiveCommand(QStringLiteral("list 547"));
+    const TradeReplies two = feedInto(
+        tracker,
+        {"You can buy:",
+         "",
+         " 547. two fine pairs of rigid leather gloves:",
+         "       548.  (flawless, seasoned) for two silver and twenty-eight copper.",
+         "       549.  (well-maintained, well-seasoned) for one silver",
+         "            and eighty-nine copper.",
+         "",
+         PROMPT});
+    QCOMPARE(two.lists.size(), size_t{1});
+    const ShopList &l = two.lists[0];
+    QCOMPARE(l.piecesOf, int64_t{547});
+    QVERIFY(l.rows.empty());
+    QCOMPARE(l.pieces.size(), size_t{2});
+    QCOMPARE(l.pieces[0].number, int64_t{548});
+    QCOMPARE(l.pieces[0].condition, QStringLiteral("flawless"));
+    QCOMPARE(l.pieces[0].age, QStringLiteral("seasoned"));
+    QCOMPARE(l.pieces[0].priceCopper.value_or(-1), int64_t{2 * 100 + 28});
+    QCOMPARE(l.pieces[1].number, int64_t{549});
+    QCOMPARE(l.pieces[1].condition, QStringLiteral("well-maintained"));
+    QCOMPARE(l.pieces[1].age, QStringLiteral("well-seasoned"));
+    QCOMPARE(l.pieces[1].priceCopper.value_or(-1), int64_t{1 * 100 + 89});
+
+    // A word as the query stays an ordinary list.
+    TradeLinesTracker words;
+    words.receiveCommand(QStringLiteral("list gloves"));
+    const TradeReplies plain = feedInto(
+        words,
+        {"You can buy:", "", " 550. fourteen pairs of chain mail gloves (well-maintained, new) up to one gold",
+         "      and two silver.", "", PROMPT});
+    QCOMPARE(plain.lists[0].piecesOf, int64_t{0});
+    QCOMPARE(plain.lists[0].rows.size(), size_t{1});
+}
+
 void TestTradeLines::shopListPagedTest()
 {
     // The helms list cut by the pager after its second row, then continued: paged, complete.
