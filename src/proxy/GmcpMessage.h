@@ -109,6 +109,7 @@ class ParseEvent;
       "mmapper.char.languages", \
       "MMapper.Char.Languages") \
     X(MMAPPER_COMBAT_EVENT, MMapperCombatEvent, "mmapper.combat.event", "MMapper.Combat.Event") \
+    X(MMAPPER_COMM_GROUP, MMapperCommGroup, "mmapper.comm.group", "MMapper.Comm.Group") \
     X(MMAPPER_GUILD_PRACTISED, \
       MMapperGuildPractised, \
       "mmapper.guild.practised", \
@@ -190,7 +191,7 @@ enum class NODISCARD GmcpMessageTypeEnum {
 #define X_COUNT(...) +1
 static constexpr const size_t NUM_GMCP_MESSAGES = XFOREACH_GMCP_MESSAGE_TYPE(X_COUNT);
 #undef X_COUNT
-static_assert(NUM_GMCP_MESSAGES == 101);
+static_assert(NUM_GMCP_MESSAGES == 102);
 DEFINE_ENUM_COUNT(GmcpMessageTypeEnum, NUM_GMCP_MESSAGES)
 
 namespace tags {

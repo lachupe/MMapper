@@ -552,6 +552,8 @@ set(mmapper_SRCS
     parser/LoginLines.h
     parser/QuietCapture.cpp
     parser/QuietCapture.h
+    parser/CommGroup.cpp
+    parser/CommGroup.h
     parser/RoomContents.cpp
     parser/RoomContents.h
     parser/RoomDoors.cpp

@@ -550,6 +550,12 @@ void MumeXmlParser::parse(const TelnetData &data, const bool isGoAhead)
     }
     for (const XmlElement &xml : elements) {
         m_observer.observeSentToUserXml(xml);
+        // The group's channel: a <tell> to the group.
+        if (xml.tag == XmlTagEnum::TELL) {
+            if (const auto group = parseGroupTell(xml.text.trimmed())) {
+                m_observer.observeCommGroup(*group);
+            }
+        }
         // The socials and emotes of others, which MUME marks and the social table names.
         if (xml.tag == XmlTagEnum::SOCIAL) {
             for (const QString &socialLine : xml.text.split(QLatin1Char('\n'), Qt::SkipEmptyParts)) {

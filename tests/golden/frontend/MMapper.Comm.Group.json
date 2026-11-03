@@ -1,0 +1,8 @@
+{
+    "package": "MMapper.Comm.Group",
+    "payload": {
+        "line": "Gandalf tells the group 'all west'",
+        "speaker": "Gandalf",
+        "text": "all west"
+    }
+}

@@ -252,6 +252,11 @@
    "replay": "event"
   },
   {
+   "name": "MMapper.Comm.Group",
+   "id": "MMAPPER_COMM_GROUP",
+   "replay": "event"
+  },
+  {
    "name": "MMapper.Guild.Practised",
    "id": "MMAPPER_GUILD_PRACTISED",
    "replay": "event"

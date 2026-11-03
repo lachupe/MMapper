@@ -15,6 +15,7 @@
             "Char.Consider",
             "Char.Needs",
             "Char.Refused",
+            "Comm.Group",
             "Room.Social",
             "Xml.Element.verb"
         ],

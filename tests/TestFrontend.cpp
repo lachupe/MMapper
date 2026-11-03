@@ -36,6 +36,7 @@
 #include "../src/parser/GameStateLines.h"
 #include "../src/parser/ItemLines.h"
 #include "../src/parser/LoginLines.h"
+#include "../src/parser/CommGroup.h"
 #include "../src/parser/RoomContents.h"
 #include "../src/parser/RoomDoors.h"
 #include "../src/parser/RoomSocial.h"
@@ -530,8 +531,9 @@ void TestFrontend::sessionStateTest()
     QVERIFY(packages.contains(QStringLiteral("Char.Needs")));
     QVERIFY(packages.contains(QStringLiteral("Char.Affects")));
     QVERIFY(packages.contains(QStringLiteral("Char.Consider")));
+    QVERIFY(packages.contains(QStringLiteral("Comm.Group")));
     QVERIFY(packages.contains(QStringLiteral("Room.Social")));
-    QCOMPARE(packages.size(), 6);
+    QCOMPARE(packages.size(), 7);
     QCOMPARE(payloadOf(frontend_messages::makeSessionState(true,
                                                            arda,
                                                            true,
@@ -2789,6 +2791,32 @@ void TestFrontend::charConsiderTest()
     }
 }
 
+void TestFrontend::commGroupTest()
+{
+    QCOMPARE(GmcpMessage::fromRawBytes(QByteArray{"MMapper.Comm.Group"}).getType(),
+             GmcpMessageTypeEnum::MMAPPER_COMM_GROUP);
+    const auto other = parseGroupTell(QStringLiteral("Gandalf tells the group 'all west'"));
+    QVERIFY(other.has_value());
+    QCOMPARE(other->speaker, QStringLiteral("Gandalf"));
+    QCOMPARE(other->text, QStringLiteral("all west"));
+    QCOMPARE(frontend_messages::makeCommGroup(*other).toRawBytes(),
+             QByteArray(R"(MMapper.Comm.Group {"line":"Gandalf tells the group 'all west'",)"
+                        R"("speaker":"Gandalf","text":"all west"})"));
+    const auto own = parseGroupTell(QStringLiteral("You tell the group 'it's ok'"));
+    QVERIFY(own.has_value());
+    QCOMPARE(own->speaker, QStringLiteral("you"));
+    QCOMPARE(own->text, QStringLiteral("it's ok"));
+    const auto named = parseGroupTell(QStringLiteral("The cityguard tells the group 'halt'\n"));
+    QVERIFY(named.has_value());
+    QCOMPARE(named->speaker, QStringLiteral("The cityguard"));
+    // Not the group's channel: a tell to the player, speech, a sentence that only mentions it.
+    QVERIFY(!parseGroupTell(QStringLiteral("Gandalf tells you 'Group: wait'")).has_value());
+    QVERIFY(!parseGroupTell(QStringLiteral("Gandalf says 'tells the group'")).has_value());
+    QVERIFY(!parseGroupTell(QStringLiteral("You tell Gandalf 'hello'")).has_value());
+    QVERIFY(!parseGroupTell(QStringLiteral(" tells the group 'x'")).has_value());
+    QVERIFY(!parseGroupTell(QString()).has_value());
+}
+
 void TestFrontend::roomSocialTest()
 {
     QCOMPARE(GmcpMessage::fromRawBytes(QByteArray{"MMapper.Room.Social"}).getType(),
@@ -3918,6 +3946,8 @@ void TestFrontend::goldenFramesTest()
     frames.push_back(frontend_messages::makeCharNeeds(golden));
     frames.push_back(frontend_messages::makeCharRefused(
         *parseRefusedLine(QStringLiteral("Rest while fighting? Are you MAD?"))));
+    frames.push_back(frontend_messages::makeCommGroup(
+        *parseGroupTell(QStringLiteral("Gandalf tells the group 'all west'"))));
     frames.push_back(frontend_messages::makeRoomSocial(
         *parseSocialLine(QStringLiteral("The cityguard agrees with you."))));
     frames.push_back(frontend_messages::makeRoomHandRaised(

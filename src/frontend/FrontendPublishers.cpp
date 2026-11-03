@@ -34,6 +34,7 @@ void FrontendServer::registerPublishers()
     bindPublisher(o.sig2_charConsider, makeCharConsider);
     bindPublisher(o.sig2_charRefused, makeCharRefused);
     bindPublisher(o.sig2_handRaised, makeRoomHandRaised);
+    bindPublisher(o.sig2_commGroup, makeCommGroup);
     bindPublisher(o.sig2_roomSocial, makeRoomSocial);
     bindPublisher(o.sig2_exitLook, makeRoomLook);
     bindPublisher(o.sig2_shopList, makeShopList);

@@ -110,6 +110,7 @@ add_library(mm_parser_lines STATIC
     ../src/parser/LineText.h
     ../src/parser/QuietCapture.cpp
     ../src/parser/QuietCapture.h
+    ../src/parser/CommGroup.cpp
     ../src/parser/RoomContents.cpp
     ../src/parser/RoomContents.h
     ../src/parser/RoomDoors.cpp

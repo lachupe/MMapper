@@ -20,6 +20,7 @@
 #include "../parser/GameStateLines.h"
 #include "../parser/ItemLines.h"
 #include "../parser/LoginLines.h"
+#include "../parser/CommGroup.h"
 #include "../parser/RoomContents.h"
 #include "../parser/RoomDoors.h"
 #include "../parser/RoomSocial.h"
@@ -131,7 +132,7 @@ struct NODISCARD MapIdentity final
 /// `packages` lists, by name without the "MMapper." prefix, the packages and package fields
 /// this MMapper sends that a client can stop parsing MUME text for: "Char.Affects" (the
 /// timed states), "Char.Consider" (the verdict on `consider`), "Char.Needs",
-/// "Char.Refused", "Room.Social" (socials and emotes), "Xml.Element.verb" (the movers' verb). A client treats a missing list as an old
+/// "Char.Refused", "Comm.Group" (the group channel), "Room.Social" (socials and emotes), "Xml.Element.verb" (the movers' verb). A client treats a missing list as an old
 /// MMapper.
 ///
 /// `login` is there only while MUME waits at a login prompt (LoginLinesTracker): `kind` "name"
@@ -455,6 +456,11 @@ NODISCARD GmcpMessage makeCharRefused(const CharRefused &refused);
 /// social): `name` as the line gives it, `keyword` (the word `group` takes) and `text`. An event:
 /// not replayed. See HandRaised.
 NODISCARD GmcpMessage makeRoomHandRaised(const HandRaised &hand);
+
+/// MMapper.Comm.Group -- a message on the group's channel, from the `<tell>` lines "X tells the
+/// group '...'" and "You tell the group '...'": `speaker` as MUME wrote it ("you" for the player),
+/// `text` (what was said) and `line` (the whole line). An event: not replayed. See CommGroup.
+NODISCARD GmcpMessage makeCommGroup(const CommGroup &group);
 
 /// MMapper.Room.Social -- a social or emote someone in the room did, from the lines MUME marks
 /// <social>: `actor` as MUME wrote it, `social` (the command's name), `form` (alone, other, you,

@@ -25,6 +25,7 @@
 #include "LineReader.h"
 #include "LineTags.h"
 #include "LoginLines.h"
+#include "CommGroup.h"
 #include "RoomContents.h"
 #include "RoomDoors.h"
 #include "RoomSocial.h"

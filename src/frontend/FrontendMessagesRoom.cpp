@@ -170,6 +170,15 @@ GmcpMessage makeContainerEvent(const ContainerEvent &event)
     return GmcpMessage{GmcpMessageTypeEnum::MMAPPER_ROOM_CONTAINER, toGmcpJson(obj)};
 }
 
+GmcpMessage makeCommGroup(const CommGroup &group)
+{
+    QJsonObject obj;
+    obj["speaker"] = group.speaker;
+    obj["text"] = group.text;
+    obj["line"] = group.line;
+    return GmcpMessage{GmcpMessageTypeEnum::MMAPPER_COMM_GROUP, toGmcpJson(obj)};
+}
+
 GmcpMessage makeRoomSocial(const RoomSocial &social)
 {
     QJsonObject obj;
