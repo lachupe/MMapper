@@ -63,6 +63,7 @@ GmcpMessage makeShopList(const ShopList &list)
         r["age"] = row.age;
         putNumber(r, "priceCopper", row.priceCopper);
         r["priceText"] = row.priceText;
+        r["priceExact"] = row.priceExact;
         r["group"] = row.group;
         rows.append(r);
     }
@@ -76,6 +77,7 @@ GmcpMessage makeShopList(const ShopList &list)
             o["age"] = piece.age;
             putNumber(o, "priceCopper", piece.priceCopper);
             o["priceText"] = piece.priceText;
+            o["priceExact"] = true;
             pieces.append(o);
         }
         obj["number"] = static_cast<qint64>(list.piecesOf);

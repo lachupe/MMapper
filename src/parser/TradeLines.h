@@ -91,6 +91,8 @@ struct NODISCARD ShopRow final
     QString priceText;
     /// Counts the "-----" separators above the row; what a group means is not known.
     int group = 0;
+    /// The price is the row's own ("for": one piece, as MUME lists a single item), not a ceiling ("up to").
+    bool priceExact = false;
 };
 
 /// One piece of a stack, from `list <number>`: "548.  (flawless, seasoned) for two silver and twenty-eight copper."

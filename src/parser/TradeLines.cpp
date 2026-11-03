@@ -258,6 +258,8 @@ NODISCARD std::optional<int64_t> readAmount(const std::vector<Token> &tokens,
 const QRegularExpression g_listHeader{QStringLiteral(R"(^You can buy:$)")};
 const QRegularExpression g_listNone{QStringLiteral(R"(^There are no such things for sale\.$)")};
 const QRegularExpression g_listRow{QStringLiteral(R"(^(\d+)\. (.+?) up to (.+?)\.?$)")};
+// A single item, as MUME lists it: "1. a spiked collar (satisfactory, new) for one silver and 25 copper." Its price is its own.
+const QRegularExpression g_listRowFor{QStringLiteral(R"(^(\d+)\. (.+) for (.+?)\.?$)")};
 // A row without "up to" has never been seen; kept rather than dropped.
 const QRegularExpression g_listRowPlain{QStringLiteral(R"(^(\d+)\. (.+?)\.?$)")};
 // What starts a row (as opposed to the line MUME wrapped one onto).
@@ -672,28 +674,19 @@ void readPieces(ShopList &list)
         return;
     }
     const int64_t wanted = list.rows.front().number;
-    static const QRegularExpression pieceText{
-        QStringLiteral(R"(^\(([^()]*)\)\s*(?:for\s+(.+?))?\.?$)")};
     std::vector<ShopPiece> pieces;
     for (size_t i = 1; i < list.rows.size(); ++i) {
         const ShopRow &row = list.rows[i];
-        const QRegularExpressionMatch m = pieceText.match(row.name.trimmed());
-        if (!m.hasMatch()) {
+        // A piece line is "(condition, age) for price": a row of the "for" kind with nothing before the brackets.
+        if (!row.priceExact || !row.name.trimmed().isEmpty() || row.condition.isEmpty()) {
             return;
         }
         ShopPiece piece;
         piece.number = row.number;
-        const QStringList parts = m.captured(1).split(QLatin1Char(','), Qt::SkipEmptyParts);
-        if (!parts.isEmpty()) {
-            piece.condition = parts.front().trimmed();
-        }
-        if (parts.size() >= 2) {
-            piece.age = parts.mid(1).join(QLatin1Char(',')).trimmed();
-        }
-        piece.priceText = m.captured(2);
-        if (const std::optional<Money> price = parseMoney(piece.priceText)) {
-            piece.priceCopper = price->copper;
-        }
+        piece.condition = row.condition;
+        piece.age = row.age;
+        piece.priceText = row.priceText;
+        piece.priceCopper = row.priceCopper;
         pieces.push_back(std::move(piece));
     }
     list.piecesOf = wanted;
@@ -783,15 +776,23 @@ bool TradeLinesTracker::readTableLine(const QString &raw, const QString &text)
                                && raw.at(0).isSpace() && !g_listRowStart.match(text).hasMatch();
         const QString rowText = continued ? m_listRowText + QLatin1Char(' ') + text : text;
         const QRegularExpressionMatch m = g_listRow.match(rowText);
-        const QRegularExpressionMatch plain = m.hasMatch() ? m : g_listRowPlain.match(rowText);
+        // "... for <price>": taken only where what follows is a price, so a name with "for" in it stays a name.
+        QRegularExpressionMatch exact = m.hasMatch() ? QRegularExpressionMatch{} : g_listRowFor.match(rowText);
+        if (exact.hasMatch() && !parseMoney(exact.captured(3)).has_value()) {
+            exact = QRegularExpressionMatch{};
+        }
+        const QRegularExpressionMatch plain = m.hasMatch()       ? m
+                                              : exact.hasMatch() ? exact
+                                                                 : g_listRowPlain.match(rowText);
         if (!plain.hasMatch()) {
             return false;
         }
         ShopRow row;
         row.number = line_text::toNumber(plain.captured(1)).value_or(0);
         readListItem(plain.captured(2), row);
-        if (m.hasMatch()) {
-            row.priceText = m.captured(3);
+        if (m.hasMatch() || exact.hasMatch()) {
+            row.priceText = plain.captured(3);
+            row.priceExact = exact.hasMatch();
             if (const std::optional<Money> price = parseMoney(row.priceText)) {
                 row.priceCopper = price->copper;
             }
