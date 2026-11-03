@@ -443,6 +443,34 @@ void TestTradeLines::shopListWrappedTest()
     QCOMPARE(rows[3].priceCopper.value_or(-1), int64_t{96});
     // The wrapped lines are the table's own: none of them is left for the Log.
     QVERIFY(wrapped.lists[0].text.contains(QStringLiteral("and two silver.")));
+
+    // A single item is listed with "for": its own price, its condition and age in the columns (live at the King's Armoury, 2026-11-02).
+    const TradeReplies single = feed(
+        {"You can buy:",
+         "",
+         "   1. a spiked collar (satisfactory, new) for one silver and twenty-five copper.",
+         "   3. a studded leather collar (flawless, new) for ninety-nine copper.",
+         "  87. a fine chain mail hauberk (flawless, new) for two gold and",
+         "      fifteen silver.",
+         "  90. ten pairs of boots (worn, new) up to one silver.",
+         "",
+         PROMPT});
+    QCOMPARE(single.lists.size(), size_t{1});
+    const std::vector<ShopRow> &one = single.lists[0].rows;
+    QCOMPARE(one.size(), size_t{4});
+    QCOMPARE(one[0].number, int64_t{1});
+    QCOMPARE(one[0].count, int64_t{1});
+    QCOMPARE(one[0].name, QStringLiteral("spiked collar"));
+    QCOMPARE(one[0].condition, QStringLiteral("satisfactory"));
+    QCOMPARE(one[0].age, QStringLiteral("new"));
+    QVERIFY(one[0].priceExact);
+    QCOMPARE(one[0].priceCopper.value_or(-1), int64_t{125});
+    QCOMPARE(one[1].priceCopper.value_or(-1), int64_t{99});
+    QCOMPARE(one[2].name, QStringLiteral("fine chain mail hauberk"));
+    QCOMPARE(one[2].priceCopper.value_or(-1), int64_t{2 * 2000 + 15 * 100});
+    QVERIFY(one[2].priceExact);
+    QVERIFY(!one[3].priceExact);
+    QCOMPARE(one[3].count, int64_t{10});
 }
 
 void TestTradeLines::shopPiecesTest()
