@@ -15,6 +15,7 @@
             "Char.Consider",
             "Char.Needs",
             "Char.Refused",
+            "Room.Social",
             "Xml.Element.verb"
         ],
         "quiet": 1,

@@ -22,6 +22,7 @@
 #include "../parser/LoginLines.h"
 #include "../parser/RoomContents.h"
 #include "../parser/RoomDoors.h"
+#include "../parser/RoomSocial.h"
 #include "../parser/SendToUserSourceEnum.h"
 #include "../parser/WeatherLines.h"
 #include "../parser/XmlElement.h"
@@ -130,7 +131,7 @@ struct NODISCARD MapIdentity final
 /// `packages` lists, by name without the "MMapper." prefix, the packages and package fields
 /// this MMapper sends that a client can stop parsing MUME text for: "Char.Affects" (the
 /// timed states), "Char.Consider" (the verdict on `consider`), "Char.Needs",
-/// "Char.Refused", "Xml.Element.verb" (the movers' verb). A client treats a missing list as an old
+/// "Char.Refused", "Room.Social" (socials and emotes), "Xml.Element.verb" (the movers' verb). A client treats a missing list as an old
 /// MMapper.
 ///
 /// `login` is there only while MUME waits at a login prompt (LoginLinesTracker): `kind` "name"
@@ -454,6 +455,13 @@ NODISCARD GmcpMessage makeCharRefused(const CharRefused &refused);
 /// social): `name` as the line gives it, `keyword` (the word `group` takes) and `text`. An event:
 /// not replayed. See HandRaised.
 NODISCARD GmcpMessage makeRoomHandRaised(const HandRaised &hand);
+
+/// MMapper.Room.Social -- a social or emote someone in the room did, from the lines MUME marks
+/// <social>: `actor` as MUME wrote it, `social` (the command's name), `form` (alone, other, you,
+/// self), `text` (the line) and `target` where there is one ("you" for the player, the actor's
+/// own name for a social at themself). The player's own socials are not told. An event: not
+/// replayed. See RoomSocial.
+NODISCARD GmcpMessage makeRoomSocial(const RoomSocial &social);
 
 /// MMapper.Room.Door -- the doors of the room the character stands in, as MUME told the player
 /// on this visit: `doors`, each {`dir` (one letter; left out when not known), `name` (the

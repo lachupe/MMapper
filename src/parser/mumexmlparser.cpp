@@ -550,6 +550,14 @@ void MumeXmlParser::parse(const TelnetData &data, const bool isGoAhead)
     }
     for (const XmlElement &xml : elements) {
         m_observer.observeSentToUserXml(xml);
+        // The socials and emotes of others, which MUME marks and the social table names.
+        if (xml.tag == XmlTagEnum::SOCIAL) {
+            for (const QString &socialLine : xml.text.split(QLatin1Char('\n'), Qt::SkipEmptyParts)) {
+                if (const auto social = parseSocialLine(socialLine)) {
+                    m_observer.observeRoomSocial(*social);
+                }
+            }
+        }
         if (lookKind == LineKindEnum::TEXT && !lookLine.isEmpty()) {
             const QString elementText = xml.text.trimmed();
             const bool covers = !elementText.isEmpty()

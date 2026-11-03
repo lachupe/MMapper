@@ -1,0 +1,10 @@
+{
+    "package": "MMapper.Room.Social",
+    "payload": {
+        "actor": "The cityguard",
+        "form": "you",
+        "social": "agree",
+        "target": "you",
+        "text": "The cityguard agrees with you."
+    }
+}

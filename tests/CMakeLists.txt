@@ -113,6 +113,7 @@ add_library(mm_parser_lines STATIC
     ../src/parser/RoomContents.cpp
     ../src/parser/RoomContents.h
     ../src/parser/RoomDoors.cpp
+    ../src/parser/RoomSocial.cpp
     ../src/parser/RoomDoors.h
     ../src/parser/TradeLines.cpp
     ../src/parser/TradeLines.h

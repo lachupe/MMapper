@@ -54,6 +54,7 @@ private Q_SLOTS:
     static void charFollowersTest();
     static void charConsiderTest();
     static void charNeedsTest();
+    static void roomSocialTest();
     static void charRefusedTest();
     static void charRefusedEveryRefusalTest();
     static void movementVerbTest();

@@ -13,6 +13,7 @@
 #include "../parser/CharNeeds.h"
 #include "../parser/CharRefused.h"
 #include "../parser/CombatLines.h"
+#include "../parser/RoomSocial.h"
 #include "../parser/ContainerLines.h"
 #include "../parser/ExitLooks.h"
 #include "../parser/GameStateLines.h"
@@ -150,6 +151,8 @@ public:
     Signal2<CharNeedLine> sig2_charNeedLine;
     /// A command MUME refused, in a sentence no other reader takes. An event. See CharRefused.
     Signal2<CharRefused> sig2_charRefused;
+    /// A social or emote someone in the room did. An event. See RoomSocial.
+    Signal2<RoomSocial> sig2_roomSocial;
     /// A player in the room raised a hand to be grouped. An event. See HandRaised.
     Signal2<HandRaised> sig2_handRaised;
     /// The doors of the room the character stands in, whole, after a change. See RoomDoorTracker.
@@ -281,6 +284,7 @@ public:
     }
     void observeCharNeedLine(const CharNeedLine &line) { sig2_charNeedLine.invoke(line); }
     void observeCharRefused(const CharRefused &refused) { sig2_charRefused.invoke(refused); }
+    void observeRoomSocial(const RoomSocial &social) { sig2_roomSocial.invoke(social); }
     void observeHandRaised(const HandRaised &hand) { sig2_handRaised.invoke(hand); }
     void observeRoomDoors(const RoomDoors &doors) { sig2_roomDoors.invoke(doors); }
     void observeExitLook(const ExitLook &look) { sig2_exitLook.invoke(look); }

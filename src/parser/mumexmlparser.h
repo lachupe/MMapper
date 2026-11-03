@@ -27,6 +27,7 @@
 #include "LoginLines.h"
 #include "RoomContents.h"
 #include "RoomDoors.h"
+#include "RoomSocial.h"
 #include "TradeLines.h"
 #include "WeatherLines.h"
 #include "XmlElementTracker.h"

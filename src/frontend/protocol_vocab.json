@@ -347,6 +347,11 @@
    "replay": "event"
   },
   {
+   "name": "MMapper.Room.Social",
+   "id": "MMAPPER_ROOM_SOCIAL",
+   "replay": "event"
+  },
+  {
    "name": "MMapper.Session.Error",
    "id": "MMAPPER_SESSION_ERROR",
    "replay": "event"

@@ -95,10 +95,7 @@ class ParseEvent;
       MMapperCharAbilities, \
       "mmapper.char.abilities", \
       "MMapper.Char.Abilities") \
-    X(MMAPPER_CHAR_CONSIDER, \
-      MMapperCharConsider, \
-      "mmapper.char.consider", \
-      "MMapper.Char.Consider") \
+    X(MMAPPER_CHAR_CONSIDER, MMapperCharConsider, "mmapper.char.consider", "MMapper.Char.Consider") \
     X(MMAPPER_CHAR_NEEDS, MMapperCharNeeds, "mmapper.char.needs", "MMapper.Char.Needs") \
     X(MMAPPER_CHAR_REFUSED, MMapperCharRefused, "mmapper.char.refused", "MMapper.Char.Refused") \
     X(MMAPPER_CHAR_SCORE, MMapperCharScore, "mmapper.char.score", "MMapper.Char.Score") \
@@ -146,6 +143,7 @@ class ParseEvent;
       "mmapper.room.handraised", \
       "MMapper.Room.HandRaised") \
     X(MMAPPER_ROOM_LOOK, MMapperRoomLook, "mmapper.room.look", "MMapper.Room.Look") \
+    X(MMAPPER_ROOM_SOCIAL, MMapperRoomSocial, "mmapper.room.social", "MMapper.Room.Social") \
     X(MMAPPER_SESSION_ERROR, MMapperSessionError, "mmapper.session.error", "MMapper.Session.Error") \
     X(MMAPPER_SESSION_REMEMBER_LOGIN, \
       MMapperSessionRememberLogin, \
@@ -192,7 +190,7 @@ enum class NODISCARD GmcpMessageTypeEnum {
 #define X_COUNT(...) +1
 static constexpr const size_t NUM_GMCP_MESSAGES = XFOREACH_GMCP_MESSAGE_TYPE(X_COUNT);
 #undef X_COUNT
-static_assert(NUM_GMCP_MESSAGES == 100);
+static_assert(NUM_GMCP_MESSAGES == 101);
 DEFINE_ENUM_COUNT(GmcpMessageTypeEnum, NUM_GMCP_MESSAGES)
 
 namespace tags {

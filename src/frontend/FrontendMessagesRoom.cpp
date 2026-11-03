@@ -170,6 +170,17 @@ GmcpMessage makeContainerEvent(const ContainerEvent &event)
     return GmcpMessage{GmcpMessageTypeEnum::MMAPPER_ROOM_CONTAINER, toGmcpJson(obj)};
 }
 
+GmcpMessage makeRoomSocial(const RoomSocial &social)
+{
+    QJsonObject obj;
+    obj["actor"] = social.actor;
+    obj["social"] = social.social;
+    putText(obj, "target", social.target);
+    obj["form"] = social.form;
+    obj["text"] = social.text;
+    return GmcpMessage{GmcpMessageTypeEnum::MMAPPER_ROOM_SOCIAL, toGmcpJson(obj)};
+}
+
 GmcpMessage makeRoomHandRaised(const HandRaised &hand)
 {
     QJsonObject obj;

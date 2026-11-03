@@ -555,6 +555,9 @@ set(mmapper_SRCS
     parser/RoomContents.cpp
     parser/RoomContents.h
     parser/RoomDoors.cpp
+    parser/RoomSocial.cpp
+    parser/RoomSocial.h
+    parser/SocialLines.inc
     parser/RoomDoors.h
     parser/SendToUserSourceEnum.h
     parser/TradeLines.cpp

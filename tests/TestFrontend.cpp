@@ -38,6 +38,7 @@
 #include "../src/parser/LoginLines.h"
 #include "../src/parser/RoomContents.h"
 #include "../src/parser/RoomDoors.h"
+#include "../src/parser/RoomSocial.h"
 #include "../src/parser/WeatherLines.h"
 #include "../src/parser/XmlElement.h"
 #include "../src/proxy/GmcpMessage.h"
@@ -529,7 +530,8 @@ void TestFrontend::sessionStateTest()
     QVERIFY(packages.contains(QStringLiteral("Char.Needs")));
     QVERIFY(packages.contains(QStringLiteral("Char.Affects")));
     QVERIFY(packages.contains(QStringLiteral("Char.Consider")));
-    QCOMPARE(packages.size(), 5);
+    QVERIFY(packages.contains(QStringLiteral("Room.Social")));
+    QCOMPARE(packages.size(), 6);
     QCOMPARE(payloadOf(frontend_messages::makeSessionState(true,
                                                            arda,
                                                            true,
@@ -2787,6 +2789,34 @@ void TestFrontend::charConsiderTest()
     }
 }
 
+void TestFrontend::roomSocialTest()
+{
+    QCOMPARE(GmcpMessage::fromRawBytes(QByteArray{"MMapper.Room.Social"}).getType(),
+             GmcpMessageTypeEnum::MMAPPER_ROOM_SOCIAL);
+    const auto alone = parseSocialLine(QStringLiteral("Bob agrees."));
+    QVERIFY(alone.has_value());
+    QCOMPARE(alone->actor, QStringLiteral("Bob"));
+    QCOMPARE(alone->social, QStringLiteral("agree"));
+    QCOMPARE(alone->form, QStringLiteral("alone"));
+    QVERIFY(alone->target.isEmpty());
+    QCOMPARE(frontend_messages::makeRoomSocial(*alone).toRawBytes(),
+             QByteArray(R"(MMapper.Room.Social {"actor":"Bob","form":"alone",)"
+                        R"("social":"agree","text":"Bob agrees."})"));
+    const auto at = parseSocialLine(QStringLiteral("The cityguard agrees with you."));
+    QVERIFY(at.has_value());
+    QCOMPARE(at->actor, QStringLiteral("The cityguard"));
+    QCOMPARE(at->target, QStringLiteral("you"));
+    QCOMPARE(at->form, QStringLiteral("you"));
+    const auto other = parseSocialLine(QStringLiteral("Bob agrees with Frodo."));
+    QVERIFY(other.has_value());
+    QCOMPARE(other->target, QStringLiteral("Frodo"));
+    QCOMPARE(other->form, QStringLiteral("other"));
+    // Not socials: speech, the player's own line, a sentence that merely ends alike.
+    QVERIFY(!parseSocialLine(QStringLiteral("You agree.")).has_value());
+    QVERIFY(!parseSocialLine(QStringLiteral("Bob says, 'Frodo agrees.'")).has_value());
+    QVERIFY(!parseSocialLine(QString()).has_value());
+}
+
 void TestFrontend::charNeedsTest()
 {
     QCOMPARE(GmcpMessage::fromRawBytes(QByteArray{"MMapper.Char.Needs"}).getType(),
@@ -3888,6 +3918,8 @@ void TestFrontend::goldenFramesTest()
     frames.push_back(frontend_messages::makeCharNeeds(golden));
     frames.push_back(frontend_messages::makeCharRefused(
         *parseRefusedLine(QStringLiteral("Rest while fighting? Are you MAD?"))));
+    frames.push_back(frontend_messages::makeRoomSocial(
+        *parseSocialLine(QStringLiteral("The cityguard agrees with you."))));
     frames.push_back(frontend_messages::makeRoomHandRaised(
         *parseHandRaised(QStringLiteral("Tipp raises his hand."))));
 
