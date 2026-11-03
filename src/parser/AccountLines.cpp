@@ -102,6 +102,8 @@ const char *accountReplyKindName(const AccountReplyKindEnum kind)
         return "wait";
     case AccountReplyKindEnum::UNKNOWN_COMMAND:
         return "unknown";
+    case AccountReplyKindEnum::PROMPT:
+        return "prompt";
     }
     return "unknown";
 }
@@ -227,6 +229,10 @@ AccountReplies AccountLinesTracker::receiveLine(const QString &line)
     if (const QString lead = line.trimmed(); lead.startsWith(PROMPT_WORD)) {
         out = closeAll();
         m_page.reset();
+        AccountReply prompt;
+        prompt.kind = AccountReplyKindEnum::PROMPT;
+        prompt.text = QString::fromLatin1(PROMPT_WORD.data(), PROMPT_WORD.size());
+        out.replies.push_back(prompt);
         const QString rest = lead.mid(PROMPT_WORD.size()).trimmed();
         if (!rest.isEmpty()) {
             out.append(receiveLine(rest));

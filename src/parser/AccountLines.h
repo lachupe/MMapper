@@ -127,6 +127,8 @@ enum class NODISCARD AccountReplyKindEnum : uint8_t {
     WAIT,
     /// "Unknown account command 'look'"
     UNKNOWN_COMMAND,
+    /// The `Account> ` prompt: MUME waits for an account command. `text` is "Account>".
+    PROMPT,
 };
 
 /// A one-line answer of the account menu.
@@ -141,7 +143,7 @@ struct NODISCARD AccountReply final
     QString text;
 };
 
-/// The protocol's name for `kind`: "wait" or "unknown".
+/// The protocol's name for `kind`: "wait", "unknown" or "prompt".
 NODISCARD const char *accountReplyKindName(AccountReplyKindEnum kind);
 
 /// A row of `list`'s reply, whose "Rce" column starts at `raceColumn` (the header's), or

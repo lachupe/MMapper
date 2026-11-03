@@ -38,7 +38,8 @@ NODISCARD QJsonValue idOrNull(const QString &id)
 /// What this MMapper sends of the packages (and package fields) a client may stop parsing MUME
 /// text for, named without the "MMapper." prefix; a field is "Package.field". Session.State's
 /// `packages`. A later slice adds its name here and nowhere else.
-const std::array<const char *, 7> g_sentPackages{
+const std::array<const char *, 8> g_sentPackages{
+    "Account.Reply.prompt",
     "Char.Affects",
     "Char.Consider",
     "Char.Needs",

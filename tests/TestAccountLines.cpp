@@ -103,8 +103,11 @@ void TestAccountLines::menuTest()
     const AccountReplies glued = tracker.receiveLine(
         QStringLiteral("Account> You must wait  8 mins before you can log in this character!"));
     QCOMPARE(glued.menus.size(), size_t{1});
-    QCOMPARE(glued.replies.size(), size_t{1});
-    QCOMPARE(glued.replies.front().seconds, std::optional<int64_t>{480});
+    // The prompt is announced first (ARCH.8 slice 7), then the refusal glued to it.
+    QCOMPARE(glued.replies.size(), size_t{2});
+    QCOMPARE(glued.replies.front().kind, AccountReplyKindEnum::PROMPT);
+    QCOMPARE(glued.replies.front().text, QStringLiteral("Account>"));
+    QCOMPARE(glued.replies.back().seconds, std::optional<int64_t>{480});
 }
 
 void TestAccountLines::menuMergeVariantTest()
@@ -566,6 +569,16 @@ void TestAccountLines::rowTest()
 
 void TestAccountLines::repliesTest()
 {
+    // The `Account> ` prompt, alone, is a reply of kind "prompt" and nothing else.
+    {
+        AccountLinesTracker t;
+        const AccountReplies only = t.receiveLine(QStringLiteral("Account> "));
+        QCOMPARE(only.replies.size(), size_t{1});
+        QCOMPARE(only.replies.front().kind, AccountReplyKindEnum::PROMPT);
+        QCOMPARE(QString::fromUtf8(accountReplyKindName(only.replies.front().kind)),
+                 QStringLiteral("prompt"));
+        QVERIFY(only.menus.empty() && only.lists.empty());
+    }
     // powwow/logs/lbfort.gjurza.mov:29, :41; trolls_roots.mov:132855;
     // archives/log-2005.12.14-01.29.22.mov:28122; 2vs2_kolbas.mov:131 (Unknown ... 'look').
     const auto sixMins = parseAccountReplyLine(

@@ -532,8 +532,9 @@ void TestFrontend::sessionStateTest()
     QVERIFY(packages.contains(QStringLiteral("Char.Affects")));
     QVERIFY(packages.contains(QStringLiteral("Char.Consider")));
     QVERIFY(packages.contains(QStringLiteral("Comm.Group")));
+    QVERIFY(packages.contains(QStringLiteral("Account.Reply.prompt")));
     QVERIFY(packages.contains(QStringLiteral("Room.Social")));
-    QCOMPARE(packages.size(), 7);
+    QCOMPARE(packages.size(), 8);
     QCOMPARE(payloadOf(frontend_messages::makeSessionState(true,
                                                            arda,
                                                            true,
@@ -2515,6 +2516,13 @@ void TestFrontend::accountTest()
     cache.remember(chars);
     cache.remember(menuMsg);
     cache.remember(frontend_messages::makeAccountReply(*wait));
+    // The prompt is a reply of its own kind, an event like the others.
+    AccountReply prompt;
+    prompt.kind = AccountReplyKindEnum::PROMPT;
+    prompt.text = QStringLiteral("Account>");
+    const QJsonObject p = payloadOf(frontend_messages::makeAccountReply(prompt));
+    QCOMPARE(p["kind"].toString(), QStringLiteral("prompt"));
+    QCOMPARE(p["text"].toString(), QStringLiteral("Account>"));
     cache.remember(GmcpMessage::fromRawBytes(QByteArray{R"(Char.Name {"name":"Rumata"})"}));
     cache.clearGame();
     QVERIFY(replayed(cache, GmcpMessageTypeEnum::CHAR_NAME).isNull());
@@ -3967,6 +3975,10 @@ void TestFrontend::goldenFramesTest()
     porien.name = QStringLiteral("Porien");
     list.chars.push_back(porien);
     frames.push_back(frontend_messages::makeAccountChars(list));
+    AccountReply promptReply;
+    promptReply.kind = AccountReplyKindEnum::PROMPT;
+    promptReply.text = QStringLiteral("Account>");
+    frames.push_back(frontend_messages::makeAccountReply(promptReply));
 
     const QDir dir{QStringLiteral(MM_FRONTEND_GOLDEN_DIR)};
     const bool update = qEnvironmentVariableIsSet("MM_UPDATE_GOLDEN");

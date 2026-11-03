@@ -11,6 +11,7 @@
         "mapName": "arda.mm2",
         "mapRooms": 31000,
         "packages": [
+            "Account.Reply.prompt",
             "Char.Affects",
             "Char.Consider",
             "Char.Needs",

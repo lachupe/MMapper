@@ -130,7 +130,8 @@ struct NODISCARD MapIdentity final
 /// `log` is the version of the prioritised Log, MMapper.Log (spec section 37), 1 today.
 ///
 /// `packages` lists, by name without the "MMapper." prefix, the packages and package fields
-/// this MMapper sends that a client can stop parsing MUME text for: "Char.Affects" (the
+/// this MMapper sends that a client can stop parsing MUME text for: "Account.Reply.prompt" (the
+/// `Account> ` prompt as a reply of kind "prompt"), "Char.Affects" (the
 /// timed states), "Char.Consider" (the verdict on `consider`), "Char.Needs",
 /// "Char.Refused", "Comm.Group" (the group channel), "Room.Social" (socials and emotes), "Xml.Element.verb" (the movers' verb). A client treats a missing list as an old
 /// MMapper.
@@ -502,7 +503,8 @@ NODISCARD GmcpMessage makeAccountMenu(const AccountMenu &menu);
 NODISCARD GmcpMessage makeAccountChars(const AccountChars &chars);
 
 /// MMapper.Account.Reply -- a one-line answer of the menu: `kind` "wait" (`seconds` before the
-/// character may log in) or "unknown" (`command` MUME did not know), and `text`. Event.
+/// character may log in), "unknown" (`command` MUME did not know) or "prompt" (MUME's `Account> `
+/// prompt: it waits for an account command; `text` is "Account>"), and `text`. Event.
 NODISCARD GmcpMessage makeAccountReply(const AccountReply &reply);
 
 /// MMapper.Log.Line -- one line of MUME's that the prioritised Log shows (spec section 37):
