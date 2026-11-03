@@ -9,9 +9,10 @@
 #include "../observer/gameobserver.h"
 #include "../parser/AccountLines.h"
 #include "../parser/CharAffects.h"
+#include "../parser/CharConsider.h"
 #include "../parser/CharFollowers.h"
 #include "../parser/CharLines.h"
-#include "../parser/CharConsider.h"
+#include "../parser/CharNeeds.h"
 #include "../parser/CharRefused.h"
 #include "../parser/CombatLines.h"
 #include "../parser/ContainerLines.h"
@@ -127,8 +128,8 @@ struct NODISCARD MapIdentity final
 /// `log` is the version of the prioritised Log, MMapper.Log (spec section 37), 1 today.
 ///
 /// `packages` lists, by name without the "MMapper." prefix, the packages and package fields
-/// this MMapper sends that a client can stop parsing MUME text for: "Char.Refused",
-/// "Xml.Element.verb" (the movers' verb). A client treats a missing list as an old MMapper.
+/// this MMapper sends that a client can stop parsing MUME text for: "Char.Affects" (the
+/// timed states), "Char.Needs", "Char.Refused", "Xml.Element.verb" (the movers' verb). A client treats a missing list as an old MMapper.
 ///
 /// `login` is there only while MUME waits at a login prompt (LoginLinesTracker): `kind` "name"
 /// or "password", `text` (the prompt as MUME printed it), `serial` (one more for every prompt
@@ -429,6 +430,12 @@ NODISCARD GmcpMessage makeCharFollowers(const CharFollowers &followers);
 /// line) and, where the command was seen, `target` (what the player typed after `consider`). An
 /// event: not replayed. See CharConsider.
 NODISCARD GmcpMessage makeCharConsider(const CharConsider &consider);
+
+/// MMapper.Char.Needs -- the character's hunger and thirst as MUME's lines last said them:
+/// `hungry` and `thirsty`, each a boolean, left out until a line spoke of it ("You begin to feel
+/// hungry." on; "You eat ...", "You are full." off; the same for thirst). Whole at each change,
+/// replayed as last sent, forgotten when the character leaves the game. See CharNeedsTracker.
+NODISCARD GmcpMessage makeCharNeeds(const CharNeedsTracker &needs);
 
 /// MMapper.Char.Refused -- a command MUME refused, read off its sentence: `text` (the line),
 /// `reason` (a stable code: already, fighting, not-fighting, position, slept, self, queued, busy,

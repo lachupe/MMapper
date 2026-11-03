@@ -11,6 +11,8 @@
         "mapName": "arda.mm2",
         "mapRooms": 31000,
         "packages": [
+            "Char.Affects",
+            "Char.Needs",
             "Char.Refused",
             "Xml.Element.verb"
         ],

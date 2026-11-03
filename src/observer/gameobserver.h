@@ -7,9 +7,10 @@
 #include "../global/Signal2.h"
 #include "../map/PromptFlags.h"
 #include "../parser/AccountLines.h"
+#include "../parser/CharConsider.h"
 #include "../parser/CharFollowers.h"
 #include "../parser/CharLines.h"
-#include "../parser/CharConsider.h"
+#include "../parser/CharNeeds.h"
 #include "../parser/CharRefused.h"
 #include "../parser/CombatLines.h"
 #include "../parser/ContainerLines.h"
@@ -145,6 +146,8 @@ public:
     Signal2<CharFollowers> sig2_charFollowers;
     /// MUME's verdict on `consider <character>`. An event. See CharConsider.
     Signal2<CharConsider> sig2_charConsider;
+    /// A line that turned the player's hunger or thirst on or off. See CharNeedsTracker.
+    Signal2<CharNeedLine> sig2_charNeedLine;
     /// A command MUME refused, in a sentence no other reader takes. An event. See CharRefused.
     Signal2<CharRefused> sig2_charRefused;
     /// A player in the room raised a hand to be grouped. An event. See HandRaised.
@@ -276,6 +279,7 @@ public:
     {
         sig2_itemCommand.invoke(command);
     }
+    void observeCharNeedLine(const CharNeedLine &line) { sig2_charNeedLine.invoke(line); }
     void observeCharRefused(const CharRefused &refused) { sig2_charRefused.invoke(refused); }
     void observeHandRaised(const HandRaised &hand) { sig2_handRaised.invoke(hand); }
     void observeRoomDoors(const RoomDoors &doors) { sig2_roomDoors.invoke(doors); }

@@ -53,6 +53,7 @@ private Q_SLOTS:
     static void charWoundsTest();
     static void charFollowersTest();
     static void charConsiderTest();
+    static void charNeedsTest();
     static void charRefusedTest();
     static void charRefusedEveryRefusalTest();
     static void movementVerbTest();

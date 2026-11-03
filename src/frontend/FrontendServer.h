@@ -7,6 +7,7 @@
 #include "../global/macros.h"
 #include "../map/roomid.h"
 #include "../parser/CharAffects.h"
+#include "../parser/CharNeeds.h"
 #include "../parser/LoginLines.h"
 #include "../proxy/GmcpMessage.h"
 #include "CommandRunner.h"
@@ -134,6 +135,8 @@ private:
     /// The effects on the player's character, published whole as MMapper.Char.Affects at
     /// each change and replayed through the cache; forgotten with it.
     CharAffectsTracker m_charAffects;
+    /// Hunger and thirst as the lines last said them (MMapper.Char.Needs).
+    CharNeedsTracker m_charNeeds;
     /// Fires when the bleeding kept in m_charAffects would end for lack of bleed lines.
     QTimer m_bleedTimer;
 

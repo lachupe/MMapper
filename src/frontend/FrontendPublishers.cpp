@@ -53,6 +53,13 @@ void FrontendServer::registerPublishers()
     bindPublisher(o.sig2_charAbilities, makeCharAbilities);
     bindPublisher(o.sig2_charSkills, makeCharSkills);
 
+    // Hunger and thirst, state: sent whole after each line that changed them.
+    o.sig2_charNeedLine.connect(m_lifetime, [this](const CharNeedLine &line) {
+        if (m_charNeeds.receive(line)) {
+            publish(makeCharNeeds(m_charNeeds));
+        }
+    });
+
     // The packages below do more than build and publish.
 
     // A combat event, and what it changed of the effects on the player's character, which is
@@ -174,6 +181,7 @@ void FrontendServer::registerSessionHandlers()
         m_replay.clear(ReplayScopeEnum::ACCOUNT);
         m_importantLog.reset();
         m_charAffects.reset();
+        m_charNeeds.reset();
         publishSessionState();
     });
 
@@ -196,6 +204,7 @@ void FrontendServer::registerSessionHandlers()
             m_replay.clear(ReplayScopeEnum::GAME);
             // The effects were this character's: the next one to enter starts with none known.
             m_charAffects.reset();
+            m_charNeeds.reset();
         } else {
             // A character is in the game: no login prompt stands, and the login was accepted.
             m_loginPrompt = LoginPrompt{};

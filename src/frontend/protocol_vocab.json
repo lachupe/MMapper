@@ -212,6 +212,11 @@
    "replay": "whole"
   },
   {
+   "name": "MMapper.Char.Needs",
+   "id": "MMAPPER_CHAR_NEEDS",
+   "replay": "whole"
+  },
+  {
    "name": "MMapper.Char.Refused",
    "id": "MMAPPER_CHAR_REFUSED",
    "replay": "event"

@@ -91,6 +91,7 @@ add_library(mm_parser_lines STATIC
     ../src/parser/CharFollowers.h
     ../src/parser/CharLines.cpp
     ../src/parser/CharLines.h
+    ../src/parser/CharNeeds.cpp
     ../src/parser/CharRefused.cpp
     ../src/parser/CharRefused.h
     ../src/parser/ChunkFrame.cpp

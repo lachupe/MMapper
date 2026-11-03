@@ -371,6 +371,18 @@ GmcpMessage makeCharConsider(const CharConsider &consider)
     return GmcpMessage{GmcpMessageTypeEnum::MMAPPER_CHAR_CONSIDER, toGmcpJson(obj)};
 }
 
+GmcpMessage makeCharNeeds(const CharNeedsTracker &needs)
+{
+    QJsonObject obj;
+    if (needs.hungry >= 0) {
+        obj["hungry"] = needs.hungry == 1;
+    }
+    if (needs.thirsty >= 0) {
+        obj["thirsty"] = needs.thirsty == 1;
+    }
+    return GmcpMessage{GmcpMessageTypeEnum::MMAPPER_CHAR_NEEDS, toGmcpJson(obj)};
+}
+
 GmcpMessage makeCharRefused(const CharRefused &refused)
 {
     QJsonObject obj;

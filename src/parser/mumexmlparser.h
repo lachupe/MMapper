@@ -14,6 +14,7 @@
 #include "CharConsider.h"
 #include "CharFollowers.h"
 #include "CharLines.h"
+#include "CharNeeds.h"
 #include "CharRefused.h"
 #include "ChunkFrame.h"
 #include "CombatLines.h"

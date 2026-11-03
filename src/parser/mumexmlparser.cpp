@@ -442,6 +442,9 @@ void MumeXmlParser::parse(const TelnetData &data, const bool isGoAhead)
                 if (const auto consider = m_considerReader.receiveLine(plain)) {
                     m_observer.observeCharConsider(*consider);
                 }
+                if (const auto need = parseNeedLine(plain)) {
+                    m_observer.observeCharNeedLine(*need);
+                }
                 if (auto refused = refusalOfLine(plain, combatLine)) {
                     if (refused->action == QStringLiteral("move")) {
                         refused->dir = moveDir;

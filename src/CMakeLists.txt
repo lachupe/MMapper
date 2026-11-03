@@ -521,6 +521,8 @@ set(mmapper_SRCS
     parser/CharFollowers.h
     parser/CharLines.cpp
     parser/CharLines.h
+    parser/CharNeeds.cpp
+    parser/CharNeeds.h
     parser/CharRefused.cpp
     parser/CharRefused.h
     parser/ChunkFrame.cpp

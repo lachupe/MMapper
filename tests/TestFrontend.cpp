@@ -28,6 +28,7 @@
 #include "../src/parser/AccountLines.h"
 #include "../src/parser/CharAffects.h"
 #include "../src/parser/CharConsider.h"
+#include "../src/parser/CharNeeds.h"
 #include "../src/parser/CharRefused.h"
 #include "../src/parser/CombatLines.h"
 #include "../src/parser/ContainerLines.h"
@@ -525,7 +526,9 @@ void TestFrontend::sessionStateTest()
     const QJsonArray packages = payloadOf(connected)["packages"].toArray();
     QVERIFY(packages.contains(QStringLiteral("Char.Refused")));
     QVERIFY(packages.contains(QStringLiteral("Xml.Element.verb")));
-    QCOMPARE(packages.size(), 2);
+    QVERIFY(packages.contains(QStringLiteral("Char.Needs")));
+    QVERIFY(packages.contains(QStringLiteral("Char.Affects")));
+    QCOMPARE(packages.size(), 4);
     QCOMPARE(payloadOf(frontend_messages::makeSessionState(true,
                                                            arda,
                                                            true,
@@ -2783,6 +2786,34 @@ void TestFrontend::charConsiderTest()
     }
 }
 
+void TestFrontend::charNeedsTest()
+{
+    QCOMPARE(GmcpMessage::fromRawBytes(QByteArray{"MMapper.Char.Needs"}).getType(),
+             GmcpMessageTypeEnum::MMAPPER_CHAR_NEEDS);
+    CharNeedsTracker needs;
+    QVERIFY(!needs.known());
+    QCOMPARE(frontend_messages::makeCharNeeds(needs).toRawBytes(),
+             QByteArray("MMapper.Char.Needs {}"));
+    for (const char *line : {"You begin to feel hungry.", "You are hungry."}) {
+        QVERIFY(parseNeedLine(QString::fromLatin1(line)).has_value());
+    }
+    QVERIFY(needs.receive(*parseNeedLine(QStringLiteral("You begin to feel thirsty."))));
+    QCOMPARE(frontend_messages::makeCharNeeds(needs).toRawBytes(),
+             QByteArray(R"(MMapper.Char.Needs {"thirsty":true})"));
+    // The same line again changes nothing.
+    QVERIFY(!needs.receive(*parseNeedLine(QStringLiteral("You are thirsty."))));
+    QVERIFY(needs.receive(*parseNeedLine(QStringLiteral("You begin to feel hungry."))));
+    QVERIFY(needs.receive(*parseNeedLine(QStringLiteral("You drink the water."))));
+    QCOMPARE(frontend_messages::makeCharNeeds(needs).toRawBytes(),
+             QByteArray(R"(MMapper.Char.Needs {"hungry":true,"thirsty":false})"));
+    QVERIFY(needs.receive(*parseNeedLine(QStringLiteral("You are full."))));
+    QVERIFY(needs.receive(*parseNeedLine(QStringLiteral("You eat a large biscuit."))) == false);
+    QVERIFY(!parseNeedLine(QStringLiteral("You are hungrier than ever.")).has_value());
+    QVERIFY(!parseNeedLine(QStringLiteral("Tipp eats a biscuit.")).has_value());
+    needs.reset();
+    QVERIFY(!needs.known());
+}
+
 void TestFrontend::charRefusedTest()
 {
     QCOMPARE(GmcpMessage::fromRawBytes(QByteArray{"MMapper.Char.Refused"}).getType(),
@@ -3847,6 +3878,10 @@ void TestFrontend::goldenFramesTest()
         *parseCharLevelLine(QStringLiteral("MMXP 56 45,370,716 1,029,284 271,013 0"))));
     frames.push_back(
         frontend_messages::makeCharWimpy(*parseWimpyLine(QStringLiteral("Wimpy set to: 120"))));
+    CharNeedsTracker golden;
+    QVERIFY(golden.receive(*parseNeedLine(QStringLiteral("You begin to feel hungry."))));
+    QVERIFY(golden.receive(*parseNeedLine(QStringLiteral("You drink the water."))));
+    frames.push_back(frontend_messages::makeCharNeeds(golden));
     frames.push_back(frontend_messages::makeCharRefused(
         *parseRefusedLine(QStringLiteral("Rest while fighting? Are you MAD?"))));
     frames.push_back(frontend_messages::makeRoomHandRaised(
