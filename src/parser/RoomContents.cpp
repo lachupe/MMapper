@@ -15,9 +15,9 @@ namespace {
 
 // What MUME lets a player look into, open or loot. The first half is what the powwow logs show
 // as the header of a container's listing ("chest (here) :", "skeleton (here) :", "rack (here)
-// :"); the rest are the furniture and vessels MUME's zones are known to hold. A noun only
+// :"); the rest are the furniture and vessels MUME's zones are known to hold (a table or a desk too: what lies on it can be taken, mume3d 2026-11-03). A noun only
 // counts as a whole word, so "boxwood" and "chestnut" are not boxes and chests.
-constexpr std::array<const char *, 47> NOUNS{"corpse",      "chest",     "backpack",  "skeleton",
+constexpr std::array<const char *, 49> NOUNS{"corpse",      "chest",     "backpack",  "skeleton",
                                              "pouch",       "sack",      "crate",     "cabinet",
                                              "rack",        "peg",       "bookshelf", "cart",
                                              "cage",        "quiver",    "coffer",    "casket",
@@ -28,7 +28,8 @@ constexpr std::array<const char *, 47> NOUNS{"corpse",      "chest",     "backpa
                                              "knapsack",    "rucksack",  "pack",      "sable",
                                              "wallet",      "purse",     "bladder",   "sheath",
                                              "scabbard",    "keyring",   "moneybag",  "web",
-                                             "bolt-case",   "bolt case", "key ring"};
+                                             "bolt-case",   "bolt case", "key ring",  "table",
+                                             "desk"};
 
 NODISCARD const QRegularExpression &nounPattern()
 {
