@@ -12,6 +12,7 @@
         "mapRooms": 31000,
         "packages": [
             "Char.Affects",
+            "Char.Consider",
             "Char.Needs",
             "Char.Refused",
             "Xml.Element.verb"

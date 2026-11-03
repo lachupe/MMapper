@@ -528,7 +528,8 @@ void TestFrontend::sessionStateTest()
     QVERIFY(packages.contains(QStringLiteral("Xml.Element.verb")));
     QVERIFY(packages.contains(QStringLiteral("Char.Needs")));
     QVERIFY(packages.contains(QStringLiteral("Char.Affects")));
-    QCOMPARE(packages.size(), 4);
+    QVERIFY(packages.contains(QStringLiteral("Char.Consider")));
+    QCOMPARE(packages.size(), 5);
     QCOMPARE(payloadOf(frontend_messages::makeSessionState(true,
                                                            arda,
                                                            true,
@@ -3878,6 +3879,9 @@ void TestFrontend::goldenFramesTest()
         *parseCharLevelLine(QStringLiteral("MMXP 56 45,370,716 1,029,284 271,013 0"))));
     frames.push_back(
         frontend_messages::makeCharWimpy(*parseWimpyLine(QStringLiteral("Wimpy set to: 120"))));
+    auto goldenConsider = *parseConsiderLine(QStringLiteral("You would need some luck!"));
+    goldenConsider.target = considerTarget(QStringLiteral("con orc"));
+    frames.push_back(frontend_messages::makeCharConsider(goldenConsider));
     CharNeedsTracker golden;
     QVERIFY(golden.receive(*parseNeedLine(QStringLiteral("You begin to feel hungry."))));
     QVERIFY(golden.receive(*parseNeedLine(QStringLiteral("You drink the water."))));

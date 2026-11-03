@@ -129,7 +129,9 @@ struct NODISCARD MapIdentity final
 ///
 /// `packages` lists, by name without the "MMapper." prefix, the packages and package fields
 /// this MMapper sends that a client can stop parsing MUME text for: "Char.Affects" (the
-/// timed states), "Char.Needs", "Char.Refused", "Xml.Element.verb" (the movers' verb). A client treats a missing list as an old MMapper.
+/// timed states), "Char.Consider" (the verdict on `consider`), "Char.Needs",
+/// "Char.Refused", "Xml.Element.verb" (the movers' verb). A client treats a missing list as an old
+/// MMapper.
 ///
 /// `login` is there only while MUME waits at a login prompt (LoginLinesTracker): `kind` "name"
 /// or "password", `text` (the prompt as MUME printed it), `serial` (one more for every prompt

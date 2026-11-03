@@ -1,0 +1,9 @@
+{
+    "package": "MMapper.Char.Consider",
+    "payload": {
+        "grade": 5,
+        "target": "orc",
+        "text": "You would need some luck!",
+        "verdict": "some-luck"
+    }
+}
