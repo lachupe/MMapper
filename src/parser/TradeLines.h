@@ -141,8 +141,10 @@ enum class NODISCARD ShopDealKindEnum : uint8_t {
     /// A keeper refusing the player: never seen in a log, so never read yet.
     REFUSED,
     /// The reply to `mend <item>` and `resize <item>` (mume3d FEAT.188), read by
-    /// readKeeperReply() for the shop.mend and shop.resize operations. Their wording was never
-    /// seen when they were added: nothing tells success from refusal, the words go as said.
+    /// readKeeperReply() for the shop.mend and shop.resize operations, as the user's logs show
+    /// them: a mend is billed ("That will be ..., please.", "It should be done shortly. ..."), a
+    /// resize names the item ("X resizes a coif to fit you.") and bills ("The total comes to ...").
+    /// A refusal ("I can't mend that.", "Mend what?") names no money.
     MEND,
     RESIZE
 };
@@ -173,11 +175,12 @@ struct NODISCARD ShopDeal final
 };
 
 /// The keeper's reply to one `value`, `mend` or `resize` (kind VALUE, MEND or RESIZE), out of
-/// the lines MUME sent between the command and its prompt: each "X tells you '...'" is joined
-/// over its wrapped lines. For VALUE the price is the first tell naming money that is not a
-/// mending quote, and the mending quote goes to mendCopper/mendSaid. For MEND and RESIZE every
-/// tell is said, joined by newlines, and the amount is the first money named. `text` keeps
-/// every line as it came.
+/// the lines MUME sent between the command and its prompt: each "X tells you '...'" is joined over
+/// its wrapped lines. For VALUE the price is the first tell naming money that is not a mending
+/// quote, and the mending quote goes to mendCopper/mendSaid. For MEND and RESIZE every tell is
+/// said, joined by newlines, and the amount is the sum of the money they name (`mend all` bills
+/// each item: "That will be 11 copper, please."); a RESIZE's "X resizes <item> to fit you." comes
+/// first in `said` and names the item in `items`. `text` keeps every line as it came.
 NODISCARD ShopDeal readKeeperReply(ShopDealKindEnum kind, const QStringList &lines);
 
 /// One row of a guildmaster's table: "Block door        8/11        91%  Normal      Hard to

@@ -282,6 +282,9 @@ const QRegularExpression g_innCost{QStringLiteral(R"(\bIt will cost you (.+?) pe
 /// 2026-11-02: "An armourer tells you 'Mending will cost you six copper'").
 const QRegularExpression g_mendQuote{QStringLiteral(R"(^Mending will cost you\b)"),
                                      QRegularExpression::CaseInsensitiveOption};
+/// A keeper's resize, before the bill (logs of 2006-2026: "Angdil resizes a white chain mail coif to
+/// fit you." then "Angdil tells you 'The total comes to 11 gold 3 silver 84 copper.'").
+const QRegularExpression g_resized{QStringLiteral(R"(^(.+?) resizes (.+) to fit you\.?$)")};
 const QRegularExpression g_innLasts{QStringLiteral(R"(^You have enough money for .+$)")};
 const QRegularExpression g_retireStart{
     QStringLiteral(R"(^If you (?:retire now|really want to retire)\b)")};
@@ -584,6 +587,8 @@ ShopDeal readKeeperReply(const ShopDealKindEnum kind, const QStringList &lines)
         QString said;
     };
     std::vector<Tell> tells;
+    QStringList resized;
+    QString resizer;
     bool open = false;
     for (const QString &raw : lines) {
         const QString text = raw.trimmed();
@@ -598,6 +603,11 @@ ShopDeal readKeeperReply(const ShopDealKindEnum kind, const QStringList &lines)
         }
         const QRegularExpressionMatch m = g_tell.match(text);
         if (!m.hasMatch()) {
+            if (const QRegularExpressionMatch r = g_resized.match(text);
+                kind == ShopDealKindEnum::RESIZE && r.hasMatch()) {
+                resizer = r.captured(1).trimmed();
+                resized << r.captured(2).trimmed();
+            }
             continue;
         }
         Tell tell{m.captured(1).trimmed(), m.captured(2)};
@@ -612,6 +622,12 @@ ShopDeal readKeeperReply(const ShopDealKindEnum kind, const QStringList &lines)
     deal.kind = kind;
     deal.text = lines.join(QLatin1Char('\n'));
     QStringList said;
+    // A resize done: the keeper's own line first, the item it names in `items`.
+    for (const QString &item : resized) {
+        said << resizer + QStringLiteral(" resizes ") + item + QStringLiteral(" to fit you.");
+        deal.items << item;
+        deal.keeper = resizer;
+    }
     for (const Tell &tell : tells) {
         const QString words = tell.said.trimmed();
         const std::optional<Money> money = findMoney(words);
@@ -619,10 +635,13 @@ ShopDeal readKeeperReply(const ShopDealKindEnum kind, const QStringList &lines)
             deal.keeper = tell.speaker;
         }
         if (kind != ShopDealKindEnum::VALUE) {
+            // Every bill counts: `mend all` asks "That will be ..., please." once per item.
             said << words;
-            if (!deal.amountCopper.has_value() && money.has_value()) {
-                deal.amountCopper = money->copper;
-                deal.amountText = money->text;
+            if (money.has_value()) {
+                deal.amountCopper = deal.amountCopper.value_or(0) + money->copper;
+                deal.amountText = deal.amountText.isEmpty() ? money->text
+                                                            : deal.amountText + QStringLiteral(", ")
+                                                                  + money->text;
             }
             continue;
         }
