@@ -131,14 +131,20 @@ enum class NODISCARD ShopDealKindEnum : uint8_t {
     BUY,
     /// The keeper's tell with the sum and "You sell ...".
     SELL,
-    /// The reply to `value`: never seen in a log, so never read yet.
+    /// The reply to `value` (mume3d FIX.351/FIX.363): read by readKeeperReply() for the
+    /// shop.value operation, never by the tracker.
     VALUE,
     /// "There is no such thing for sale."
     MISS,
     /// "Sorry, we are closed. We will open in a couple of hours."
     CLOSED,
     /// A keeper refusing the player: never seen in a log, so never read yet.
-    REFUSED
+    REFUSED,
+    /// The reply to `mend <item>` and `resize <item>` (mume3d FEAT.188), read by
+    /// readKeeperReply() for the shop.mend and shop.resize operations. Their wording was never
+    /// seen when they were added: nothing tells success from refusal, the words go as said.
+    MEND,
+    RESIZE
 };
 
 /// One exchange with a keeper.
@@ -156,7 +162,23 @@ struct NODISCARD ShopDeal final
     /// The keeper's tell, the words inside the quotes, lines joined.
     QString said;
     QString text;
+    /// Of a reply read for an operation (readKeeperReply()): the item the request named and the
+    /// request's id, so that the reply is matched to what asked for it, never to the newest tell.
+    QString item;
+    QString request;
+    /// Of a `value` at an artisan: the mending quote said in the same breath ("Mending will cost
+    /// you six copper"), apart from the price.
+    std::optional<int64_t> mendCopper;
+    QString mendSaid;
 };
+
+/// The keeper's reply to one `value`, `mend` or `resize` (kind VALUE, MEND or RESIZE), out of
+/// the lines MUME sent between the command and its prompt: each "X tells you '...'" is joined
+/// over its wrapped lines. For VALUE the price is the first tell naming money that is not a
+/// mending quote, and the mending quote goes to mendCopper/mendSaid. For MEND and RESIZE every
+/// tell is said, joined by newlines, and the amount is the first money named. `text` keeps
+/// every line as it came.
+NODISCARD ShopDeal readKeeperReply(ShopDealKindEnum kind, const QStringList &lines);
 
 /// One row of a guildmaster's table: "Block door        8/11        91%  Normal      Hard to
 /// improve".

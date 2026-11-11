@@ -480,6 +480,58 @@ void TestCommandRunner::shopSellTest()
     QVERIFY(bad.sent.isEmpty());
 }
 
+void TestCommandRunner::shopValueMendResizeTest()
+{
+    // value: one Shop.Deal with the request's id and item, before the operation is done; the
+    // price and the mending quote apart (mume3d FIX.351).
+    Mume mume;
+    mume.request(R"({"id":"v","action":"shop.value","item":"2.jerkin"})");
+    QCOMPARE(mume.sent, QStringList{"value 2.jerkin"});
+    mume.flush();
+    mume.line(QStringLiteral(
+        "An armourer tells you 'Well ... I wouldn't give more than one silver and"));
+    mume.line(QStringLiteral("thirty-six copper for that.'"));
+    mume.line(QStringLiteral("An armourer tells you 'Mending will cost you two copper'"));
+    mume.prompt();
+    QCOMPARE(mume.status(), QStringLiteral("done"));
+    QCOMPARE(mume.last()["text"].toArray().size(), 3);
+    QVERIFY(mume.names.size() >= 2);
+    const QJsonObject reply = mume.ops[mume.ops.size() - 2];
+    QCOMPARE(mume.names[mume.names.size() - 2], QStringLiteral("MMapper.Shop.Deal"));
+    QCOMPARE(reply["kind"].toString(), QStringLiteral("value"));
+    QCOMPARE(reply["request"].toString(), QStringLiteral("v"));
+    QCOMPARE(reply["item"].toString(), QStringLiteral("2.jerkin"));
+    QCOMPARE(reply["amountCopper"].toInt(), 136);
+    QCOMPARE(reply["mendCopper"].toInt(), 2);
+
+    // mend and resize send their verb with the item; a closed shop refuses.
+    Mume mend;
+    mend.request(R"({"id":"m","action":"shop.mend","item":"shield"})");
+    QCOMPARE(mend.sent, QStringList{"mend shield"});
+    mend.flush();
+    mend.line(QStringLiteral("An armourer tells you 'Sorry, we are closed.'"));
+    mend.observer.observeShopDeal(deal(ShopDealKindEnum::CLOSED));
+    mend.prompt();
+    QCOMPARE(mend.status(), QStringLiteral("refused"));
+    QCOMPARE(mend.reason(), QStringLiteral("closed"));
+
+    Mume resize;
+    resize.request(R"({"id":"r","action":"shop.resize","item":"helm"})");
+    QCOMPARE(resize.sent, QStringList{"resize helm"});
+    resize.flush();
+    resize.line(QStringLiteral("You don't have that."));
+    resize.prompt();
+    QCOMPARE(resize.status(), QStringLiteral("done"));
+    QCOMPARE(resize.names[resize.names.size() - 2], QStringLiteral("MMapper.Shop.Deal"));
+    QCOMPARE(resize.ops[resize.ops.size() - 2]["kind"].toString(), QStringLiteral("resize"));
+
+    // An item that would end the line is refused.
+    Mume bad;
+    bad.request(R"({"id":"x","action":"shop.mend","item":"sword\nquit"})");
+    QCOMPARE(bad.reason(), QStringLiteral("invalid arguments"));
+    QVERIFY(bad.sent.isEmpty());
+}
+
 void TestCommandRunner::guildListTest()
 {
     Mume mume;
@@ -1610,7 +1662,7 @@ void TestCommandRunner::timeoutTest()
 void TestCommandRunner::refusalsTest()
 {
     Mume mume;
-    mume.request(R"({"id":"a","action":"shop.value","item":"sword"})");
+    mume.request(R"({"id":"a","action":"shop.show","number":3})");
     QCOMPARE(mume.status(), QStringLiteral("refused"));
     QCOMPARE(mume.reason(), QStringLiteral("unsupported"));
     QCOMPARE(mume.last()["id"].toString(), QStringLiteral("a"));

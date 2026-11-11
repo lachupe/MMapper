@@ -6,6 +6,7 @@
 #include "../global/parserutils.h"
 #include "../observer/gameobserver.h"
 #include "FrontendSubscriptions.h"
+#include "TradeMessages.h"
 
 #include <algorithm>
 #include <cassert>
@@ -383,9 +384,22 @@ void CommandRunner::request(const QJsonObject &payload, const Context &context)
     } else if (action == QStringLiteral("char.trophies")) {
         op.kind = KindEnum::CHAR_TROPHIES;
         op.commands << QStringLiteral("trop");
+    } else if (action == QStringLiteral("shop.value") || action == QStringLiteral("shop.mend")
+               || action == QStringLiteral("shop.resize")) {
+        // mume3d FIX.351, FEAT.188: one item, its reply matched to this request.
+        const auto item = argumentOf(payload.value("item"));
+        if (!item.has_value()) {
+            return refuse(id, action, invalid);
+        }
+        const QString verb = action.mid(5);
+        op.kind = (verb == QStringLiteral("value"))  ? KindEnum::SHOP_VALUE
+                  : (verb == QStringLiteral("mend")) ? KindEnum::SHOP_MEND
+                                                     : KindEnum::SHOP_RESIZE;
+        op.commands << verb + QLatin1Char(' ') + *item;
+        op.item = *item;
     } else {
-        // shop.show, shop.value, shop.mend, shop.resize wait for a live session
-        // to show their replies; anything else is not an action at all.
+        // shop.show waits for a live session to show its reply; anything else is not an
+        // action at all.
         return refuse(id, action, QStringLiteral("unsupported"));
     }
 
@@ -574,9 +588,21 @@ void CommandRunner::finish(const TradeStatusEnum status, const QString &reason, 
         m_publish(makeQuietReply(reply));
         return;
     }
+    const bool reply = op.kind == KindEnum::SHOP_VALUE || op.kind == KindEnum::SHOP_MEND
+                       || op.kind == KindEnum::SHOP_RESIZE;
+    if (reply && status == TradeStatusEnum::DONE) {
+        // The keeper's words, matched to this request by its id, before the operation is done.
+        ShopDeal deal = readKeeperReply(op.kind == KindEnum::SHOP_VALUE  ? ShopDealKindEnum::VALUE
+                                        : op.kind == KindEnum::SHOP_MEND ? ShopDealKindEnum::MEND
+                                                                         : ShopDealKindEnum::RESIZE,
+                                        op.stepText);
+        deal.item = op.item;
+        deal.request = op.state.id;
+        m_publish(frontend_messages::makeShopDeal(deal));
+    }
     op.state.status = status;
     op.state.reason = reason;
-    op.state.text = withText ? op.stepText : QStringList{};
+    op.state.text = (withText || reply) ? op.stepText : QStringList{};
     m_publish(makeTradeOperation(op.state));
 }
 
@@ -777,6 +803,8 @@ CommandRunner::Outcome CommandRunner::judge() const
         case ShopDealKindEnum::VALUE:
         case ShopDealKindEnum::BUY:
         case ShopDealKindEnum::SELL:
+        case ShopDealKindEnum::MEND:
+        case ShopDealKindEnum::RESIZE:
             break;
         }
         return QStringLiteral("refused");
@@ -852,6 +880,20 @@ CommandRunner::Outcome CommandRunner::judge() const
         break;
     case KindEnum::CHAR_TROPHIES:
         if (op.trophies) {
+            return {OutcomeEnum::DONE, {}};
+        }
+        break;
+    case KindEnum::SHOP_VALUE:
+    case KindEnum::SHOP_MEND:
+    case KindEnum::SHOP_RESIZE:
+        // The keeper closed or has no such thing: refused. Any other reply is the answer, its
+        // words as said; whether a mend or resize happened is for the purse and inventory to show.
+        if (op.deal.has_value()
+            && (op.deal->kind == ShopDealKindEnum::CLOSED
+                || op.deal->kind == ShopDealKindEnum::MISS)) {
+            return {OutcomeEnum::REFUSED, dealRefusal(*op.deal)};
+        }
+        if (op.stepLines > 0) {
             return {OutcomeEnum::DONE, {}};
         }
         break;

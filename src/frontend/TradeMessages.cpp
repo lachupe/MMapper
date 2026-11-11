@@ -43,6 +43,10 @@ std::string_view toProtocolString(const ShopDealKindEnum kind)
         return "closed";
     case ShopDealKindEnum::REFUSED:
         return "refused";
+    case ShopDealKindEnum::MEND:
+        return "mend";
+    case ShopDealKindEnum::RESIZE:
+        return "resize";
     }
     return "miss";
 }
@@ -99,6 +103,10 @@ GmcpMessage makeShopDeal(const ShopDeal &deal)
     obj["items"] = QJsonArray::fromStringList(deal.items);
     putText(obj, "said", deal.said);
     obj["text"] = deal.text;
+    putText(obj, "item", deal.item);
+    putText(obj, "request", deal.request);
+    putNumber(obj, "mendCopper", deal.mendCopper);
+    putText(obj, "mendSaid", deal.mendSaid);
     return GmcpMessage{GmcpMessageTypeEnum::MMAPPER_SHOP_DEAL, toGmcpJson(obj)};
 }
 

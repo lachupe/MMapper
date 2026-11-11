@@ -14,7 +14,7 @@
 /// MUME wrote it, one line per line.
 namespace frontend_messages {
 
-/// "buy", "sell", "value", "miss", "closed", "refused".
+/// "buy", "sell", "value", "miss", "closed", "refused", "mend", "resize".
 NODISCARD std::string_view toProtocolString(ShopDealKindEnum kind);
 
 /// MMapper.Shop.List -- MUME's reply to `list [filter]`: `keeper` (empty: the list does not name
@@ -25,7 +25,9 @@ NODISCARD std::string_view toProtocolString(ShopDealKindEnum kind);
 NODISCARD GmcpMessage makeShopList(const ShopList &list);
 
 /// MMapper.Shop.Deal -- one exchange with a keeper: `kind`, `keeper`, `amountCopper`,
-/// `amountText`, `items`, `said` (the tell) and `text`. An event, not replayed.
+/// `amountText`, `items`, `said` (the tell) and `text`; a reply to shop.value, shop.mend or
+/// shop.resize also has `item` and `request` (the operation's id), and a value at an artisan
+/// `mendCopper` and `mendSaid`. An event, not replayed.
 NODISCARD GmcpMessage makeShopDeal(const ShopDeal &deal);
 
 /// MMapper.Guild.Teacher -- a guildmaster's table: `teacher`, `kind` ("spells" or "skills"),

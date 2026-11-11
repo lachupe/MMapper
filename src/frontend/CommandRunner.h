@@ -164,6 +164,11 @@ private:
         INN_RENT,
         INN_RETIRE,
         CHAR_TROPHIES,
+        /// `value`, `mend`, `resize <item>`: done at the prompt after the reply, which goes out as
+        /// one MMapper.Shop.Deal with the request's id (readKeeperReply()).
+        SHOP_VALUE,
+        SHOP_MEND,
+        SHOP_RESIZE,
         /// MMapper.Input.Quiet: any one line, its reply kept from the terminal.
         QUIET
     };
@@ -214,6 +219,8 @@ private:
         /// The readers' packages seen in the current step's window.
         std::optional<ShopList> list;
         std::optional<ShopDeal> deal;
+        /// The item of shop.value, shop.mend and shop.resize, as the request named it.
+        QString item;
         std::optional<GuildTeacher> teacher;
         std::optional<GuildPractised> practised;
         bool skills = false;

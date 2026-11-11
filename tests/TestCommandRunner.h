@@ -19,6 +19,7 @@ private Q_SLOTS:
     static void shopListTest();
     static void shopBuyTest();
     static void shopSellTest();
+    static void shopValueMendResizeTest();
     static void guildListTest();
     static void practiseTimesTest();
     static void practiseLimitTest();

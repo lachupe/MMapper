@@ -2005,4 +2005,52 @@ void TestTradeLines::resetTest()
     QVERIFY(after.lists[0].query.isEmpty());
 }
 
+void TestTradeLines::keeperReplyTest()
+{
+    // A value at an artisan: the price (wrapped over two lines) and the mending quote, in either
+    // order (mume3d FIX.351, live at the King's Armoury 2026-11-03).
+    const QStringList price{QStringLiteral(
+                                "An armourer tells you 'Well ... I wouldn't give more than one silver and"),
+                            QStringLiteral("thirty-six copper for that.'")};
+    const QString mend = QStringLiteral("An armourer tells you 'Mending will cost you two copper'");
+    for (const bool mendFirst : {false, true}) {
+        const QStringList lines = mendFirst ? (QStringList{mend} + price) : (price + QStringList{mend});
+        const ShopDeal deal = readKeeperReply(ShopDealKindEnum::VALUE, lines);
+        QCOMPARE(deal.kind, ShopDealKindEnum::VALUE);
+        QCOMPARE(deal.keeper, QStringLiteral("An armourer"));
+        QCOMPARE(deal.said,
+                 QStringLiteral(
+                     "Well ... I wouldn't give more than one silver and thirty-six copper for that."));
+        QCOMPARE(deal.amountCopper, std::optional<int64_t>{136});
+        QCOMPARE(deal.mendCopper, std::optional<int64_t>{2});
+        QCOMPARE(deal.mendSaid, QStringLiteral("Mending will cost you two copper"));
+        QCOMPARE(deal.text, lines.join(QLatin1Char('\n')));
+    }
+
+    // A keeper who names no price: the words as said, no amount.
+    const ShopDeal none = readKeeperReply(
+        ShopDealKindEnum::VALUE,
+        QStringList{QStringLiteral("A grocer tells you 'I don't buy that kind of thing.'")});
+    QCOMPARE(none.said, QStringLiteral("I don't buy that kind of thing."));
+    QVERIFY(!none.amountCopper.has_value());
+    QVERIFY(!none.mendCopper.has_value());
+
+    // Mend and resize: every tell said, the first money named read; a line that is no tell is
+    // kept in the text only.
+    const ShopDeal mended = readKeeperReply(
+        ShopDealKindEnum::MEND,
+        QStringList{QStringLiteral("You give a shield to an armourer."),
+                    QStringLiteral("An armourer tells you 'That will be six copper.'"),
+                    QStringLiteral("An armourer tells you 'Come back in a while.'")});
+    QCOMPARE(mended.kind, ShopDealKindEnum::MEND);
+    QCOMPARE(mended.said, QStringLiteral("That will be six copper.\nCome back in a while."));
+    QCOMPARE(mended.amountCopper, std::optional<int64_t>{6});
+    QVERIFY(mended.text.startsWith(QStringLiteral("You give")));
+    const ShopDeal plain = readKeeperReply(ShopDealKindEnum::RESIZE,
+                                           QStringList{QStringLiteral("You don't have that.")});
+    QVERIFY(plain.said.isEmpty());
+    QVERIFY(plain.keeper.isEmpty());
+    QCOMPARE(plain.text, QStringLiteral("You don't have that."));
+}
+
 QTEST_MAIN(TestTradeLines)

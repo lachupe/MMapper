@@ -278,6 +278,10 @@ const QRegularExpression g_closed{QStringLiteral(R"(\bSorry, we are closed\b)"),
 // -- inns ----------------------------------------------------------------------------------
 
 const QRegularExpression g_innCost{QStringLiteral(R"(\bIt will cost you (.+?) per day\b)")};
+/// An artisan's mending quote, said after the price to a `value` (live at the King's Armoury,
+/// 2026-11-02: "An armourer tells you 'Mending will cost you six copper'").
+const QRegularExpression g_mendQuote{QStringLiteral(R"(^Mending will cost you\b)"),
+                                     QRegularExpression::CaseInsensitiveOption};
 const QRegularExpression g_innLasts{QStringLiteral(R"(^You have enough money for .+$)")};
 const QRegularExpression g_retireStart{
     QStringLiteral(R"(^If you (?:retire now|really want to retire)\b)")};
@@ -570,6 +574,80 @@ std::optional<Money> findMoney(const QString &sentence)
         }
     }
     return std::nullopt;
+}
+
+ShopDeal readKeeperReply(const ShopDealKindEnum kind, const QStringList &lines)
+{
+    struct NODISCARD Tell final
+    {
+        QString speaker;
+        QString said;
+    };
+    std::vector<Tell> tells;
+    bool open = false;
+    for (const QString &raw : lines) {
+        const QString text = raw.trimmed();
+        if (open) {
+            Tell &tell = tells.back();
+            tell.said += QLatin1Char(' ') + text;
+            if (tell.said.endsWith(QLatin1Char('\''))) {
+                tell.said.chop(1);
+                open = false;
+            }
+            continue;
+        }
+        const QRegularExpressionMatch m = g_tell.match(text);
+        if (!m.hasMatch()) {
+            continue;
+        }
+        Tell tell{m.captured(1).trimmed(), m.captured(2)};
+        open = !tell.said.endsWith(QLatin1Char('\''));
+        if (!open) {
+            tell.said.chop(1);
+        }
+        tells.push_back(std::move(tell));
+    }
+
+    ShopDeal deal;
+    deal.kind = kind;
+    deal.text = lines.join(QLatin1Char('\n'));
+    QStringList said;
+    for (const Tell &tell : tells) {
+        const QString words = tell.said.trimmed();
+        const std::optional<Money> money = findMoney(words);
+        if (deal.keeper.isEmpty()) {
+            deal.keeper = tell.speaker;
+        }
+        if (kind != ShopDealKindEnum::VALUE) {
+            said << words;
+            if (!deal.amountCopper.has_value() && money.has_value()) {
+                deal.amountCopper = money->copper;
+                deal.amountText = money->text;
+            }
+            continue;
+        }
+        if (g_mendQuote.match(words).hasMatch()) {
+            if (!deal.mendCopper.has_value() && money.has_value()) {
+                deal.mendCopper = money->copper;
+                deal.mendSaid = words;
+            }
+        } else if (money.has_value() && !deal.amountCopper.has_value()) {
+            deal.keeper = tell.speaker;
+            deal.amountCopper = money->copper;
+            deal.amountText = money->text;
+            said << words;
+        }
+    }
+    // A value whose keeper named no price (a refusal, "I don't buy that"): the words as said.
+    if (kind == ShopDealKindEnum::VALUE && said.isEmpty()) {
+        for (const Tell &tell : tells) {
+            if (!g_mendQuote.match(tell.said.trimmed()).hasMatch()) {
+                said << tell.said.trimmed();
+            }
+        }
+    }
+    deal.said = said.join(QLatin1Char('\n'));
+    return deal;
 }
 
 void TradeReplies::append(TradeReplies &&other)

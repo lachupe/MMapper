@@ -45,4 +45,5 @@ private Q_SLOTS:
     static void quietReadersForeignTest();
     static void messagesTest();
     static void resetTest();
+    static void keeperReplyTest();
 };
