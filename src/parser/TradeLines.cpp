@@ -628,12 +628,15 @@ ShopDeal readKeeperReply(const ShopDealKindEnum kind, const QStringList &lines)
         deal.items << item;
         deal.keeper = resizer;
     }
+    // The keeper is the one who resized, else the first to tell: anyone else's tell in the same
+    // window (a player naming money) is not the keeper's answer.
+    if (deal.keeper.isEmpty() && !tells.empty()) {
+        deal.keeper = tells.front().speaker;
+    }
+    std::erase_if(tells, [&deal](const Tell &tell) { return tell.speaker != deal.keeper; });
     for (const Tell &tell : tells) {
         const QString words = tell.said.trimmed();
         const std::optional<Money> money = findMoney(words);
-        if (deal.keeper.isEmpty()) {
-            deal.keeper = tell.speaker;
-        }
         if (kind != ShopDealKindEnum::VALUE) {
             // Every bill counts: `mend all` asks "That will be ..., please." once per item.
             said << words;
@@ -651,7 +654,6 @@ ShopDeal readKeeperReply(const ShopDealKindEnum kind, const QStringList &lines)
                 deal.mendSaid = words;
             }
         } else if (money.has_value() && !deal.amountCopper.has_value()) {
-            deal.keeper = tell.speaker;
             deal.amountCopper = money->copper;
             deal.amountText = money->text;
             said << words;

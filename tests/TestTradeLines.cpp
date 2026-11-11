@@ -1409,12 +1409,15 @@ void TestTradeLines::quietCommandAllowedTest()
                                    "trophy -line orc",
                                    "who number",
                                    "eq all",
-                                   "value sword",
-                                   "VALUE 2.helm",
                                    "show 549",
                                    "show 2.helm",
                                    "i  "}) {
         QVERIFY2(allowed(line), line);
+    }
+
+    // `value` is MMapper's shop.value operation since 2026-11-11 (mume3d FIX.351), never a quiet read.
+    for (const char *const line : {"value sword", "VALUE 2.helm"}) {
+        QVERIFY2(!allowed(line), line);
     }
 
     // In any case, and with space around it.
@@ -1626,22 +1629,6 @@ void TestTradeLines::quietCaptureTest()
     QVERIFY(!v.hidden && !v.captured);
     v = q.receivePrompt();
     QVERIFY(!v.hidden && v.ended);
-
-    // `value <item>` is answered by a keeper's tell (live 2026-11-02, the weaponsmith): it is the reply, its wrapped second line too,
-    // and a tell that is not the keeper's of a plain window stays other traffic (above).
-    q.receiveCommand(QuietCommandEnum::BEGIN_TELL);
-    v = q.receivePrompt();
-    QVERIFY(!v.hidden && !v.ended); // The command's own prompt comes before the tell.
-    v = line(q,
-             "A weaponsmith tells you 'Well ... I wouldn't give more than eight silver and",
-             QuietTrafficEnum::OTHER);
-    QVERIFY(v.hidden && v.captured);
-    v = line(q, "seventy-seven copper for that.'", QuietTrafficEnum::OTHER);
-    QVERIFY(v.hidden && v.captured);
-    v = line(q, "A black wolf arrives from the north.", QuietTrafficEnum::OTHER);
-    QVERIFY(!v.hidden && !v.captured);
-    v = q.receivePrompt();
-    QVERIFY(v.ended);
 
     // What cannot be told is shown and captured, and counts as the reply.
     q.receiveCommand(QuietCommandEnum::BEGIN);
@@ -2032,6 +2019,16 @@ void TestTradeLines::keeperReplyTest()
         QCOMPARE(deal.mendSaid, QStringLiteral("Mending will cost you two copper"));
         QCOMPARE(deal.text, lines.join(QLatin1Char('\n')));
     }
+
+    // Another's tell in the same window is not the keeper's answer.
+    const ShopDeal crowded = readKeeperReply(
+        ShopDealKindEnum::MEND,
+        QStringList{QStringLiteral("Angdil tells you 'That will be 11 copper, please.'"),
+                    QStringLiteral("Gandalf tells you 'lend me five gold?'"),
+                    QStringLiteral("Angdil tells you 'It should be done shortly.'")});
+    QCOMPARE(crowded.keeper, QStringLiteral("Angdil"));
+    QCOMPARE(crowded.amountCopper, std::optional<int64_t>{11});
+    QVERIFY(!crowded.said.contains(QStringLiteral("Gandalf")) && !crowded.said.contains(QStringLiteral("lend")));
 
     // A keeper who names no price: the words as said, no amount.
     const ShopDeal none

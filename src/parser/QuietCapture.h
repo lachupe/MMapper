@@ -37,9 +37,6 @@ NODISCARD bool quietCommandAllowed(const QString &line);
 enum class NODISCARD QuietCommandEnum : uint8_t {
     /// The command has reached MUME: the window opens.
     BEGIN,
-    /// The same for a command whose reply is a keeper's tell (`value <item>`: "A weaponsmith tells you 'Well ... I wouldn't give
-    /// more than eight silver and / seventy-seven copper for that.'"): the tell, which a tell is not otherwise, is the reply.
-    BEGIN_TELL,
     /// Another line has gone to MUME since: its reply comes after the quiet command's own
     /// prompt, so the next real prompt closes the window whatever came before it.
     FOREIGN,
@@ -108,8 +105,6 @@ private:
     /// Another line has gone to MUME since the window opened.
     bool m_foreign = false;
     /// The window is for a command answered by a tell, and a tell that wraps is still open.
-    bool m_tellReply = false;
-    bool m_inTell = false;
 
 public:
     void receiveCommand(QuietCommandEnum what);

@@ -37,13 +37,12 @@ struct NODISCARD QuietWord final
 /// such command), and every command that was not asked for. To let another through, add it
 /// here; nothing else knows the list.
 ///
-/// `value <item>` (mume3d FEAT.32, 2026-10-17): the shops' help (sell.txt, value.txt) says it
-/// "lets you know how much a shopkeeper would pay for a certain item without actually selling
-/// it", so it reads. The help gives no shorter form, so only the whole word is let through.
+/// `value <item>` is not here since 2026-11-11 (mume3d FIX.351): it is MMapper's shop.value operation,
+/// its reply matched to the request there.
 /// `show <number>` (mume3d FEAT.183, 2026-11-02): a shop's `show` tells what one item or piece looks like and what the
 /// keeper would want for it (live at the King's Armoury: "They are a fine pair of rigid leather gloves ... It would cost you
 /// one silver and eighty-nine copper."), and changes nothing. Only the whole word is let through.
-constexpr std::array<QuietWord, 15> g_quietWords{{
+constexpr std::array<QuietWord, 14> g_quietWords{{
     {"equipment", 2, true},
     {"examine", 3, true},
     {"exits", 2, false},
@@ -57,7 +56,6 @@ constexpr std::array<QuietWord, 15> g_quietWords{{
     {"stat", 4, false},
     {"time", 2, false},
     {"trophy", 3, true},
-    {"value", 5, true},
     {"who", 2, true},
 }};
 
@@ -194,13 +192,10 @@ void QuietCapture::receiveCommand(const QuietCommandEnum what)
 {
     switch (what) {
     case QuietCommandEnum::BEGIN:
-    case QuietCommandEnum::BEGIN_TELL:
         m_open = true;
         m_replied = false;
         m_shown = false;
         m_foreign = false;
-        m_tellReply = what == QuietCommandEnum::BEGIN_TELL;
-        m_inTell = false;
         break;
     case QuietCommandEnum::FOREIGN:
         if (m_open) {
@@ -216,8 +211,6 @@ void QuietCapture::receiveCommand(const QuietCommandEnum what)
 void QuietCapture::reset()
 {
     m_open = false;
-    m_tellReply = false;
-    m_inTell = false;
     m_replied = false;
     m_shown = false;
     m_foreign = false;
@@ -231,18 +224,6 @@ QuietCapture::Verdict QuietCapture::receiveLine(const QString &plain,
         return verdict;
     }
     const bool blank = plain.trimmed().isEmpty();
-    if (m_tellReply && traffic == QuietTrafficEnum::OTHER && !blank) {
-        // The keeper's tell is this command's reply, and its second line, when it wraps, is the tell's still.
-        static const QRegularExpression tellStart{QStringLiteral(R"(\btells you ')")};
-        const QString text = plain.trimmed();
-        if (m_inTell || tellStart.match(text).hasMatch()) {
-            m_inTell = !text.endsWith(QLatin1Char('\''));
-            verdict.hidden = true;
-            verdict.captured = true;
-            m_replied = true;
-            return verdict;
-        }
-    }
     switch (traffic) {
     case QuietTrafficEnum::OTHER:
         m_shown = true;
