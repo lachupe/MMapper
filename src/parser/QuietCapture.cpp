@@ -116,9 +116,9 @@ bool quietCommandAllowed(const QString &line)
     }
     // `change language` alone only lists the languages and how well they are known (mume-help
     // languages.txt); with a language after it, it changes the one spoken, which is not a read.
-    static const QRegularExpression listLanguages{
-        QStringLiteral(R"(^cha(?:n(?:ge?)?)?\s+lang(?:u(?:a(?:ge?)?)?)?$)"),
-        QRegularExpression::CaseInsensitiveOption};
+    static const QRegularExpression
+        listLanguages{QStringLiteral(R"(^cha(?:n(?:ge?)?)?\s+lang(?:u(?:a(?:ge?)?)?)?$)"),
+                      QRegularExpression::CaseInsensitiveOption};
     if (listLanguages.match(text).hasMatch()) {
         return true;
     }
@@ -216,8 +216,7 @@ void QuietCapture::reset()
     m_foreign = false;
 }
 
-QuietCapture::Verdict QuietCapture::receiveLine(const QString &plain,
-                                                const QuietTrafficEnum traffic)
+QuietCapture::Verdict QuietCapture::receiveLine(const QString &plain, const QuietTrafficEnum traffic)
 {
     Verdict verdict;
     if (!m_open) {

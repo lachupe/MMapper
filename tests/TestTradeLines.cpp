@@ -2028,7 +2028,8 @@ void TestTradeLines::keeperReplyTest()
                     QStringLiteral("Angdil tells you 'It should be done shortly.'")});
     QCOMPARE(crowded.keeper, QStringLiteral("Angdil"));
     QCOMPARE(crowded.amountCopper, std::optional<int64_t>{11});
-    QVERIFY(!crowded.said.contains(QStringLiteral("Gandalf")) && !crowded.said.contains(QStringLiteral("lend")));
+    QVERIFY(!crowded.said.contains(QStringLiteral("Gandalf"))
+            && !crowded.said.contains(QStringLiteral("lend")));
 
     // A keeper who names no price: the words as said, no amount.
     const ShopDeal none
