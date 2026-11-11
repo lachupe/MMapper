@@ -2045,20 +2045,24 @@ void TestTradeLines::keeperReplyTest()
     // Mend and resize, as the user's logs show them (keep/info/logs). `mend all` bills each item.
     const ShopDeal mended = readKeeperReply(
         ShopDealKindEnum::MEND,
-        QStringList{
-            QStringLiteral("Angdil tells you 'That will be three silver and 80 copper, please.'"),
-            QStringLiteral("Angdil tells you 'They should be done shortly. If you don't come back "
-                           "after ten hours, I'll be forced to sell them!'"),
-            QStringLiteral("Angdil tells you 'That will be 11 copper, please.'"),
-            QStringLiteral("Angdil tells you 'It should be done shortly. If you don't come back "
-                           "after ten hours, I'll be forced to sell it!'")});
+        QStringList{QStringLiteral(
+                        "Angdil tells you 'That will be three silver and 80 copper, please.'"),
+                    QStringLiteral(
+                        "Angdil tells you 'They should be done shortly. If you don't come back "
+                        "after ten hours, I'll be forced to sell them!'"),
+                    QStringLiteral("Angdil tells you 'That will be 11 copper, please.'"),
+                    QStringLiteral(
+                        "Angdil tells you 'It should be done shortly. If you don't come back "
+                        "after ten hours, I'll be forced to sell it!'")});
     QCOMPARE(mended.kind, ShopDealKindEnum::MEND);
     QCOMPARE(mended.keeper, QStringLiteral("Angdil"));
     QCOMPARE(mended.amountCopper, std::optional<int64_t>{391});
-    QVERIFY(mended.said.startsWith(QStringLiteral("That will be three silver and 80 copper, please.\n")));
-    const ShopDeal refused = readKeeperReply(
-        ShopDealKindEnum::MEND,
-        QStringList{QStringLiteral("Dori the armourer tells you 'I can't mend that.'")});
+    QVERIFY(mended.said.startsWith(
+        QStringLiteral("That will be three silver and 80 copper, please.\n")));
+    const ShopDeal refused
+        = readKeeperReply(ShopDealKindEnum::MEND,
+                          QStringList{
+                              QStringLiteral("Dori the armourer tells you 'I can't mend that.'")});
     QCOMPARE(refused.said, QStringLiteral("I can't mend that."));
     QVERIFY(!refused.amountCopper.has_value());
     const ShopDeal what = readKeeperReply(ShopDealKindEnum::MEND,
@@ -2068,10 +2072,10 @@ void TestTradeLines::keeperReplyTest()
 
     const ShopDeal resized = readKeeperReply(
         ShopDealKindEnum::RESIZE,
-        QStringList{QStringLiteral(
-                        "Kormock the orkish armourer resizes a thin pair of leather gloves to fit you."),
-                    QStringLiteral(
-                        "Kormock the orkish armourer tells you 'The total comes to 8 copper.'")});
+        QStringList{
+            QStringLiteral(
+                "Kormock the orkish armourer resizes a thin pair of leather gloves to fit you."),
+            QStringLiteral("Kormock the orkish armourer tells you 'The total comes to 8 copper.'")});
     QCOMPARE(resized.keeper, QStringLiteral("Kormock the orkish armourer"));
     QCOMPARE(resized.items, QStringList{QStringLiteral("a thin pair of leather gloves")});
     QCOMPARE(resized.amountCopper, std::optional<int64_t>{8});

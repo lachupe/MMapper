@@ -639,9 +639,9 @@ ShopDeal readKeeperReply(const ShopDealKindEnum kind, const QStringList &lines)
             said << words;
             if (money.has_value()) {
                 deal.amountCopper = deal.amountCopper.value_or(0) + money->copper;
-                deal.amountText = deal.amountText.isEmpty() ? money->text
-                                                            : deal.amountText + QStringLiteral(", ")
-                                                                  + money->text;
+                deal.amountText = deal.amountText.isEmpty()
+                                      ? money->text
+                                      : deal.amountText + QStringLiteral(", ") + money->text;
             }
             continue;
         }
