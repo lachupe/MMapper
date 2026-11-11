@@ -855,7 +855,8 @@ bool TradeLinesTracker::readTableLine(const QString &raw, const QString &text)
         const QString rowText = continued ? m_listRowText + QLatin1Char(' ') + text : text;
         const QRegularExpressionMatch m = g_listRow.match(rowText);
         // "... for <price>": taken only where what follows is a price, so a name with "for" in it stays a name.
-        QRegularExpressionMatch exact = m.hasMatch() ? QRegularExpressionMatch{} : g_listRowFor.match(rowText);
+        QRegularExpressionMatch exact = m.hasMatch() ? QRegularExpressionMatch{}
+                                                     : g_listRowFor.match(rowText);
         if (exact.hasMatch() && !parseMoney(exact.captured(3)).has_value()) {
             exact = QRegularExpressionMatch{};
         }

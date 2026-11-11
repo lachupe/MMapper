@@ -479,16 +479,16 @@ void TestTradeLines::shopPiecesTest()
     // second piece's price wraps.
     TradeLinesTracker tracker;
     tracker.receiveCommand(QStringLiteral("list 547"));
-    const TradeReplies two = feedInto(
-        tracker,
-        {"You can buy:",
-         "",
-         " 547. two fine pairs of rigid leather gloves:",
-         "       548.  (flawless, seasoned) for two silver and twenty-eight copper.",
-         "       549.  (well-maintained, well-seasoned) for one silver",
-         "            and eighty-nine copper.",
-         "",
-         PROMPT});
+    const TradeReplies two
+        = feedInto(tracker,
+                   {"You can buy:",
+                    "",
+                    " 547. two fine pairs of rigid leather gloves:",
+                    "       548.  (flawless, seasoned) for two silver and twenty-eight copper.",
+                    "       549.  (well-maintained, well-seasoned) for one silver",
+                    "            and eighty-nine copper.",
+                    "",
+                    PROMPT});
     QCOMPARE(two.lists.size(), size_t{1});
     const ShopList &l = two.lists[0];
     QCOMPARE(l.piecesOf, int64_t{547});
@@ -506,10 +506,14 @@ void TestTradeLines::shopPiecesTest()
     // A word as the query stays an ordinary list.
     TradeLinesTracker words;
     words.receiveCommand(QStringLiteral("list gloves"));
-    const TradeReplies plain = feedInto(
-        words,
-        {"You can buy:", "", " 550. fourteen pairs of chain mail gloves (well-maintained, new) up to one gold",
-         "      and two silver.", "", PROMPT});
+    const TradeReplies plain
+        = feedInto(words,
+                   {"You can buy:",
+                    "",
+                    " 550. fourteen pairs of chain mail gloves (well-maintained, new) up to one gold",
+                    "      and two silver.",
+                    "",
+                    PROMPT});
     QCOMPARE(plain.lists[0].piecesOf, int64_t{0});
     QCOMPARE(plain.lists[0].rows.size(), size_t{1});
 }
@@ -2009,12 +2013,14 @@ void TestTradeLines::keeperReplyTest()
 {
     // A value at an artisan: the price (wrapped over two lines) and the mending quote, in either
     // order (mume3d FIX.351, live at the King's Armoury 2026-11-03).
-    const QStringList price{QStringLiteral(
-                                "An armourer tells you 'Well ... I wouldn't give more than one silver and"),
-                            QStringLiteral("thirty-six copper for that.'")};
+    const QStringList
+        price{QStringLiteral(
+                  "An armourer tells you 'Well ... I wouldn't give more than one silver and"),
+              QStringLiteral("thirty-six copper for that.'")};
     const QString mend = QStringLiteral("An armourer tells you 'Mending will cost you two copper'");
     for (const bool mendFirst : {false, true}) {
-        const QStringList lines = mendFirst ? (QStringList{mend} + price) : (price + QStringList{mend});
+        const QStringList lines = mendFirst ? (QStringList{mend} + price)
+                                            : (price + QStringList{mend});
         const ShopDeal deal = readKeeperReply(ShopDealKindEnum::VALUE, lines);
         QCOMPARE(deal.kind, ShopDealKindEnum::VALUE);
         QCOMPARE(deal.keeper, QStringLiteral("An armourer"));
@@ -2028,9 +2034,10 @@ void TestTradeLines::keeperReplyTest()
     }
 
     // A keeper who names no price: the words as said, no amount.
-    const ShopDeal none = readKeeperReply(
-        ShopDealKindEnum::VALUE,
-        QStringList{QStringLiteral("A grocer tells you 'I don't buy that kind of thing.'")});
+    const ShopDeal none
+        = readKeeperReply(ShopDealKindEnum::VALUE,
+                          QStringList{QStringLiteral(
+                              "A grocer tells you 'I don't buy that kind of thing.'")});
     QCOMPARE(none.said, QStringLiteral("I don't buy that kind of thing."));
     QVERIFY(!none.amountCopper.has_value());
     QVERIFY(!none.mendCopper.has_value());

@@ -640,6 +640,8 @@ if(WITH_FRONTEND)
         ../src/frontend/FrontendSubscriptions.h
         ../src/frontend/CommandRunner.cpp
         ../src/frontend/CommandRunner.h
+        ../src/frontend/TradeMessages.cpp
+        ../src/frontend/TradeMessages.h
         ../src/frontend/ViewerClaim.cpp
         ../src/frontend/ViewerClaim.h
         ../src/proxy/GmcpModule.cpp

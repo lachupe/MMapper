@@ -691,12 +691,12 @@ void CommandRunner::onSentToMud(const QString &raw)
                 }
                 // From here on the parser keeps the reply from the terminal.
                 // `value <item>` is answered by the keeper's tell, which is otherwise other traffic.
-                static const QRegularExpression valueCommand{
-                    QStringLiteral(R"(^\s*value\b)"), QRegularExpression::CaseInsensitiveOption};
-                m_observer.observeQuietCommand(
-                    valueCommand.match(m_op->commands.front()).hasMatch()
-                        ? QuietCommandEnum::BEGIN_TELL
-                        : QuietCommandEnum::BEGIN);
+                static const QRegularExpression
+                    valueCommand{QStringLiteral(R"(^\s*value\b)"),
+                                 QRegularExpression::CaseInsensitiveOption};
+                m_observer.observeQuietCommand(valueCommand.match(m_op->commands.front()).hasMatch()
+                                                   ? QuietCommandEnum::BEGIN_TELL
+                                                   : QuietCommandEnum::BEGIN);
             }
         }
         return;

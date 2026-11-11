@@ -421,10 +421,7 @@ private:
     /// A blank line ends a list or a practice table that has a row, except right after a pager:
     /// there it is what MUME puts before whatever else it says while the pager waits, and the
     /// next page goes on with the table.
-    NODISCARD bool blankClosesTable() const
-    {
-        return m_tableHasRow && !(m_paged && !m_afterPager);
-    }
+    NODISCARD bool blankClosesTable() const { return m_tableHasRow && !(m_paged && !m_afterPager); }
     void closeTable();
     void closeTell(TradeReplies &out);
     void closeDeal();

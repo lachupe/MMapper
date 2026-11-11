@@ -488,8 +488,8 @@ void TestCommandRunner::shopValueMendResizeTest()
     mume.request(R"({"id":"v","action":"shop.value","item":"2.jerkin"})");
     QCOMPARE(mume.sent, QStringList{"value 2.jerkin"});
     mume.flush();
-    mume.line(QStringLiteral(
-        "An armourer tells you 'Well ... I wouldn't give more than one silver and"));
+    mume.line(
+        QStringLiteral("An armourer tells you 'Well ... I wouldn't give more than one silver and"));
     mume.line(QStringLiteral("thirty-six copper for that.'"));
     mume.line(QStringLiteral("An armourer tells you 'Mending will cost you two copper'"));
     mume.prompt();
