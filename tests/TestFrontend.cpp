@@ -637,6 +637,7 @@ void TestFrontend::gameStateTest()
     QVERIFY(line("* HP:Fine MV:Fine> You have been idle, and are pulled into a void.")
             == GameStateEnum::IN_VOID);
     QVERIFY(!line("Gandalf narrates 'You have been idle, and are pulled into a void.'").has_value());
+    QVERIFY(!line("Gandalf You have been idle, and are pulled into a void.").has_value());
     QVERIFY(isInGame(GameStateEnum::PLAYING));
     QVERIFY(isInGame(GameStateEnum::IN_VOID));
     QVERIFY(!isInGame(GameStateEnum::MENU));

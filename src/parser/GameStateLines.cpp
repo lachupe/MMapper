@@ -54,10 +54,10 @@ std::optional<GameStateEnum> parseGameStateLine(const QString &line)
     if (text.startsWith(u"By what name do you wish to be known?")) {
         return GameStateEnum::MENU;
     }
-    // Idle too long: MUME moves the character out of its room into the void. Anyone's speech that
-    // quotes it ends in a quote, so the end of the line tells them apart; a prompt MUME ran into the
-    // line is allowed for.
-    if (text.endsWith(u"You have been idle, and are pulled into a void.")) {
+    // Idle too long: MUME moves the character out of its room into the void. The line alone, or
+    // after a prompt MUME ran into it ("...> "): an emote or speech that quotes it has a name before it.
+    if (text == u"You have been idle, and are pulled into a void."
+        || text.endsWith(u"> You have been idle, and are pulled into a void.")) {
         return GameStateEnum::IN_VOID;
     }
     return std::nullopt;
