@@ -112,9 +112,12 @@ MumeXmlParser::MumeXmlParser(MapData &md,
                                       [this]() { resetReaders(ResetReason::CONNECTED); });
     m_observer.sig2_gameStateChanged.connect(m_lifetime, [this](const GameStateEnum state) {
         // In the game no login prompt stands. The frontend server drops its own copy at the
-        // same signal.
-        resetReaders(state != GameStateEnum::PLAYING ? ResetReason::LEFT_GAME
-                                                     : ResetReason::ENTERED_GAME);
+        // same signal. The void does not leave the game (what the readers hold stays); the way
+        // back is an entry, which forgets only what entering forgets (the login prompt).
+        if (state == GameStateEnum::IN_VOID) {
+            return;
+        }
+        resetReaders(!isInGame(state) ? ResetReason::LEFT_GAME : ResetReason::ENTERED_GAME);
     });
     // A frontend's quiet command: the runner says when its command has reached MUME and when
     // the request is over; parse() keeps the reply between the two from the user.
@@ -387,7 +390,7 @@ void MumeXmlParser::parse(const TelnetData &data, const bool isGoAhead)
         // before the game state, so that the state that says "menu" for the name prompt
         // already says which prompt it is; and never in the game, where a line may end in
         // "password:" and mean nothing.
-        if (m_observer.getGameState() != GameStateEnum::PLAYING) {
+        if (!isInGame(m_observer.getGameState())) {
             if (const auto loginPrompt = m_loginTracker.receiveLine(plain)) {
                 m_observer.observeLoginPrompt(*loginPrompt);
                 facts.tags.insert(LineTagEnum::LOGIN);
