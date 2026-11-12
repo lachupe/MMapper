@@ -1049,6 +1049,14 @@ std::optional<HandRaised> parseHandRaised(const QString &raw)
     if (name.startsWith(u'*') || isNpcName(lowered)) {
         return std::nullopt;
     }
+    // A prompt run into the line when no GO-AHEAD came ("!O cSW HP:Fine>Tipp raises his
+    // hand.", seen in MUME logs) would give the keyword "O". Taking the text after the '>'
+    // instead would let an emote ("Bar >Tipp raises his hand.") put a button on a player who
+    // did not ask, so such a line is no raised hand: a missed hand costs one typed `group`
+    // (FEAT.42, decided by Fable 2026-11-12, the user asleep).
+    if (name.contains(u'>')) {
+        return std::nullopt;
+    }
     QString keyword;
     for (const QChar c : name) {
         if (c.isLetter()) {

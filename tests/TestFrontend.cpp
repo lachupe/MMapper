@@ -2682,6 +2682,13 @@ void TestFrontend::roomHandRaisedTest()
     QVERIFY(!parseHandRaised(QStringLiteral("Tipp raises his hand and waves.")).has_value());
     QVERIFY(!parseHandRaised(QStringLiteral("Kili raises his voice and calls great pain upon you."))
                  .has_value());
+    // A prompt run into the line, and an emote quoting another name after a '>': no hand
+    // (neither the prompt's first letter nor the quoted name is someone asking).
+    QVERIFY(
+        !parseHandRaised(QStringLiteral("!O cSW HP:Fine>Tipp raises his hand.")).has_value());
+    QVERIFY(!parseHandRaised(QStringLiteral("* HP:Fine MV:Fine> Tipp raises his hand."))
+                 .has_value());
+    QVERIFY(!parseHandRaised(QStringLiteral("Bar >Tipp raises his hand.")).has_value());
 }
 
 void TestFrontend::charConsiderTest()
