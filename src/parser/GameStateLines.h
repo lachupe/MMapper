@@ -25,6 +25,7 @@
 ///   Goodbye, friend.. Come back soon!                                          (quit)
 ///   Account>                                                                   (account menu)
 ///   By what name do you wish to be known?                                      (login prompt)
+///   You have been idle, and are pulled into a void.                            (idle: the void)
 enum class NODISCARD GameStateEnum : uint8_t {
     /// Nothing has been seen yet since MMapper connected to MUME, or it is not connected.
     UNKNOWN,
@@ -36,9 +37,13 @@ enum class NODISCARD GameStateEnum : uint8_t {
     QUIT,
     /// MUME is at its account menu or its login prompt, with no rent or quit seen before it.
     MENU,
+    /// The character idled and was pulled into the void: out of its room, still in the game. The next
+    /// command sent to MUME brings it back (GameObserver::observeSentToMud()); a Room.Info meanwhile does
+    /// not, since MUME may describe the void itself. After a longer idle MUME drops the connection.
+    IN_VOID,
 };
 
-/// The protocol's name for `state`: "unknown", "playing", "rented", "quit" or "menu".
+/// The protocol's name for `state`: "unknown", "playing", "rented", "quit", "menu" or "void".
 NODISCARD std::string_view gameStateName(GameStateEnum state);
 
 /// What one line of MUME's output says about the game state, or nothing. `line` is the line as
@@ -48,3 +53,8 @@ NODISCARD std::optional<GameStateEnum> parseGameStateLine(const QString &line);
 /// The state after `seen`, given `current`. The menu that follows a rent or a quit keeps that
 /// rent or quit, which says more; everything else simply replaces what was before.
 NODISCARD GameStateEnum nextGameState(GameStateEnum current, GameStateEnum seen);
+
+/// Whether a character is in the game in `state`: playing, or pulled into the void (which any command
+/// ends). Leaving the game -- a rent, a quit, the menu -- is what forgets the character's state; a
+/// step between PLAYING and IN_VOID forgets nothing.
+NODISCARD bool isInGame(GameStateEnum state);

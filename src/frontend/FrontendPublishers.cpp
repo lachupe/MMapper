@@ -198,6 +198,11 @@ void FrontendServer::registerSessionHandlers()
     });
 
     o.sig2_gameStateChanged.connect(m_lifetime, [this](const GameStateEnum state) {
+        if (state == GameStateEnum::IN_VOID) {
+            // Pulled into the void: still the same character in the game; only `game` changes.
+            publishSessionState();
+            return;
+        }
         if (state != GameStateEnum::PLAYING) {
             // Rented, quit or at the menu: what MUME said of the character, the room and what
             // was carried is not the state of anything now, and must not be replayed to a

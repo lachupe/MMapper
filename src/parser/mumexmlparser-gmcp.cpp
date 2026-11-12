@@ -33,8 +33,10 @@ void MumeXmlParser::slot_parseGmcpInput(const GmcpMessage &msg)
     // for an object below.
     m_roomContentsTracker.receiveChars(msg);
 
-    // Char.Name is sent only on login, and Room.Info only in the game: a character is playing.
-    if (msg.isCharName() || msg.isRoomInfo()) {
+    // Char.Name is sent only on login, and Room.Info only in the game: a character is playing. In the
+    // void a Room.Info may be MUME's of the void itself: only a command sent brings the character back.
+    if (msg.isCharName()
+        || (msg.isRoomInfo() && m_observer.getGameState() != GameStateEnum::IN_VOID)) {
         m_observer.observeGameState(GameStateEnum::PLAYING);
     }
 

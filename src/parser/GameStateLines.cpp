@@ -18,6 +18,8 @@ std::string_view gameStateName(const GameStateEnum state)
         return "quit";
     case GameStateEnum::MENU:
         return "menu";
+    case GameStateEnum::IN_VOID:
+        return "void";
     }
     return "unknown";
 }
@@ -52,7 +54,18 @@ std::optional<GameStateEnum> parseGameStateLine(const QString &line)
     if (text.startsWith(u"By what name do you wish to be known?")) {
         return GameStateEnum::MENU;
     }
+    // Idle too long: MUME moves the character out of its room into the void. The line alone, or
+    // after a prompt MUME ran into it ("...> "): an emote or speech that quotes it has a name before it.
+    if (text == u"You have been idle, and are pulled into a void."
+        || text.endsWith(u"> You have been idle, and are pulled into a void.")) {
+        return GameStateEnum::IN_VOID;
+    }
     return std::nullopt;
+}
+
+bool isInGame(const GameStateEnum state)
+{
+    return state == GameStateEnum::PLAYING || state == GameStateEnum::IN_VOID;
 }
 
 GameStateEnum nextGameState(const GameStateEnum current, const GameStateEnum seen)

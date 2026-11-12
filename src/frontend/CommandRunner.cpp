@@ -228,7 +228,7 @@ CommandRunner::CommandRunner(GameObserver &observer, SendFn send, PublishFn publ
         abort(QStringLiteral("echo changed"));
     });
     m_observer.sig2_gameStateChanged.connect(m_lifetime, [this](const GameStateEnum state) {
-        if (state != GameStateEnum::PLAYING) {
+        if (!isInGame(state)) {
             // A new login sets the viewer again, unless the player set it in this connection.
             m_viewerClaim.newLogin();
         }
@@ -406,6 +406,10 @@ void CommandRunner::request(const QJsonObject &payload, const Context &context)
     if (!context.connected) {
         return refuse(id, action, QStringLiteral("not connected"));
     }
+    // In the void a command would bring the character back: only the player's own may.
+    if (context.game == GameStateEnum::IN_VOID) {
+        return refuse(id, action, QStringLiteral("in the void"));
+    }
     if (context.game != GameStateEnum::PLAYING) {
         return refuse(id, action, QStringLiteral("not in the game"));
     }
@@ -452,6 +456,9 @@ void CommandRunner::requestQuiet(const QJsonObject &payload, const Context &cont
     }
     if (!context.connected) {
         return refuse("not connected");
+    }
+    if (context.game == GameStateEnum::IN_VOID) {
+        return refuse("in the void");
     }
     if (context.game != GameStateEnum::PLAYING) {
         return refuse("not in the game");

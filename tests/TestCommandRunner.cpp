@@ -1350,6 +1350,10 @@ void TestCommandRunner::quietFailuresTest()
     ctx.game = GameStateEnum::MENU;
     bad.trade->requestQuiet(json(R"({"id":"e","text":"prac"})"), ctx);
     QCOMPARE(bad.reason(), QStringLiteral("not in the game"));
+    // A quiet read would bring a character back from the void: refused, with nothing sent.
+    ctx.game = GameStateEnum::IN_VOID;
+    bad.trade->requestQuiet(json(R"({"id":"v","text":"prac"})"), ctx);
+    QCOMPARE(bad.reason(), QStringLiteral("in the void"));
     ctx = Mume::context();
     ctx.echo = false;
     bad.trade->requestQuiet(json(R"({"id":"f","text":"prac"})"), ctx);
@@ -1675,6 +1679,9 @@ void TestCommandRunner::refusalsTest()
     ctx.game = GameStateEnum::MENU;
     mume.trade->request(json(R"({"id":"d","action":"shop.list"})"), ctx);
     QCOMPARE(mume.reason(), QStringLiteral("not in the game"));
+    ctx.game = GameStateEnum::IN_VOID;
+    mume.trade->request(json(R"({"id":"v","action":"shop.list"})"), ctx);
+    QCOMPARE(mume.reason(), QStringLiteral("in the void"));
     ctx = Mume::context();
     ctx.driving = false;
     mume.trade->request(json(R"({"id":"e","action":"shop.list"})"), ctx);

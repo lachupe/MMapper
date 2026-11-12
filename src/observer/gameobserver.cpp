@@ -34,6 +34,10 @@ void GameObserver::observeSentToMud(const QString &input)
 {
     auto str = input;
     ParserUtils::removeAnsiMarksInPlace(str);
+    // Any command brings a character back from the void (MUME runs it once the character is back).
+    if (m_gameState == GameStateEnum::IN_VOID) {
+        observeGameState(GameStateEnum::PLAYING);
+    }
     sig2_sentToMudString.invoke(str);
 }
 

@@ -116,7 +116,8 @@ struct NODISCARD MapIdentity final
 /// matches it; `mapLoaded` is true when the map has any rooms.
 ///
 /// `game` says whether a character is in the game: "playing", "rented" (rent or camp rent),
-/// "quit", "menu" (MUME's account menu or login prompt, no rent or quit seen before it) or
+/// "quit", "menu" (MUME's account menu or login prompt, no rent or quit seen before it), "void"
+/// (idle, pulled into the void: still in the game, out of its room, until the next command) or
 /// "unknown" (nothing seen yet, or MUME not connected). MUME goes back to its menu after a rent
 /// or a quit with the connection open, so `upstream` alone cannot say the character has gone.
 ///

@@ -632,6 +632,17 @@ void TestFrontend::gameStateTest()
     QVERIFY(!line("Characters in account \"dmitry\"").has_value());
     QVERIFY(!line("").has_value());
 
+    // Idle too long: the void (FEAT.195), alone or run into a prompt; quoted speech is not it.
+    QVERIFY(line("You have been idle, and are pulled into a void.") == GameStateEnum::IN_VOID);
+    QVERIFY(line("* HP:Fine MV:Fine> You have been idle, and are pulled into a void.")
+            == GameStateEnum::IN_VOID);
+    QVERIFY(!line("Gandalf narrates 'You have been idle, and are pulled into a void.'").has_value());
+    QVERIFY(!line("Gandalf You have been idle, and are pulled into a void.").has_value());
+    QVERIFY(isInGame(GameStateEnum::PLAYING));
+    QVERIFY(isInGame(GameStateEnum::IN_VOID));
+    QVERIFY(!isInGame(GameStateEnum::MENU));
+    QVERIFY(!isInGame(GameStateEnum::RENTED));
+
     // The menu after a rent or a quit keeps the rent or the quit.
     QCOMPARE(nextGameState(GameStateEnum::RENTED, GameStateEnum::MENU), GameStateEnum::RENTED);
     QCOMPARE(nextGameState(GameStateEnum::QUIT, GameStateEnum::MENU), GameStateEnum::QUIT);
@@ -658,6 +669,24 @@ void TestFrontend::gameStateTest()
     observer.observeDisconnected();
     QCOMPARE(observer.getGameState(), GameStateEnum::UNKNOWN);
 
+    // The void: any command sent brings the character back; a longer idle ends at the login prompt.
+    seen.clear();
+    observer.observeConnected();
+    observer.observeGameState(GameStateEnum::PLAYING);
+    observer.observeGameState(GameStateEnum::IN_VOID);
+    observer.observeSentToMud(QStringLiteral("look"));
+    QCOMPARE(observer.getGameState(), GameStateEnum::PLAYING);
+    observer.observeSentToMud(QStringLiteral("look"));
+    observer.observeGameState(GameStateEnum::IN_VOID);
+    observer.observeGameState(GameStateEnum::MENU);
+    QCOMPARE(seen,
+             (std::vector<GameStateEnum>{GameStateEnum::PLAYING,
+                                         GameStateEnum::IN_VOID,
+                                         GameStateEnum::PLAYING,
+                                         GameStateEnum::IN_VOID,
+                                         GameStateEnum::MENU}));
+    observer.observeDisconnected();
+
     // Published as `game`, and "unknown" whenever MUME is not there.
     frontend_messages::MapIdentity map;
     const auto game = [&map](const bool upstream, const GameStateEnum state) {
@@ -669,6 +698,7 @@ void TestFrontend::gameStateTest()
     QCOMPARE(game(true, GameStateEnum::RENTED), QStringLiteral("rented"));
     QCOMPARE(game(true, GameStateEnum::QUIT), QStringLiteral("quit"));
     QCOMPARE(game(true, GameStateEnum::MENU), QStringLiteral("menu"));
+    QCOMPARE(game(true, GameStateEnum::IN_VOID), QStringLiteral("void"));
     QCOMPARE(game(true, GameStateEnum::UNKNOWN), QStringLiteral("unknown"));
     QCOMPARE(game(false, GameStateEnum::PLAYING), QStringLiteral("unknown"));
     QCOMPARE(payloadOf(frontend_messages::makeSessionState(true, map, true, true))["game"].toString(),
