@@ -78,5 +78,6 @@ private Q_SLOTS:
     static void replayOrderTest();
     static void replayDisconnectedTest();
     static void replayScopesTest();
+    static void replayVoidTest();
     static void goldenFramesTest();
 };

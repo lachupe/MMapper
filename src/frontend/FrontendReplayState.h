@@ -33,12 +33,17 @@ private:
     FrontendReplayCache m_cache;
     /// A list, since GmcpMessage cannot be assigned, which a deque needs to erase from the middle.
     std::list<std::pair<QString, GmcpMessage>> m_containers;
+    /// Pulled into the void (FEAT.195): the character is out of its room, and what MUME says of a
+    /// room meanwhile (Room.Chars, a room display's contents) is the void's, not the room's.
+    bool m_inVoid = false;
 
 public:
-    /// Folds `msg` into the state if its package's policy says it is state the cache keeps.
-    void remember(const GmcpMessage &msg) { m_cache.remember(msg); }
-    /// Keeps `msg`, whose package's policy is SNAPSHOT, replacing the last one.
-    void hold(const GmcpMessage &msg) { m_cache.hold(msg); }
+    /// Folds `msg` into the state if its package's policy says it is state the cache keeps; in
+    /// the void, not the room's people or contents (isRoomState()).
+    void remember(const GmcpMessage &msg);
+    /// Keeps `msg`, whose package's policy is SNAPSHOT, replacing the last one; in the void, not
+    /// the room's contents.
+    void hold(const GmcpMessage &msg);
     /// Keeps `msg` as the listing of the container `key`, the last of CONTAINERS_KEPT.
     void holdContainer(const QString &key, const GmcpMessage &msg);
     /// Forgets the containers held; for a listing that cannot be told apart.
@@ -46,6 +51,16 @@ public:
 
     /// Forgets what the packages of `scope` and the smaller scopes kept (ReplayScopeEnum).
     void clear(ReplayScopeEnum scope);
+
+    /// The character is in the void, or back from it.
+    void setInVoid(bool inVoid) { m_inVoid = inVoid; }
+    NODISCARD bool inVoid() const { return m_inVoid; }
+    /// Whether `type` is the state of the room the character stands in that the void does not
+    /// change: Room.Chars (its Set and the changes folded into it) and MMapper.Room.Contents.
+    NODISCARD static bool isRoomState(GmcpMessageTypeEnum type);
+    /// Sends the room's held people and contents (isRoomState()), for a character back from the
+    /// void: MUME restates neither on the return, nor on a `look` in the same room (FIX.463).
+    void replayRoom(const SendFn &send) const;
 
     NODISCARD bool has(GmcpMessageTypeEnum type) const { return m_cache.find(type) != nullptr; }
     NODISCARD const FrontendReplayCache &cache() const { return m_cache; }

@@ -181,6 +181,7 @@ void FrontendServer::registerSessionHandlers()
         m_loginMemory.reset();
         // A new game session invalidates everything we cached from the previous one.
         m_replay.clear(ReplayScopeEnum::ACCOUNT);
+        m_replay.setInVoid(false);
         m_importantLog.reset();
         m_charAffects.reset();
         m_charNeeds.reset();
@@ -194,15 +195,24 @@ void FrontendServer::registerSessionHandlers()
         // What was carried and what lay in the room is not known any more; the rest of what
         // MUME said stays until a character leaves the game or a new connection begins.
         m_replay.clear(ReplayScopeEnum::ITEMS);
+        // No character is anywhere: the void ends with the connection (the observer forgets it too).
+        m_replay.setInVoid(false);
         publishSessionState();
     });
 
     o.sig2_gameStateChanged.connect(m_lifetime, [this](const GameStateEnum state) {
         if (state == GameStateEnum::IN_VOID) {
             // Pulled into the void: still the same character in the game; only `game` changes.
+            // What MUME says of a room meanwhile is the void's, and is not kept as the room's.
+            m_replay.setInVoid(true);
             publishSessionState();
             return;
         }
+        // Back from the void (FIX.463): MUME restates neither the room's people nor its contents,
+        // which the frontends forgot in the void, so the room as it was is told again; MUME's
+        // answer to the command that brought the character back comes after it and wins.
+        const bool fromVoid = m_replay.inVoid();
+        m_replay.setInVoid(false);
         if (state != GameStateEnum::PLAYING) {
             // Rented, quit or at the menu: what MUME said of the character, the room and what
             // was carried is not the state of anything now, and must not be replayed to a
@@ -218,6 +228,9 @@ void FrontendServer::registerSessionHandlers()
             rememberAccepted();
         }
         publishSessionState();
+        if (fromVoid && state == GameStateEnum::PLAYING) {
+            m_replay.replayRoom([this](const GmcpMessage &msg) { broadcast(msg); });
+        }
     });
 
     o.sig2_toggledEchoMode.connect(m_lifetime, [this](const bool echo) {

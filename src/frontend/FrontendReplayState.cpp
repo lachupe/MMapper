@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <array>
+#include <initializer_list>
 
 namespace {
 
@@ -19,6 +20,42 @@ constexpr const std::array<GmcpMessageTypeEnum, 6> TAIL{GmcpMessageTypeEnum::MMA
                                                         GmcpMessageTypeEnum::MMAPPER_CHAR_INVENTORY};
 
 } // namespace
+
+bool FrontendReplayState::isRoomState(const GmcpMessageTypeEnum type)
+{
+    if (type == GmcpMessageTypeEnum::MMAPPER_ROOM_CONTENTS
+        || type == GmcpMessageTypeEnum::ROOM_CHARS_SET) {
+        return true;
+    }
+    const ReplayPolicy policy = replayPolicy(type);
+    return policy.changes == GmcpMessageTypeEnum::ROOM_CHARS_SET;
+}
+
+void FrontendReplayState::remember(const GmcpMessage &msg)
+{
+    if (m_inVoid && isRoomState(msg.getType())) {
+        return;
+    }
+    m_cache.remember(msg);
+}
+
+void FrontendReplayState::hold(const GmcpMessage &msg)
+{
+    if (m_inVoid && isRoomState(msg.getType())) {
+        return;
+    }
+    m_cache.hold(msg);
+}
+
+void FrontendReplayState::replayRoom(const SendFn &send) const
+{
+    for (const GmcpMessageTypeEnum type :
+         {GmcpMessageTypeEnum::ROOM_CHARS_SET, GmcpMessageTypeEnum::MMAPPER_ROOM_CONTENTS}) {
+        if (const GmcpMessage *const msg = m_cache.find(type)) {
+            send(*msg);
+        }
+    }
+}
 
 void FrontendReplayState::holdContainer(const QString &key, const GmcpMessage &msg)
 {

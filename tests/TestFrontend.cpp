@@ -31,12 +31,12 @@
 #include "../src/parser/CharNeeds.h"
 #include "../src/parser/CharRefused.h"
 #include "../src/parser/CombatLines.h"
+#include "../src/parser/CommGroup.h"
 #include "../src/parser/ContainerLines.h"
 #include "../src/parser/ExitLooks.h"
 #include "../src/parser/GameStateLines.h"
 #include "../src/parser/ItemLines.h"
 #include "../src/parser/LoginLines.h"
-#include "../src/parser/CommGroup.h"
 #include "../src/parser/RoomContents.h"
 #include "../src/parser/RoomDoors.h"
 #include "../src/parser/RoomSocial.h"
@@ -3915,6 +3915,49 @@ void TestFrontend::replayScopesTest()
                                         oneField("n", i)));
     }
     QCOMPARE(bags.containerCount(), FrontendReplayState::CONTAINERS_KEPT);
+}
+
+void TestFrontend::replayVoidTest()
+{
+    const auto told = [](const FrontendReplayState &state) {
+        std::vector<GmcpMessage> sent;
+        state.replayRoom([&sent](const GmcpMessage &msg) { sent.push_back(msg); });
+        return sent;
+    };
+
+    // The room's people and contents, as the character stood in it.
+    FrontendReplayState state;
+    state.remember(parse(R"(Room.Chars.Set [{"id":1,"name":"the innkeeper"}])"));
+    state.remember(parse(R"(Room.Chars.Add {"id":2,"name":"a mountain mule"})"));
+    state.hold(stateMessage(GmcpMessageTypeEnum::MMAPPER_ROOM_CONTENTS, oneField("n", 2)));
+
+    // In the void, whatever MUME says of a room is the void's: none of it is kept as the room's.
+    state.setInVoid(true);
+    state.remember(parse(R"(Room.Chars.Set [])"));
+    state.remember(parse(R"(Room.Chars.Remove 1)"));
+    state.hold(stateMessage(GmcpMessageTypeEnum::MMAPPER_ROOM_CONTENTS, oneField("n", 0)));
+    // What is not the room's is kept as ever.
+    state.remember(stateMessage(GmcpMessageTypeEnum::CHAR_VITALS, oneField("hp", 10)));
+    QVERIFY(state.has(GmcpMessageTypeEnum::CHAR_VITALS));
+
+    // Back: the room as it was is told again, the people first, then the contents.
+    state.setInVoid(false);
+    const std::vector<GmcpMessage> sent = told(state);
+    QCOMPARE(sent.size(), size_t{2});
+    QCOMPARE(sent[0].getType(), GmcpMessageTypeEnum::ROOM_CHARS_SET);
+    const QJsonArray people = QJsonDocument::fromJson(sent[0].getJson()->toQByteArray()).array();
+    QCOMPARE(people.size(), 2);
+    QCOMPARE(sent[1].getType(), GmcpMessageTypeEnum::MMAPPER_ROOM_CONTENTS);
+    QCOMPARE(QJsonDocument::fromJson(sent[1].getJson()->toQByteArray()).object().value("n").toInt(),
+             2);
+
+    // Out of the void, MUME's word on the room is kept again.
+    state.remember(parse(R"(Room.Chars.Remove 2)"));
+    QCOMPARE(QJsonDocument::fromJson(told(state)[0].getJson()->toQByteArray()).array().size(), 1);
+
+    // A character that left the game has no room to tell.
+    state.clear(ReplayScopeEnum::GAME);
+    QVERIFY(told(state).empty());
 }
 
 void TestFrontend::goldenFramesTest()
