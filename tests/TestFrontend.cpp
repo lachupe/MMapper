@@ -2686,7 +2686,7 @@ void TestFrontend::roomHandRaisedTest()
     // (neither the prompt's first letter nor the quoted name is someone asking).
     QVERIFY(!parseHandRaised(QStringLiteral("!O cSW HP:Fine>Tipp raises his hand.")).has_value());
     QVERIFY(
-        !parseHandRaised(QStringLiteral("* HP:Fine MV:Fine> Tipp raises his hand.")).has_value());
+        !parseHandRaised(QStringLiteral("o HP:Fine MV:Fine> Tipp raises his hand.")).has_value());
     QVERIFY(!parseHandRaised(QStringLiteral("Bar >Tipp raises his hand.")).has_value());
 }
 
