@@ -1,5 +1,16 @@
 MMapper
 ============================
+
+## This fork
+
+This is [lachupe/MMapper](https://github.com/lachupe/MMapper), branch `mume3d`: upstream MMapper plus the
+**frontend protocol** that [mume3d](https://github.com/lachupe/mume3d), a 3D graphical client for MUME, talks to.
+MMapper keeps the connection to MUME, the parsing and the map, and publishes what it knows (session state, position,
+the character, the group, rooms, fights, shops and guilds) as `MMapper.*` packages over a local WebSocket
+(`src/frontend/`, port 4243 by default; off until "Frontend protocol enabled" is set). mume3d can be your only window,
+or run beside your usual client connected to the same MMapper. The protocol's spec lives in mume3d:
+`docs/specs/mmapper_frontend_protocol_spec.md`. Everything below is upstream's README.
+
 [![Discord Chat](https://img.shields.io/discord/1091792379503190086.svg)](https://discord.gg/bztx2wjrR9)
 [![Contributors](https://img.shields.io/github/contributors/MUME/MMapper.svg?style=flat)](https://github.com/MUME/MMapper/graphs/contributors)
 [![Code Coverage](https://codecov.io/gh/MUME/MMapper/branch/master/graph/badge.svg)](https://codecov.io/gh/MUME/MMapper)
